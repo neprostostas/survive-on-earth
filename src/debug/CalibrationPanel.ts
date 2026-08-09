@@ -2,6 +2,8 @@ import type { CalibrationConfig } from "../config/calibrationConfig";
 import { cloneCalibration, DEFAULT_CALIBRATION } from "../config/calibrationConfig";
 import { GAME_CONFIG } from "../config/gameConfig";
 import type { VisualQualityPreset } from "../config/visualQualityConfig";
+import type { HarvestTool } from "../harvesting/HarvestingTypes";
+import type { PrototypeToolLoadout } from "../harvesting/PrototypeToolLoadout";
 
 interface ControlDefinition {
   group: string;
@@ -18,7 +20,7 @@ export class CalibrationPanel {
   private readonly controls: ControlDefinition[];
   private visible = false;
 
-  constructor(root: HTMLElement, private readonly config: CalibrationConfig, private readonly onChange: () => void) {
+  constructor(root: HTMLElement, private readonly config: CalibrationConfig, private readonly tools: PrototypeToolLoadout, private readonly onChange: () => void) {
     this.element = document.createElement("aside");
     this.element.className = "calibration-panel";
     root.append(this.element);
@@ -63,6 +65,13 @@ export class CalibrationPanel {
       this.def("Lighting", "Shadow softness", 1, 3, 1, () => c.lighting.shadowSoftness, v => { c.lighting.shadowSoftness = v; }),
       this.def("Interaction", "Interaction range", 0.5, 3, 0.05, () => c.interaction.range, v => { c.interaction.range = v; }),
       this.def("Interaction", "Target switch bias", 0, 0.6, 0.01, () => c.interaction.targetSwitchBias, v => { c.interaction.targetSwitchBias = v; }),
+      this.def("Harvesting", "Hatchet swing", 0.7, 1.5, 0.01, () => c.harvesting.hatchetSwingDuration, v => { c.harvesting.hatchetSwingDuration = v; }),
+      this.def("Harvesting", "Hatchet impact", 0.3, 0.75, 0.01, () => c.harvesting.hatchetImpactTiming, v => { c.harvesting.hatchetImpactTiming = v; }),
+      this.def("Harvesting", "Pickaxe swing", 0.65, 1.35, 0.01, () => c.harvesting.pickaxeSwingDuration, v => { c.harvesting.pickaxeSwingDuration = v; }),
+      this.def("Harvesting", "Pickaxe impact", 0.3, 0.75, 0.01, () => c.harvesting.pickaxeImpactTiming, v => { c.harvesting.pickaxeImpactTiming = v; }),
+      this.def("Harvesting", "Move cancel", 0.05, 0.6, 0.01, () => c.harvesting.movementCancelThreshold, v => { c.harvesting.movementCancelThreshold = v; }),
+      this.def("Harvesting", "Hit reaction", 0.1, 1.2, 0.05, () => c.harvesting.hitReactionStrength, v => { c.harvesting.hitReactionStrength = v; }),
+      this.def("Harvesting", "Particles", 0.2, 1.4, 0.05, () => c.harvesting.particleIntensity, v => { c.harvesting.particleIntensity = v; }),
     ];
   }
 
@@ -118,6 +127,21 @@ export class CalibrationPanel {
     });
     qualityRow.append(qualitySelect);
     scroll.append(qualityRow);
+    const toolHeading = document.createElement("h3");
+    toolHeading.textContent = "Prototype Tools";
+    scroll.append(toolHeading);
+    const toolControls = document.createElement("div");
+    toolControls.className = "prototype-tools";
+    for (const [tool, label] of [["hatchet", "Hatchet"], ["pickaxe", "Pickaxe"]] satisfies [HarvestTool, string][]) {
+      const row = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = this.tools.hasTool(tool);
+      checkbox.addEventListener("change", () => { this.tools.setTool(tool, checkbox.checked); });
+      row.append(checkbox, document.createTextNode(label));
+      toolControls.append(row);
+    }
+    scroll.append(toolControls);
     const actions = document.createElement("div");
     actions.className = "calibration-actions";
     actions.innerHTML = `<button data-action="save">Save calibration</button><button data-action="copy">Copy config</button><button data-action="reset" class="muted">Reset</button>`;
@@ -136,6 +160,7 @@ export class CalibrationPanel {
         Object.assign(this.config.world, defaults.world);
         Object.assign(this.config.lighting, defaults.lighting);
         Object.assign(this.config.interaction, defaults.interaction);
+        Object.assign(this.config.harvesting, defaults.harvesting);
         Object.assign(this.config.visual, defaults.visual);
         localStorage.removeItem(GAME_CONFIG.localStorageKey);
         for (const key of GAME_CONFIG.legacyCalibrationKeys) localStorage.removeItem(key);

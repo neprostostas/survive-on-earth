@@ -27,6 +27,7 @@ export class InteractionSystem {
     lastInteractionId: null,
   };
   private currentTarget: Interactable | null = null;
+  private lockedTarget: Interactable | null = null;
   private indicatorAlpha = 0;
   private interactionPulse = 0;
 
@@ -51,7 +52,36 @@ export class InteractionSystem {
   get hasTarget(): boolean { return this.currentTarget !== null; }
   get state(): Readonly<InteractionDebugState> { return this.debugState; }
 
+  setTargetLock(target: Interactable | null): void { this.lockedTarget = target; }
+
+  clearTarget(target: Interactable): void {
+    if (this.lockedTarget === target) this.lockedTarget = null;
+    if (this.currentTarget === target) this.currentTarget = null;
+  }
+
+  measureEffectiveDistance(playerPosition: Readonly<Vector3>, target: Interactable): number {
+    return this.selector.measureEffectiveDistance(playerPosition, target);
+  }
+
+  acknowledge(target: Interactable): void {
+    this.debugState.lastInteractionId = target.interactionId;
+    this.interactionPulse = 1;
+  }
+
   update(delta: number, playerPosition: Readonly<Vector3>, playerYaw: number): void {
+    if (this.lockedTarget) {
+      const distance = this.selector.measureEffectiveDistance(playerPosition, this.lockedTarget);
+      if (this.lockedTarget.isInteractionEnabled() && distance <= this.config.interaction.range) {
+        this.currentTarget = this.lockedTarget;
+        this.debugState.targetId = this.lockedTarget.interactionId;
+        this.debugState.targetType = this.lockedTarget.interactionType;
+        this.debugState.effectiveDistance = distance;
+        this.debugState.candidateCount = 1;
+        this.updateIndicator(delta);
+        return;
+      }
+      this.lockedTarget = null;
+    }
     const selection = this.selector.select(
       this.interactables,
       playerPosition,

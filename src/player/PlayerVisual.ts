@@ -5,6 +5,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Scene } from "@babylonjs/core/scene";
+import type { HarvestTool } from "../harvesting/HarvestingTypes";
 
 export class PlayerVisual {
   readonly root: TransformNode;
@@ -14,6 +15,8 @@ export class PlayerVisual {
   readonly leftLeg: TransformNode;
   readonly rightLeg: TransformNode;
   readonly meshes: Mesh[] = [];
+  private readonly hatchetTool: TransformNode;
+  private readonly pickaxeTool: TransformNode;
   private readonly baseHeight = 1.8;
 
   constructor(scene: Scene) {
@@ -64,10 +67,50 @@ export class PlayerVisual {
     this.rightArm = this.limb(scene, "RightArm", 0.295, 1.4, skin, shirt, false);
     this.leftLeg = this.limb(scene, "LeftLeg", -0.13, 0.88, boots, trousers, true);
     this.rightLeg = this.limb(scene, "RightLeg", 0.13, 0.88, boots, trousers, true);
+    const toolWood = this.material(scene, "harvestToolWood", new Color3(0.38, 0.23, 0.12));
+    const toolMetal = this.material(scene, "harvestToolMetal", new Color3(0.36, 0.39, 0.37));
+    this.hatchetTool = this.createHatchet(scene, toolWood, toolMetal);
+    this.pickaxeTool = this.createPickaxe(scene, toolWood, toolMetal);
+    this.hideHarvestTool();
   }
 
   setHeight(height: number): void {
     this.root.scaling.setAll(height / this.baseHeight);
+  }
+
+  showHarvestTool(tool: HarvestTool): void {
+    this.hatchetTool.setEnabled(tool === "hatchet");
+    this.pickaxeTool.setEnabled(tool === "pickaxe");
+  }
+
+  hideHarvestTool(): void {
+    this.hatchetTool.setEnabled(false);
+    this.pickaxeTool.setEnabled(false);
+  }
+
+  private createHatchet(scene: Scene, wood: StandardMaterial, metal: StandardMaterial): TransformNode {
+    const root = new TransformNode("HatchetTool", scene);
+    root.parent = this.rightArm;
+    root.position.set(0, -0.69, 0.02);
+    root.rotation.z = -0.08;
+    const handle = MeshBuilder.CreateCylinder("HatchetHandle", { height: 0.68, diameter: 0.065, tessellation: 8 }, scene);
+    this.part("HatchetHandle", handle, wood, root, new Vector3(0, 0.23, 0));
+    const head = MeshBuilder.CreateBox("HatchetHead", { width: 0.3, height: 0.16, depth: 0.09 }, scene);
+    head.rotation.z = -0.12;
+    this.part("HatchetHead", head, metal, root, new Vector3(-0.09, 0.54, 0));
+    return root;
+  }
+
+  private createPickaxe(scene: Scene, wood: StandardMaterial, metal: StandardMaterial): TransformNode {
+    const root = new TransformNode("PickaxeTool", scene);
+    root.parent = this.rightArm;
+    root.position.set(0, -0.7, 0.02);
+    const handle = MeshBuilder.CreateCylinder("PickaxeHandle", { height: 0.78, diameter: 0.06, tessellation: 8 }, scene);
+    this.part("PickaxeHandle", handle, wood, root, new Vector3(0, 0.28, 0));
+    const head = MeshBuilder.CreateCylinder("PickaxeHead", { height: 0.48, diameterTop: 0.045, diameterBottom: 0.09, tessellation: 8 }, scene);
+    head.rotation.z = Math.PI / 2;
+    this.part("PickaxeHead", head, metal, root, new Vector3(0, 0.64, 0));
+    return root;
   }
 
   private limb(scene: Scene, name: string, x: number, y: number, endMaterial: StandardMaterial, upperMaterial: StandardMaterial, leg: boolean): TransformNode {

@@ -5,6 +5,7 @@ import type { CollisionWorld } from "../collision/CollisionWorld";
 import { PlayerAnimator } from "./PlayerAnimator";
 import { PlayerMovement } from "./PlayerMovement";
 import { PlayerVisual } from "./PlayerVisual";
+import type { HarvestPhase, HarvestTool } from "../harvesting/HarvestingTypes";
 
 export class Player {
   readonly visual: PlayerVisual;
@@ -36,4 +37,20 @@ export class Player {
 
   applyCalibration(): void { this.visual.setHeight(this.config.player.visualHeight); }
   requestFacing(targetPosition: Readonly<Vector3>): void { this.movement.requestFacing(targetPosition); }
+  stopMovement(): void { this.movement.stop(); }
+
+  isFacing(targetPosition: Readonly<Vector3>, toleranceRad: number): boolean {
+    const dx = targetPosition.x - this.position.x;
+    const dz = targetPosition.z - this.position.z;
+    if (dx * dx + dz * dz < 0.0001) return true;
+    const targetYaw = Math.atan2(dx, dz);
+    const difference = Math.atan2(Math.sin(targetYaw - this.facingYaw), Math.cos(targetYaw - this.facingYaw));
+    return Math.abs(difference) <= toleranceRad;
+  }
+
+  applyHarvestPose(tool: HarvestTool, progress: number, phase: HarvestPhase): void {
+    this.animator.applyHarvestPose(tool, progress, phase);
+  }
+
+  clearHarvestPose(): void { this.animator.clearHarvestPose(); }
 }

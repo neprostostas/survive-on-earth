@@ -14,6 +14,8 @@ import { GAME_CONFIG } from "../config/gameConfig";
 import type { InteractionSystem } from "../interaction/InteractionSystem";
 import type { World } from "../world/World";
 import type { PostProcessing } from "../rendering/PostProcessing";
+import type { HarvestingSystem } from "../harvesting/HarvestingSystem";
+import type { ResourceResultFeedback } from "../ui/ResourceResultFeedback";
 
 export class DebugOverlay {
   private visible = false;
@@ -26,6 +28,7 @@ export class DebugOverlay {
   private readonly interactionTargetRadius: Mesh;
   private grid: WorldGrid;
   private obstacleMeshes: Mesh[] = [];
+  private obstacleCount = -1;
   private readonly wireMaterial: StandardMaterial;
 
   constructor(
@@ -35,6 +38,8 @@ export class DebugOverlay {
     private readonly player: Player,
     private readonly collision: CollisionWorld,
     private readonly interaction: InteractionSystem,
+    private readonly harvesting: HarvestingSystem,
+    private readonly itemResults: ResourceResultFeedback,
     private readonly world: World,
     private readonly postProcessing: PostProcessing,
     private readonly config: CalibrationConfig,
@@ -72,6 +77,7 @@ export class DebugOverlay {
   toggle(): void { this.visible = !this.visible; this.applyVisibility(); }
 
   refreshObstacles(): void {
+    this.obstacleCount = this.collision.obstacles.length;
     if (Math.abs(this.grid.cellSize - this.config.world.gridCellSize) > 0.0001) {
       this.grid.dispose();
       this.grid = new WorldGrid(this.scene, GAME_CONFIG.worldSize, this.config.world.gridCellSize);
@@ -91,6 +97,7 @@ export class DebugOverlay {
 
   update(): void {
     if (!this.visible) return;
+    if (this.obstacleCount !== this.collision.obstacles.length) this.refreshObstacles();
     const position = this.player.position;
     const yaw = this.player.visual.root.rotation.y;
     const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
@@ -100,6 +107,8 @@ export class DebugOverlay {
     MeshBuilder.CreateLines("DebugVelocity", { points: [position.add(new Vector3(0, 0.18, 0)), position.add(this.player.movement.velocity.scale(0.45)).add(new Vector3(0, 0.18, 0))], instance: this.velocityLine });
     const velocity = this.player.movement.velocity;
     const interactionState = this.interaction.state;
+    const harvestingState = this.harvesting.state;
+    const lastItemResult = this.itemResults.lastResult;
     this.interactionRange.position.set(position.x, 0.09, position.z);
     this.interactionRange.scaling.set(this.config.interaction.range, 1, this.config.interaction.range);
     const interactionTarget = this.interaction.target;
@@ -125,6 +134,26 @@ export class DebugOverlay {
       `RANGE ${this.config.interaction.range.toFixed(2)}`,
       `CANDIDATES ${interactionState.candidateCount}`,
       `LAST ${interactionState.lastInteractionId ?? "none"}`,
+      "",
+      "HARVESTING",
+      `TARGET ${harvestingState.targetId ?? "none"}`,
+      `RESOURCE ${harvestingState.resourceKind ?? "-"}`,
+      `TOOL ${harvestingState.requiredTool ?? "-"}`,
+      `AVAILABLE ${harvestingState.requiredTool ? (harvestingState.toolAvailable ? "yes" : "no") : "-"}`,
+      `HITS ${harvestingState.targetId ? `${harvestingState.remainingHits} / ${harvestingState.totalHits}` : "-"}`,
+      `STATE ${this.harvesting.active ? "swinging" : "idle"}`,
+      `PHASE ${harvestingState.phase}`,
+      `HELD ${harvestingState.actionHeld ? "true" : "false"}`,
+      `LOCKED ${harvestingState.targetLocked ? "true" : "false"}`,
+      `DEPLETED ${harvestingState.lastResourceDepleted ?? "none"}`,
+      "",
+      "ITEM SYSTEM",
+      `DEFINITIONS ${this.itemResults.definitionCount}`,
+      `RESULTS ${this.itemResults.resultCount}`,
+      `SOURCE ${lastItemResult?.sourceId ?? "none"}`,
+      `ITEM ${lastItemResult?.itemId ?? "-"}`,
+      `QUANTITY ${lastItemResult?.quantity ?? "-"}`,
+      `STACKS ${lastItemResult ? `[${lastItemResult.stacks.map((stack) => stack.quantity).join(", ")}]` : "-"}`,
       "",
       "VISUAL",
       `QUALITY ${this.config.visual.qualityPreset.toUpperCase()}`,

@@ -18,11 +18,14 @@ import { ProceduralTextureFactory } from "../rendering/ProceduralTextureFactory"
 import { GroundSurface } from "./detail/GroundSurface";
 import { GroundClutter } from "./detail/GroundClutter";
 import { getVisualQualitySettings } from "../config/visualQualityConfig";
+import { HarvestableResource } from "../harvesting/HarvestableResource";
+import { HarvestImpactEffects } from "./detail/HarvestImpactEffects";
 
 interface FloorTile { mesh: Mesh; gridX: number; gridZ: number }
 
 export class TestLocation {
   readonly interactables: Interactable[] = [];
+  readonly harvestables: HarvestableResource[] = [];
   private readonly materials: WorldMaterials;
   private readonly trees: TreeObject[] = [];
   private readonly rocks: RockObject[] = [];
@@ -34,6 +37,7 @@ export class TestLocation {
   private readonly textures: ProceduralTextureFactory;
   private readonly ground: GroundSurface;
   private readonly clutter: GroundClutter;
+  private readonly harvestEffects: HarvestImpactEffects;
   private crate!: CrateObject;
   private campfire!: CampfireObject;
   private visualTime = 0;
@@ -48,6 +52,7 @@ export class TestLocation {
     this.materials = createWorldMaterials(scene, this.textures);
     this.ground = new GroundSurface(scene, this.textures, config);
     this.clutter = new GroundClutter(scene, this.materials, config);
+    this.harvestEffects = new HarvestImpactEffects(scene, this.materials);
     this.createForest();
     this.createHouse();
     this.createProps();
@@ -56,6 +61,8 @@ export class TestLocation {
   }
 
   get clutterCount(): number { return this.clutter.count; }
+
+  removeResourceCollision(resourceId: string): void { this.collision.remove(resourceId); }
 
   applyCalibration(): void {
     for (const tree of this.trees) tree.root.scaling.setAll(tree.baseScale * this.config.world.treeScale);
@@ -85,6 +92,8 @@ export class TestLocation {
       tree.foliageRoot.rotation.x = Math.cos(this.visualTime * 0.58 + tree.swayPhase) * sway * 0.022;
     }
     for (const bush of this.bushes) bush.root.rotation.z = Math.sin(this.visualTime * 0.8 + bush.swayPhase) * sway * 0.018;
+    for (const resource of this.harvestables) resource.updateVisual(delta);
+    this.harvestEffects.update(delta);
     this.campfire.update(delta, getVisualQualitySettings(this.config.visual.qualityPreset).fireComplexity);
   }
 
@@ -97,26 +106,52 @@ export class TestLocation {
       const tree = createTree(this.scene, this.materials, x, z, index);
       this.trees.push(tree);
       this.staticCasters.push(...tree.meshes.filter((mesh) => !mesh.name.includes("ContactShadow")));
-      this.interactables.push(createInteractable({
+      const resource = new HarvestableResource({
         id: `tree-${String(index + 1).padStart(2, "0")}`,
-        type: "resource",
+        kind: "pine-tree",
         position: () => tree.root.position,
         radius: () => tree.radius * tree.baseScale * this.config.world.treeScale,
-        enabled: () => !tree.root.isDisposed() && tree.root.isEnabled(),
-      }));
+        visualEnabled: () => !tree.root.isDisposed() && tree.root.isEnabled(),
+        visual: {
+          impact: (_playerPosition, strength, particleIntensity) => {
+            tree.impact(strength);
+            this.harvestEffects.spawn("pine-tree", tree.root.position, particleIntensity);
+          },
+          deplete: (playerPosition, strength, particleIntensity) => {
+            tree.deplete(playerPosition.x, playerPosition.z, strength);
+            this.harvestEffects.spawn("pine-tree", tree.root.position, particleIntensity, true);
+          },
+          update: (delta) => { tree.updateHarvest(delta); },
+        },
+      });
+      this.harvestables.push(resource);
+      this.interactables.push(resource);
     });
     const rocks = [[-5,0],[-5,8],[3,10],[7,5],[3,-2],[-12,-7],[13,-7],[-13,14],[6,17],[17,11]];
     rocks.forEach(([x, z], index) => {
       const rock = createRock(this.scene, this.materials, x, z, index);
       this.rocks.push(rock);
       this.staticCasters.push(...rock.meshes.filter((mesh) => !mesh.name.includes("ContactShadow")));
-      this.interactables.push(createInteractable({
+      const resource = new HarvestableResource({
         id: `rock-${String(index + 1).padStart(2, "0")}`,
-        type: "resource",
+        kind: "limestone-rock",
         position: () => rock.root.position,
         radius: () => rock.radius * rock.baseScale * this.config.world.rockScale,
-        enabled: () => !rock.root.isDisposed() && rock.root.isEnabled(),
-      }));
+        visualEnabled: () => !rock.root.isDisposed() && rock.root.isEnabled(),
+        visual: {
+          impact: (_playerPosition, strength, particleIntensity) => {
+            rock.impact(strength);
+            this.harvestEffects.spawn("limestone-rock", rock.root.position, particleIntensity);
+          },
+          deplete: (_playerPosition, strength, particleIntensity) => {
+            rock.deplete(strength);
+            this.harvestEffects.spawn("limestone-rock", rock.root.position, particleIntensity, true);
+          },
+          update: (delta) => { rock.updateHarvest(delta); },
+        },
+      });
+      this.harvestables.push(resource);
+      this.interactables.push(resource);
     });
     const bushPositions = [[-3,9],[2,12],[-6,4],[6,1],[0,-2],[-11,8]];
     bushPositions.forEach(([x, z], index) => {
@@ -176,8 +211,16 @@ export class TestLocation {
     this.collision.addBox(half + 0.5, 0, 0.5, half, "world boundary");
     this.collision.addBox(0, -half - 0.5, half, 0.5, "world boundary");
     this.collision.addBox(0, half + 0.5, half, 0.5, "world boundary");
-    for (const tree of this.trees) this.collision.addCircle(tree.root.position.x, tree.root.position.z, tree.radius * tree.baseScale * this.config.world.treeScale, "tree");
-    for (const rock of this.rocks) this.collision.addCircle(rock.root.position.x, rock.root.position.z, rock.radius * rock.baseScale * this.config.world.rockScale, "rock");
+    for (let index = 0; index < this.trees.length; index += 1) {
+      const resource = this.harvestables[index];
+      const tree = this.trees[index];
+      if (!resource?.isDepleted) this.collision.addCircle(tree.root.position.x, tree.root.position.z, tree.radius * tree.baseScale * this.config.world.treeScale, resource?.resourceId ?? `tree-${index + 1}`);
+    }
+    for (let index = 0; index < this.rocks.length; index += 1) {
+      const resource = this.harvestables[this.trees.length + index];
+      const rock = this.rocks[index];
+      if (!resource?.isDepleted) this.collision.addCircle(rock.root.position.x, rock.root.position.z, rock.radius * rock.baseScale * this.config.world.rockScale, resource?.resourceId ?? `rock-${index + 1}`);
+    }
     const cell = this.config.world.gridCellSize;
     for (const wall of this.walls) {
       const x = this.houseOrigin.x + wall.gridX * cell;

@@ -1,8 +1,14 @@
 export class PrimaryActionInput {
   private queued = false;
+  private released = false;
+  private held = false;
+  private pointerId: number | null = null;
 
   constructor(private readonly element: HTMLElement) {
     element.addEventListener("pointerdown", this.onPointerDown);
+    window.addEventListener("pointerup", this.onPointerUp);
+    window.addEventListener("pointercancel", this.onPointerUp);
+    window.addEventListener("blur", this.onBlur);
   }
 
   consumePressed(): boolean {
@@ -11,11 +17,41 @@ export class PrimaryActionInput {
     return pressed;
   }
 
-  dispose(): void { this.element.removeEventListener("pointerdown", this.onPointerDown); }
+  consumeReleased(): boolean {
+    const released = this.released;
+    this.released = false;
+    return released;
+  }
+
+  get isHeld(): boolean { return this.held; }
+
+  dispose(): void {
+    this.element.removeEventListener("pointerdown", this.onPointerDown);
+    window.removeEventListener("pointerup", this.onPointerUp);
+    window.removeEventListener("pointercancel", this.onPointerUp);
+    window.removeEventListener("blur", this.onBlur);
+  }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (this.pointerId !== null) return;
     event.preventDefault();
+    this.pointerId = event.pointerId;
+    this.held = true;
     this.queued = true;
+    this.element.setPointerCapture?.(event.pointerId);
+  };
+
+  private readonly onPointerUp = (event: PointerEvent): void => {
+    if (event.pointerId !== this.pointerId) return;
+    this.pointerId = null;
+    this.held = false;
+    this.released = true;
+  };
+
+  private readonly onBlur = (): void => {
+    this.pointerId = null;
+    this.released = this.held;
+    this.held = false;
   };
 }

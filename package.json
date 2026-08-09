@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "test:interaction": "node --experimental-strip-types scripts/verifyInteraction.mjs",
     "test:fidelity": "node --experimental-strip-types scripts/verifyFidelity.mjs",
+    "test:harvesting": "node --experimental-strip-types scripts/verifyHarvesting.mjs",
+    "test:items": "node --experimental-strip-types scripts/verifyItems.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

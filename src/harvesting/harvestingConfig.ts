@@ -1,0 +1,1 @@
+export const HARVEST_FACING_TOLERANCE_RAD = 0.3;

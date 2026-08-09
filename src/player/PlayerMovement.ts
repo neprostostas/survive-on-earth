@@ -48,6 +48,8 @@ export class PlayerMovement {
     if (dx * dx + dz * dz > 0.0001) this.requestedFacingYaw = Math.atan2(dx, dz);
   }
 
+  stop(): void { this.velocity.setAll(0); }
+
   private moveVelocityToward(target: Vector3, maxDelta: number): void {
     const difference = target.subtract(this.velocity);
     const distance = difference.length();

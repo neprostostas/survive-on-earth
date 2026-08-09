@@ -2,6 +2,7 @@ import { Vector2 } from "@babylonjs/core/Maths/math.vector";
 import { KeyboardInput } from "./KeyboardInput";
 import { VirtualJoystick } from "./VirtualJoystick";
 import { PrimaryActionInput } from "./PrimaryActionInput";
+import type { PrimaryActionState } from "../harvesting/HarvestingTypes";
 
 export class InputController {
   private readonly keyboard = new KeyboardInput();
@@ -22,10 +23,16 @@ export class InputController {
     return combined;
   }
 
-  consumePrimaryAction(): boolean {
+  consumePrimaryActionState(): PrimaryActionState {
     const keyboardPressed = this.keyboard.consumePrimaryAction();
     const pointerPressed = this.primaryAction.consumePressed();
-    return keyboardPressed || pointerPressed;
+    const keyboardReleased = this.keyboard.consumePrimaryActionReleased();
+    const pointerReleased = this.primaryAction.consumeReleased();
+    return {
+      pressedThisFrame: keyboardPressed || pointerPressed,
+      isHeld: this.keyboard.isPrimaryActionHeld || this.primaryAction.isHeld,
+      releasedThisFrame: keyboardReleased || pointerReleased,
+    };
   }
 
   dispose(): void { this.keyboard.dispose(); this.joystick.dispose(); this.primaryAction.dispose(); }

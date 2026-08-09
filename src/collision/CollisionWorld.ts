@@ -15,6 +15,13 @@ export class CollisionWorld {
     this.obstacles.push({ kind: "box", x, z, halfX, halfZ, label });
   }
 
+  remove(label: string): boolean {
+    const index = this.obstacles.findIndex((obstacle) => obstacle.label === label);
+    if (index < 0) return false;
+    this.obstacles.splice(index, 1);
+    return true;
+  }
+
   move(position: Vector3, displacement: Vector3, radius: number): Vector3 {
     const result = position.add(displacement);
     for (let pass = 0; pass < 3; pass += 1) {

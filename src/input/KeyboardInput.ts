@@ -2,7 +2,10 @@ import { Vector2 } from "@babylonjs/core/Maths/math.vector";
 
 export class KeyboardInput {
   private readonly pressed = new Set<string>();
+  private readonly primaryActionKeys = new Set<string>();
   private primaryActionQueued = false;
+  private primaryActionReleased = false;
+  private primaryActionHeld = false;
 
   constructor() {
     window.addEventListener("keydown", this.onKeyDown);
@@ -24,6 +27,14 @@ export class KeyboardInput {
     return queued;
   }
 
+  consumePrimaryActionReleased(): boolean {
+    const released = this.primaryActionReleased;
+    this.primaryActionReleased = false;
+    return released;
+  }
+
+  get isPrimaryActionHeld(): boolean { return this.primaryActionHeld; }
+
   dispose(): void {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
@@ -34,6 +45,8 @@ export class KeyboardInput {
     if ((event.code === "KeyE" || event.code === "Space") && !event.repeat) {
       event.preventDefault();
       this.primaryActionQueued = true;
+      this.primaryActionKeys.add(event.code);
+      this.primaryActionHeld = this.primaryActionKeys.size > 0;
       return;
     }
     if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) {
@@ -42,6 +55,20 @@ export class KeyboardInput {
     }
   };
 
-  private readonly onKeyUp = (event: KeyboardEvent): void => { this.pressed.delete(event.code); };
-  private readonly clear = (): void => { this.pressed.clear(); this.primaryActionQueued = false; };
+  private readonly onKeyUp = (event: KeyboardEvent): void => {
+    this.pressed.delete(event.code);
+    if (event.code === "KeyE" || event.code === "Space") {
+      event.preventDefault();
+      this.primaryActionKeys.delete(event.code);
+      if (this.primaryActionHeld && this.primaryActionKeys.size === 0) this.primaryActionReleased = true;
+      this.primaryActionHeld = this.primaryActionKeys.size > 0;
+    }
+  };
+  private readonly clear = (): void => {
+    this.pressed.clear();
+    this.primaryActionQueued = false;
+    this.primaryActionReleased = this.primaryActionHeld;
+    this.primaryActionKeys.clear();
+    this.primaryActionHeld = false;
+  };
 }

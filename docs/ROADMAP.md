@@ -4,9 +4,9 @@
 02. Interaction System — complete
 V1. LDOE Visual Quality Overhaul — implemented; browser visual review pending
 F1. LDOE Fidelity Audit & Alignment — implemented; F3 manual reference alignment available
-03. Harvestable Resources
-04. Item System
-05. Ground Loot
+03. Harvestable Resources — complete
+04. Item System / Resource Results — complete
+05. Ground Loot & Pickup
 06. Inventory
 07. Equipment
 08. Crafting
@@ -27,4 +27,4 @@ F1. LDOE Fidelity Audit & Alignment — implemented; F3 manual reference alignme
 23. UI Polish
 24. Balancing
 
-Fidelity Milestone F1 is the current completed scope. Milestone 03 has not started.
+Milestone 04 is complete. The next planned scope is Milestone 05 — Ground Loot & Pickup.

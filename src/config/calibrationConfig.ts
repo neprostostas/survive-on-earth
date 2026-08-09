@@ -37,6 +37,15 @@ export interface CalibrationConfig {
     facingTieDistance: number;
     indicatorFadeSpeed: number;
   };
+  harvesting: {
+    hatchetSwingDuration: number;
+    hatchetImpactTiming: number;
+    pickaxeSwingDuration: number;
+    pickaxeImpactTiming: number;
+    movementCancelThreshold: number;
+    hitReactionStrength: number;
+    particleIntensity: number;
+  };
   visual: {
     qualityPreset: VisualQualityPreset;
     groundDetail: number;
@@ -84,6 +93,15 @@ export const DEFAULT_CALIBRATION: CalibrationConfig = {
     facingTieDistance: 0.08,
     indicatorFadeSpeed: 10,
   },
+  harvesting: {
+    hatchetSwingDuration: 1.1,
+    hatchetImpactTiming: 0.5,
+    pickaxeSwingDuration: 0.98,
+    pickaxeImpactTiming: 0.49,
+    movementCancelThreshold: 0.18,
+    hitReactionStrength: 0.55,
+    particleIntensity: 0.65,
+  },
   visual: {
     qualityPreset: "high",
     groundDetail: 1,
@@ -122,6 +140,7 @@ export function loadCalibration(storage: Storage): CalibrationConfig {
       world: { ...DEFAULT_CALIBRATION.world, ...loaded.world },
       lighting: { ...DEFAULT_CALIBRATION.lighting, ...loaded.lighting },
       interaction: { ...DEFAULT_CALIBRATION.interaction, ...loaded.interaction },
+      harvesting: { ...DEFAULT_CALIBRATION.harvesting, ...loaded.harvesting },
       visual: {
         ...DEFAULT_CALIBRATION.visual,
         ...loadedVisualValues,

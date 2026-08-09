@@ -15,6 +15,10 @@ import { InteractionSystem } from "../interaction/InteractionSystem";
 import { PostProcessing } from "../rendering/PostProcessing";
 import { GameLoop } from "./GameLoop";
 import { FidelityMode } from "../debug/FidelityMode";
+import { PrototypeToolLoadout } from "../harvesting/PrototypeToolLoadout";
+import { HarvestingSystem } from "../harvesting/HarvestingSystem";
+import { HarvestableResource } from "../harvesting/HarvestableResource";
+import { ResourceResultFeedback } from "../ui/ResourceResultFeedback";
 
 export class Game {
   private readonly engine: Engine;
@@ -27,6 +31,9 @@ export class Game {
   private readonly world: World;
   private readonly player: Player;
   private readonly interaction: InteractionSystem;
+  private readonly harvesting: HarvestingSystem;
+  private readonly resultFeedback: ResourceResultFeedback;
+  private readonly prototypeTools = new PrototypeToolLoadout();
   private readonly hud: HUD;
   private readonly input: InputController;
   private readonly calibration: CalibrationPanel;
@@ -46,10 +53,14 @@ export class Game {
     this.player = new Player(this.scene, this.collision, this.config);
     for (const mesh of this.player.visual.meshes) this.lighting.addCaster(mesh);
     this.hud = new HUD(uiRoot);
+    this.resultFeedback = new ResourceResultFeedback(uiRoot, this.scene, this.engine);
     this.input = new InputController(this.hud.joystick, this.hud.primaryAction, GAME_CONFIG.joystickDeadZone);
     this.interaction = new InteractionSystem(this.scene, this.world.interactables, this.config);
-    this.debug = new DebugOverlay(uiRoot, this.scene, this.engine, this.player, this.collision, this.interaction, this.world, this.postProcessing, this.config);
-    this.calibration = new CalibrationPanel(uiRoot, this.config, () => { this.applyCalibration(); });
+    this.harvesting = new HarvestingSystem(this.config, this.prototypeTools, this.player, this.interaction, this.resultFeedback, (resource) => {
+      this.world.removeResourceCollision(resource.resourceId);
+    });
+    this.debug = new DebugOverlay(uiRoot, this.scene, this.engine, this.player, this.collision, this.interaction, this.harvesting, this.resultFeedback, this.world, this.postProcessing, this.config);
+    this.calibration = new CalibrationPanel(uiRoot, this.config, this.prototypeTools, () => { this.applyCalibration(); });
     this.fidelity = new FidelityMode(uiRoot, () => { /* Freeze state is read in the frame loop. */ });
     this.loop = new GameLoop(this.engine, (delta) => { this.update(delta); });
     window.addEventListener("resize", this.onResize);
@@ -65,15 +76,24 @@ export class Game {
 
   private update(delta: number): void {
     const frameDelta = this.fidelity.motionFrozen ? 0 : delta;
-    if (!this.fidelity.motionFrozen) this.player.update(delta, this.input.getMovement(), this.camera.screenRight, this.camera.screenUp);
+    const movement = this.input.getMovement();
+    const action = this.input.consumePrimaryActionState();
+    if (!this.fidelity.motionFrozen) this.player.update(delta, movement, this.camera.screenRight, this.camera.screenUp);
     this.world.update(frameDelta);
     this.interaction.update(frameDelta, this.player.position, this.player.facingYaw);
-    this.hud.updateMinimap(this.player.position, this.player.facingYaw, this.world.interactables);
-    this.hud.setPrimaryActionAvailable(this.interaction.hasTarget);
-    if (!this.fidelity.motionFrozen && this.input.consumePrimaryAction()) {
-      this.interaction.tryInteract(this.player.position, (targetPosition) => { this.player.requestFacing(targetPosition); });
+    if (!this.fidelity.motionFrozen) {
+      const harvestingConsumed = this.harvesting.update(delta, action, movement, this.player.position);
+      if (action.pressedThisFrame && !harvestingConsumed) {
+        this.interaction.tryInteract(this.player.position, (targetPosition) => { this.player.requestFacing(targetPosition); });
+      }
     }
+    this.hud.updateMinimap(this.player.position, this.player.facingYaw, this.world.interactables);
+    const target = this.interaction.target;
+    if (target instanceof HarvestableResource) {
+      this.hud.setPrimaryActionContext(target.requiredTool, this.prototypeTools.hasTool(target.requiredTool), this.harvesting.state.unavailableFeedback);
+    } else this.hud.setPrimaryActionContext(target ? "generic" : "none");
     this.camera.update(frameDelta, this.player.position);
+    this.resultFeedback.update(frameDelta);
     this.debug.update();
     this.scene.render();
   }
