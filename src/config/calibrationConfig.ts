@@ -103,13 +103,13 @@ export const DEFAULT_CALIBRATION: CalibrationConfig = {
     particleIntensity: 0.65,
   },
   visual: {
-    qualityPreset: "high",
+    qualityPreset: "ultra",
     groundDetail: 1,
     dirtIntensity: 0.78,
     clutterDensity: 0.72,
     foliageSway: 0.12,
     contactShadowIntensity: 0.32,
-    postProcessIntensity: 0.16,
+    postProcessIntensity: 0.06,
   },
 };
 
@@ -144,9 +144,12 @@ export function loadCalibration(storage: Storage): CalibrationConfig {
       visual: {
         ...DEFAULT_CALIBRATION.visual,
         ...loadedVisualValues,
-        qualityPreset: isVisualQualityPreset(loadedVisual?.qualityPreset)
-          ? loadedVisual.qualityPreset
-          : DEFAULT_CALIBRATION.visual.qualityPreset,
+        qualityPreset: (() => {
+          if (!isVisualQualityPreset(loadedVisual?.qualityPreset)) return DEFAULT_CALIBRATION.visual.qualityPreset;
+          // Migrating into v7: previous package default was "high"; adopt "ultra" once.
+          if (!currentRaw && loadedVisual?.qualityPreset === "high") return "ultra";
+          return loadedVisual.qualityPreset;
+        })(),
       },
     };
   } catch {

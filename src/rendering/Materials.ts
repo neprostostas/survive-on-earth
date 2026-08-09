@@ -1,5 +1,6 @@
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Scene } from "@babylonjs/core/scene";
 import type { ProceduralTextureFactory } from "./ProceduralTextureFactory";
 
@@ -28,18 +29,27 @@ function matte(scene: Scene, name: string, color: Color3): StandardMaterial {
   return material;
 }
 
+function sharpenDiffuse(material: StandardMaterial): void {
+  const texture = material.diffuseTexture;
+  if (!texture) return;
+  texture.anisotropicFilteringLevel = 16;
+  texture.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+}
+
 export function createWorldMaterials(scene: Scene, textures: ProceduralTextureFactory): WorldMaterials {
   const bark = textures.createBarkTexture();
   const woodTexture = textures.createWoodTexture();
   const trunk = matte(scene, "trunk", new Color3(0.42, 0.30, 0.18));
   trunk.diffuseTexture = bark;
   trunk.specularPower = 24;
+  sharpenDiffuse(trunk);
   const wood = matte(scene, "utilityWood", new Color3(0.72, 0.58, 0.39));
   wood.diffuseTexture = woodTexture;
   wood.specularPower = 32;
-  const contactShadow = matte(scene, "contactShadow", Color3.Black());
+  sharpenDiffuse(wood);
+    const contactShadow = matte(scene, "contactShadow", Color3.Black());
   contactShadow.opacityTexture = textures.createSoftCircleTexture();
-  contactShadow.alpha = 0.32;
+  contactShadow.alpha = 0.22;
   contactShadow.disableLighting = true;
   contactShadow.backFaceCulling = false;
   const flameAmber = matte(scene, "flameAmber", new Color3(1, 0.42, 0.05));

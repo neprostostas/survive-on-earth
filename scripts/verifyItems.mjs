@@ -31,8 +31,19 @@ for (const id of ["hatchet", "pickaxe"]) {
   assert.equal(definition.category, "tool");
   assert.equal(definition.maxStack, 1);
   assert.equal(definition.equipment, undefined);
+  assert.equal(definition.maxDurability, 50, `${id} catalog maxDurability must be 50`);
+  assert.deepEqual(createItemStack(id, 1), { itemId: id, quantity: 1, currentDurability: 50 });
   assert.throws(() => createItemStack(id, 2), RangeError, `${id} is non-stackable`);
+  assert.throws(() => createItemStack(id, 1, { currentDurability: 0 }), RangeError);
+  assert.throws(() => createItemStack(id, 1, { currentDurability: 51 }), RangeError);
+  assert.throws(() => createItemStack(id, 1, { currentDurability: -1 }), RangeError);
 }
+assert.throws(() => createItemStack("pine-log", 1, { currentDurability: 1 }), RangeError, "resources cannot have durability");
+assert.equal(createItemStack("pine-log", 3).currentDurability, undefined);
+assert.throws(
+  () => mergeItemStacks(createItemStack("hatchet", 1), createItemStack("hatchet", 1)),
+  /merge durable tool/,
+);
 
 for (const [quantity, expected] of [[1, [1]], [20, [20]], [21, [20, 1]], [40, [20, 20]], [47, [20, 20, 7]]]) {
   assert.deepEqual(createItemStacks("pine-log", quantity).map((stack) => stack.quantity), expected, `pine-log split ${quantity}`);

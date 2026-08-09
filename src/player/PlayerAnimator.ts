@@ -2,7 +2,8 @@ import { Scalar } from "@babylonjs/core/Maths/math.scalar";
 import type { PlayerVisual } from "./PlayerVisual";
 import type { HarvestPhase, HarvestTool } from "../harvesting/HarvestingTypes";
 import type { FistSide } from "../combat/MeleeCombatSystem";
-import { FISTS_COMBAT_PROFILE } from "../combat/combatConfig";
+import type { MeleeCombatProfile } from "../combat/MeleeCombatProfile";
+import { UNARMED_MELEE_PROFILE } from "../combat/MeleeCombatProfile";
 
 export class PlayerAnimator {
   private time = 0;
@@ -69,9 +70,47 @@ export class PlayerAnimator {
     this.visual.rightArm.rotation.z = 0;
   }
 
+  applyMeleeAttackPose(progress: number, profile: MeleeCombatProfile, fist: FistSide): void {
+    if (profile.source === "fists") {
+      this.applyFistAttackPose(progress, fist);
+      return;
+    }
+    // Keep equipped tool visible; procedural right-arm strike aligned to impact window.
+    const impactAt = profile.impactNormalizedTime;
+    const windup = Math.min(1, progress / impactAt);
+    const recovery = Math.max(0, (progress - impactAt) / (1 - impactAt));
+    const strike = progress <= impactAt ? this.smooth(windup) : 1 - this.smooth(recovery);
+    if (profile.source === "hatchet") {
+      this.visual.rightArm.rotation.x = -1.35 + strike * 2.3;
+      this.visual.leftArm.rotation.x = -0.55 + strike * 0.35;
+      this.visual.rightArm.rotation.z = -0.16;
+      this.visual.leftArm.rotation.z = 0.12;
+      this.visual.bodyPivot.rotation.y = -0.2 + strike * 0.38;
+      this.visual.bodyPivot.rotation.x = 0.05 + strike * 0.12;
+    } else {
+      this.visual.rightArm.rotation.x = -1.7 + strike * 2.6;
+      this.visual.leftArm.rotation.x = -0.7 + strike * 0.4;
+      this.visual.rightArm.rotation.z = -0.1;
+      this.visual.leftArm.rotation.z = 0.1;
+      this.visual.bodyPivot.rotation.x = -0.06 + strike * 0.22;
+      this.visual.bodyPivot.rotation.y = 0.06;
+    }
+    this.visual.bodyPivot.position.y = -Math.sin(Math.PI * Math.min(1, progress)) * 0.022;
+  }
+
+  clearMeleeAttackPose(): void {
+    this.visual.setUnarmedAttackVisual(false);
+    this.visual.leftArm.rotation.set(0, 0, 0);
+    this.visual.rightArm.rotation.set(0, 0, 0);
+    this.visual.bodyPivot.rotation.set(0, 0, 0);
+    this.visual.bodyPivot.position.y = 0;
+  }
+
+  /** Unarmed only — hides tools for punch pose. */
   applyFistAttackPose(progress: number, fist: FistSide): void {
-    this.visual.hideHarvestTool();
-    const impactAt = FISTS_COMBAT_PROFILE.impactNormalizedTime;
+    void UNARMED_MELEE_PROFILE;
+    this.visual.setUnarmedAttackVisual(true);
+    const impactAt = UNARMED_MELEE_PROFILE.impactNormalizedTime;
     const windup = Math.min(1, progress / impactAt);
     const recovery = Math.max(0, (progress - impactAt) / (1 - impactAt));
     const extension = progress <= impactAt ? this.smooth(windup) : 1 - this.smooth(recovery);
@@ -89,10 +128,7 @@ export class PlayerAnimator {
   }
 
   clearFistAttackPose(): void {
-    this.visual.leftArm.rotation.set(0, 0, 0);
-    this.visual.rightArm.rotation.set(0, 0, 0);
-    this.visual.bodyPivot.rotation.set(0, 0, 0);
-    this.visual.bodyPivot.position.y = 0;
+    this.clearMeleeAttackPose();
   }
 
   private smooth(value: number): number { return value * value * (3 - 2 * value); }

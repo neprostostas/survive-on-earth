@@ -1,9 +1,7 @@
-export const FISTS_COMBAT_PROFILE = Object.freeze({
-  damage: 6,
-  attacksPerSecond: 1.8,
-  cycleDuration: 1 / 1.8,
-  impactNormalizedTime: 0.38,
-});
+import { UNARMED_MELEE_PROFILE } from "./MeleeCombatProfile.ts";
+
+/** @deprecated Prefer UNARMED_MELEE_PROFILE — kept for M09-era imports. */
+export const FISTS_COMBAT_PROFILE = UNARMED_MELEE_PROFILE;
 
 export const COMBAT_CONFIG = Object.freeze({
   targetAcquisitionRange: 2.2,

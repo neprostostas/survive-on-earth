@@ -105,12 +105,18 @@ function combatHarness(targetPosition = { x: 0.8, y: 0, z: 0 }) {
     clears: 0,
     getCombatPosition() { return this.position; },
     faceCombatTarget(position) { this.faced = position; },
-    applyFistAttackPose(progress, fist) { this.poses.push({ progress, fist }); },
-    clearFistAttackPose() { this.clears += 1; },
+    applyMeleeAttackPose(progress, _profile, fist) { this.poses.push({ progress, fist }); },
+    clearMeleeAttackPose() { this.clears += 1; },
   };
   let beforeCount = 0;
   const impacts = [];
-  const combat = new MeleeCombatSystem(targets, player, () => { beforeCount += 1; }, (impact) => { impacts.push(impact); });
+  const combat = new MeleeCombatSystem(
+    targets,
+    player,
+    () => FISTS_COMBAT_PROFILE,
+    () => { beforeCount += 1; },
+    (impact) => { impacts.push(impact); },
+  );
   targets.update(player.position);
   return { targets, target, player, impacts, combat, get beforeCount() { return beforeCount; } };
 }
@@ -178,10 +184,10 @@ lockTargets.register(lockB);
 const lockPlayer = {
   position: { x: 0, y: 0, z: 0 }, poses: [],
   getCombatPosition() { return this.position; }, faceCombatTarget() {},
-  applyFistAttackPose(progress, fist) { this.poses.push({ progress, fist }); }, clearFistAttackPose() {},
+  applyMeleeAttackPose(progress, _profile, fist) { this.poses.push({ progress, fist }); }, clearMeleeAttackPose() {},
 };
 const lockImpacts = [];
-const lockCombat = new MeleeCombatSystem(lockTargets, lockPlayer, () => {}, (impact) => { lockImpacts.push(impact); });
+const lockCombat = new MeleeCombatSystem(lockTargets, lockPlayer, () => FISTS_COMBAT_PROFILE, () => {}, (impact) => { lockImpacts.push(impact); });
 assert.equal(lockTargets.update(lockPlayer.position), lockA);
 lockCombat.requestAttack();
 lockPlayer.position = { x: -0.2, y: 0, z: 0 };
@@ -260,9 +266,11 @@ assert.equal(pointerSource.includes("setInterval"), false, "holding HUD Attack c
 assert.equal(pointerSource.includes("this.pointerId !== null"), true, "one pointer hold queues at most one press");
 assert.equal(debugSource.includes('"COMBAT"'), true);
 assert.equal(/weapon|tool|mainHand|offHand/.test(equipmentSource), false, "equipment slots remain armor-only");
-assert.equal(/durability/.test(harvestToolsSource), false);
+assert.equal(harvestToolsSource.includes("consumeImpactUse"), true, "harvest tools spend inventory durability on impact");
 assert.equal(meleeSource.includes("hatchet"), false);
 assert.equal(meleeSource.includes("pickaxe"), false);
+assert.equal(meleeSource.includes("consumeImpactUse"), false);
+assert.equal(meleeSource.includes("currentDurability"), false);
 assert.equal(/critical|sneak|combo|autoAttack|enemyAI|pathfinding|playerDamage|lootTable/i.test(meleeSource), false, "M09 melee domain must stay unarmed and deterministic");
 
 console.log("Combat verification passed (health, targeting, timing, locking, input, and boundaries)");

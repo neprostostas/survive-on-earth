@@ -7,7 +7,7 @@ button { font-family: inherit; }
 input, select, textarea { caret-color: #79ad5d; }
 html, body, #game-canvas, #ui-root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 body { touch-action: none; user-select: none; }
-#game-canvas { position: fixed; inset: 0; display: block; outline: none; opacity: 0; transition: opacity .35s ease; }
+#game-canvas { position: fixed; inset: 0; display: block; outline: none; opacity: 0; transition: opacity .35s ease; image-rendering: auto; }
 .game-ready #game-canvas { opacity: 1; }
 #ui-root { position: fixed; inset: 0; pointer-events: none; }
 .hud { position: absolute; inset: 0; }
@@ -58,9 +58,8 @@ body { touch-action: none; user-select: none; }
 .auto-control .auto-icon { width: 42%; height: 42%; margin-top: -.3vh; stroke-width: 1.9; }
 .auto-label { display: block; transform: translateY(.1vh); }
 .top-right-cluster { position: absolute; inset: 0; pointer-events: none; }
-.minimap-shell { position: absolute; left: var(--hud-minimap-x); top: var(--hud-minimap-y); width: var(--hud-minimap-size); height: var(--hud-minimap-size); transform: translate(-50%, -50%); overflow: hidden; border: max(2px, .4vh) solid #dddcc7b3; border-radius: 50%; background: #263127b8; box-shadow: 0 .45vh 1.6vh #10171075, inset 0 0 0 .35vh #11181266; }
-.minimap-canvas { width: 100%; height: 100%; display: block; }
-.minimap-north { position: absolute; left: 50%; top: 3%; transform: translateX(-50%); color: #f0e9c7; font: 800 clamp(7px, 1.4vh, 14px) inherit; text-shadow: 0 1px 2px #111; }
+.minimap-shell { position: absolute; left: var(--hud-minimap-x); top: var(--hud-minimap-y); width: var(--hud-minimap-size); height: var(--hud-minimap-size); transform: translate(-50%, -50%); overflow: hidden; border: max(2px, .4vh) solid #dddcc7b3; border-radius: 50%; background: transparent; box-shadow: 0 .45vh 1.6vh #10171075; }
+.minimap-canvas { width: 100%; height: 100%; display: block; image-rendering: auto; }
 .social-shell, .settings-shell { z-index: 1; width: var(--hud-social-size); height: var(--hud-social-size); transform: translate(-50%, -50%); border-width: 0; background: #283129b8; }
 .social-shell { left: var(--hud-social-x); top: var(--hud-social-y); }
 .settings-shell { left: var(--hud-settings-x); top: var(--hud-settings-y); width: var(--hud-settings-size); height: var(--hud-settings-size); }
@@ -93,6 +92,11 @@ body { touch-action: none; user-select: none; }
 .equipment-slot-content .inventory-item-icon { inset: 0; }
 .equipment-slot-content small { position: absolute; right: -.35vh; bottom: -.45vh; min-width: 2vh; padding: .12vh .25vh; color: #eff5df; border-radius: .25vh; background: #273620e8; font-size: clamp(7px, 1vh, 10px); font-weight: 900; text-align: center; }
 .equipment-slot.occupied { color: #e1e5d2; border-color: #92b87570; background: linear-gradient(145deg, #29372a, #3b4838); }
+.weapon-section { margin-top: 1.2vh; display: grid; gap: .55vh; }
+.weapon-section h3 { margin: 0; font-size: clamp(10px, 1.35vh, 14px); letter-spacing: .12em; color: #c5ccb8; }
+.weapon-slot { width: 100%; border-color: #c7b36b4d; }
+.weapon-slot.occupied { border-color: #d0b35f88; background: linear-gradient(145deg, #373124, #4a4030); }
+.weapon-slot .inventory-durability { position: absolute; left: .3vh; right: .3vh; bottom: .2vh; height: .35vh; }
 .equipment-preview { display: grid; place-items: center; height: 40vh; max-height: 43vw; }
 .equipment-preview svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 .7vh 1.2vh #080d096e); }
 .equipment-preview circle, .equipment-preview path { fill: #67716545; stroke: #b7c1ad4f; stroke-width: 1.4; transition: fill .14s ease, stroke .14s ease; }
@@ -109,6 +113,25 @@ body { touch-action: none; user-select: none; }
 .inventory-item-icon { position: absolute; inset: 14%; display: grid; place-items: center; color: #e6e1c9; }
 .inventory-item-icon svg { width: 100%; height: 100%; fill: #8d836b; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 .25vh .3vh #0a0e0a80); }
 .inventory-quantity { position: absolute; right: .65vh; bottom: .45vh; min-width: 2.1vh; padding: .18vh .35vh; color: #fffde8; border-radius: .3vh; background: #101611d9; font-size: clamp(10px, 1.8vh, 18px); font-weight: 900; line-height: 1; text-align: center; text-shadow: 0 1px 2px #000; }
+.inventory-slot:has(.inventory-durability) .inventory-quantity { bottom: 1.15vh; }
+.inventory-durability {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: .35vh;
+  height: .4vh;
+  border-radius: .2vh;
+  background: #0d120eaa;
+  overflow: hidden;
+  pointer-events: none;
+}
+.inventory-durability::before {
+  content: "";
+  display: block;
+  width: calc(var(--durability, 1) * 100%);
+  height: 100%;
+  background: linear-gradient(90deg, #8f3d2a, #c4a23a 45%, #6fa352);
+}
 .inventory-selection { display: flex; align-items: center; justify-content: space-between; min-height: 6.6vh; gap: 1.2vh; margin-top: 1.5vh; padding: 1vh 1.1vh; border: 1px solid #c7ccb625; border-radius: .5vh; background: #12191470; }
 .inventory-selection > div { display: grid; min-width: 0; gap: .25vh; }
 .selection-name { overflow: hidden; color: #e8e7d8; font-size: clamp(10px, 1.35vh, 14px); letter-spacing: .06em; text-overflow: ellipsis; white-space: nowrap; }

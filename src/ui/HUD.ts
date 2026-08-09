@@ -1,7 +1,6 @@
-import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { Interactable } from "../interaction/Interactable";
 import { applyHudLayoutTokens } from "../config/hudLayoutConfig";
 import { Minimap } from "./Minimap";
+import type { MinimapFrame } from "./minimapTypes";
 import type { HarvestTool } from "../harvesting/HarvestingTypes";
 import type { ItemDefinition } from "../items/ItemDefinition";
 import { ITEM_ICONS } from "./itemIcons";
@@ -44,13 +43,13 @@ export class HUD {
           <span class="auto-label">AUTO</span>
         </button>
         <div class="top-right-cluster">
+          <div class="minimap-shell" aria-label="Local minimap"><canvas class="minimap-canvas"></canvas></div>
           <button class="hud-shell social-shell" type="button" aria-label="Social unavailable" disabled>
             <svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="2.7"/><path d="M3.8 18c.4-3.2 2.1-4.8 5.2-4.8s4.8 1.6 5.2 4.8"/><circle cx="17" cy="9" r="2.1"/><path d="M15.4 13.7c2.9-.8 4.7.6 5 3.4"/></svg>
           </button>
           <button class="hud-shell settings-shell" type="button" aria-label="Settings unavailable" disabled>
             <svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg>
           </button>
-          <div class="minimap-shell" aria-label="Local minimap"><canvas class="minimap-canvas"></canvas><i class="minimap-north">N</i></div>
         </div>
         <div class="actions" aria-label="Action controls">
           <button class="action shell build-action" type="button" aria-label="Building unavailable" disabled><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 20 9.2-9.2M11.7 5.8l2.7-2.7 6.5 6.5-2.7 2.7z"/><path d="m3.5 18.4 2.1 2.1"/></svg></button>
@@ -109,8 +108,8 @@ export class HUD {
     this.craftingToggle.disabled = defeated;
   }
 
-  updateMinimap(player: Readonly<Vector3>, facingYaw: number, interactables: readonly Interactable[]): void {
-    this.minimap.update(player, facingYaw, interactables);
+  updateMinimap(frame: MinimapFrame): void {
+    this.minimap.update(frame);
   }
 
   setPrimaryActionAvailable(available: boolean): void {

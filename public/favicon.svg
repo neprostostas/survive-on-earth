@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Survive on Earth">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8a9a6e"/>
+      <stop offset="55%" stop-color="#6f7d55"/>
+      <stop offset="100%" stop-color="#4f5a3c"/>
+    </linearGradient>
+    <linearGradient id="earth" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6a5638"/>
+      <stop offset="100%" stop-color="#3d3220"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded app tile -->
+  <rect width="32" height="32" rx="7" fill="url(#sky)"/>
+
+  <!-- Far hills -->
+  <path fill="#556345" d="M0 18.5 C5 15.5 8 16 11 18 C14 14.5 18 13.5 22 16.5 C25 14 28 15 32 17.5 L32 22 H0 Z"/>
+
+  <!-- Ground -->
+  <path fill="url(#earth)" d="M0 20.5 C6 19 10 20 14 21.5 C18 19.5 24 19 32 21.5 V32 H0 Z"/>
+
+  <!-- Pine silhouette (reads at 16px) -->
+  <path fill="#1f2618" d="
+    M16 4.2
+    L20.6 10.4 H18.4 L22.2 15.2 H19.6 L23 20 H9 L12.4 15.2 H9.8 L13.6 10.4 H11.4 Z
+  "/>
+  <!-- Trunk -->
+  <rect x="14.7" y="19.6" width="2.6" height="5.2" rx="0.5" fill="#2a2114"/>
+
+  <!-- Soft highlight on crown -->
+  <path fill="#2f3a24" opacity="0.55" d="M16 5.4 L18.8 9.6 H17.2 L19.8 13.8 H18 L16 11.2 Z"/>
+</svg>

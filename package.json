@@ -18,6 +18,9 @@
     "test:enemies": "node --experimental-strip-types scripts/verifyEnemies.mjs",
     "test:armor": "node --experimental-strip-types scripts/verifyArmor.mjs",
     "test:harvesting-tools": "node --experimental-strip-types scripts/verifyHarvestingTools.mjs",
+    "test:tool-durability": "node --experimental-strip-types scripts/verifyToolDurability.mjs",
+    "test:weapon-combat": "node --experimental-strip-types scripts/verifyWeaponCombat.mjs",
+    "test:resource-acquisition": "node --experimental-strip-types scripts/verifyResourceAcquisition.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

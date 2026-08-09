@@ -37,13 +37,10 @@ When future development must choose between a novel interpretation and behavior 
 - The compact icon/amount feedback duration is a project gameplay-feel approximation, not an official LDOE internal timing.
 - Milestone 04 produces a valid immutable item result. Player storage remains a later milestone.
 
-## Current project behavior from Milestone 05
+## Current project behavior from Milestone 05 (historical)
 
-- Each stack in a harvesting `ItemResult` materializes as one physical Ground Loot entity near the depleted resource.
-- Pine Tree depletion therefore creates one Pine Log ×3 entity; Limestone Rock depletion creates one Limestone ×3 entity.
-- Ground Loot uses the same contextual interaction target and Action controls as other interactables, then emits one pickup result and cleans up.
-- These ground materialization and temporary always-accepted pickup rules are current project milestone architecture, not claimed confirmed internal LDOE rules.
-- Inventory/storage semantics begin in Milestone 06.
+- Milestone 05 introduced Ground Loot materialization for item results near depleted resources.
+- **Superseded for harvest yields by Milestone 15:** completed Tree/Rock deliver yields straight into Inventory. Ground Loot remains for authored world pickups and equipment calibration fixtures.
 
 ## Player Inventory from Milestone 06
 
@@ -55,11 +52,10 @@ Reference-backed current values:
 
 Current project M06 behavior:
 
-- Ground Loot pickup checks complete-stack capacity before consuming the world entity.
+- **Manual Ground Loot pickup** checks complete-stack capacity before consuming the world entity (full-stack-or-nothing).
 - Matching partial stacks fill before empty slots, in ascending base-slot order.
-- Pickup is full-stack-or-nothing: insufficient capacity leaves Inventory and Ground Loot unchanged.
-- The full-stack atomic pickup rule is a project milestone decision, not documented here as confirmed exact LDOE internal behavior.
-- Backpacks, quick slots, manual rearranging, and persistence remain absent. Basic armor equipment begins in Milestone 07.
+- **M15 harvest delivery** uses partial insert (`tryInsertAvailable`): accepts what fits; overflow is discarded and never respawns as Ground Loot.
+- Backpacks, quick slots, manual rearranging, and persistence remain absent.
 
 ## Basic armor equipment from Milestone 07
 
@@ -100,30 +96,92 @@ Current project M08 behavior:
 - Ingredients may be split across slots and are consumed from the lowest slot index first.
 - Crafting is instant, one click produces at most one item, and the full consume-plus-output transaction is atomic.
 - Output capacity is checked against the post-consumption Inventory layout, including slots freed by ingredients.
-- Crafted Hatchet and Pickaxe are non-stackable Item System / Inventory items with no equipment metadata.
-- Durability, tool/weapon equipment, combat stats, stations, storage crafting, timers, queues, multi-craft, progression, and persistence remain absent.
+- Crafted Hatchet and Pickaxe are non-stackable Item System / Inventory items with no equipment **armor** metadata.
+- Fresh crafted tools start at `50/50` durability (catalog `maxDurability = 50`).
+- Tools may optionally equip into the separate Weapon Slot (M14); crafting never auto-equips.
+- Armor durability, stations, storage crafting, timers, queues, multi-craft, progression, and persistence remain absent.
 
-## Inventory-backed harvesting tools from Milestone 12
+## Inventory-backed harvesting tools from Milestone 12–14
 
-Current project M12 behavior:
+Current project behavior:
 
-- Harvesting reads Hatchet/Pickaxe ownership only from live `PlayerInventory` (via thin `InventoryHarvestTools`).
-- Pine Tree requires a Hatchet in Inventory; Limestone Rock requires a Pickaxe.
-- Matching tools resolve by lowest occupied inventory slot index. No equip action and no tool equipment slot.
-- Crafting a tool inserts it into Inventory, and the next harvest check immediately sees it without a sync callback.
-- Successful harvest does not consume or degrade tools (durability is explicitly deferred).
-- Hatchet/Pickaxe remain non-combat inventory items. Player melee stays fists only (damage 6).
+- Harvesting reads Hatchet/Pickaxe from `HarvestToolResolver`: matching **Weapon Slot** first, else lowest matching **PlayerInventory** slot.
+- Pine Tree requires a Hatchet; Limestone Rock requires a Pickaxe.
+- Crafting a tool inserts it into Inventory only (no auto-equip).
+- Hatchet/Pickaxe may also equip into the separate active Weapon Slot for combat.
 - `PrototypeToolLoadout` no longer exists in production code.
+
+## Harvesting tool durability from Milestone 13
+
+Current project M13+ behavior (shared with M14 combat):
+
+- Hatchet max durability = 50; Pickaxe max durability = 50 (definition metadata).
+- `currentDurability` belongs to the concrete `ItemStack` instance (Inventory or Weapon Slot).
+- Fresh crafted tools start full (`50/50`).
+- Successful harvesting impact costs exactly 1 durability; cancelled/rejected/non-impact actions cost 0.
+- Last durability point still produces its resource impact; then the tool is removed (no `0/50` retained, no repair).
+- Matching equipped tool is preferred; otherwise lowest Inventory slot. No same-impact cascade.
+- Partial resource progress survives tool break.
+
+## Active weapon slot + tool melee from Milestone 14
+
+```text
+PlayerEquipment = armor source of truth (head / torso / legs / feet)
+PlayerWeaponSlot = active weapon source of truth (capacity 1)
+
+Fists:    6 damage @ 1.8/sec  (empty Weapon Slot)
+Hatchet:  7 damage @ 0.9/sec
+Pickaxe:  7 damage @ 1.1/sec
+
+successful weapon combat impact → durability -1 (shared stack)
+miss / cancel → durability cost 0
+weapon 1 → 0 → final hit counts → slot empty → next attack fists
+no quick slots · no sneak damage · no AUTO combat · no auto-equip
+```
+
+- Explicit `ItemDefinition.meleeCombat` on Hatchet/Pickaxe only.
+- Equip moves the real stack; unequip/swaps are atomic; Weapon Slot free of Inventory capacity.
+- Full armor metadata remains 8; armor has no durability; Zombie stats unchanged.
+
+## Starter ground resources + direct harvest from Milestone 15
+
+### Loose world resources (bootstrap)
+
+```text
+6 authored Pine Log ×1 on ground
+6 authored Limestone ×1 on ground
+→ InteractionSystem + PickupSystem (no tool required)
+→ PlayerInventory FULL STACK OR NOTHING
+```
+
+Enough for existing recipes:
+
+```text
+3+3 → Hatchet
+3+3 → Pickaxe
+```
+
+### Harvest yields (automatic)
+
+```text
+Pine Tree 4 hits → Pine Log ×3 → Inventory direct (never GroundLoot)
+Limestone Rock 5 hits → Limestone ×3 → Inventory direct
+```
+
+Partial inventory capacity: insert what fits; overflow discarded (not dropped). Final harvest impact still applies when inventory is full.
+
+`GroundLootSystem` remains production code for world-authored items only.
 
 ## Unarmed melee foundation from Milestone 09
 
-Current project calibration:
+Current project calibration (still the empty-weapon fallback):
 
 - Fists deal exactly 6 damage per accepted impact.
 - Fists attack at 1.8 attacks per second, giving a cycle duration of `1 / 1.8` seconds.
 - The single impact occurs at normalized attack time `0.38`.
 - Combat target acquisition range is 2.2 world units; impact range is 1.15 world units.
 - A Combat Dummy has exactly 40 health. Its health after seven uninterrupted fist impacts is `34 → 28 → 22 → 16 → 10 → 4 → 0`.
+- With Hatchet/Pickaxe equipped, damage is 7 and a fresh 40 HP target dies in six successful impacts.
 
 Current project M09 behavior:
 
@@ -134,7 +192,7 @@ Current project M09 behavior:
 - Fists alternate right/left. Their lightweight procedural pose uses the existing player pivots, so sleeves and harvesting visuals continue to follow the same character hierarchy.
 - Three deterministic Combat Dummies provide collision, target ring/health feedback, `-6` impact feedback, recoil, and death cleanup. They do not provide AI, loot, or rewards.
 - Unarmed damage, cadence, impact timing, ranges, dummy placement, and presentation timing are project calibration values chosen to establish LDOE-like melee pacing; they are not claimed as extracted official internal LDOE values.
-- Enemy AI, healing, weapons, tools-as-weapons, durability, respawn, loot, knockback simulation, and persistence remain later milestones where still marked deferred.
+- Enemy AI, healing, weapons, tools-as-weapons (beyond harvest durability), respawn, loot, knockback simulation, and persistence remain later milestones where still marked deferred.
 
 ## Roaming Zombie and Player health from Milestone 10
 

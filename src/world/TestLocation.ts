@@ -5,13 +5,11 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { CalibrationConfig } from "../config/calibrationConfig";
 import { GAME_CONFIG } from "../config/gameConfig";
 import type { CollisionWorld } from "../collision/CollisionWorld";
-import type { Lighting } from "../rendering/Lighting";
 import { createInteractable, type Interactable } from "../interaction/Interactable";
 import { createWorldMaterials, type WorldMaterials } from "../rendering/Materials";
 import { createRock, type RockObject } from "./objects/Rock";
 import { createTree, type TreeObject } from "./objects/Tree";
 import { createWall, type WallObject } from "./objects/Wall";
-import { createBush, type BushObject } from "./objects/Bush";
 import { createCrate, type CrateObject } from "./objects/Crate";
 import { CampfireObject } from "./objects/Campfire";
 import { ProceduralTextureFactory } from "../rendering/ProceduralTextureFactory";
@@ -20,6 +18,7 @@ import { GroundClutter } from "./detail/GroundClutter";
 import { getVisualQualitySettings } from "../config/visualQualityConfig";
 import { HarvestableResource } from "../harvesting/HarvestableResource";
 import { HarvestImpactEffects } from "./detail/HarvestImpactEffects";
+import type { MinimapMarker } from "../ui/minimapTypes";
 
 interface FloorTile { mesh: Mesh; gridX: number; gridZ: number }
 
@@ -29,10 +28,8 @@ export class TestLocation {
   private readonly materials: WorldMaterials;
   private readonly trees: TreeObject[] = [];
   private readonly rocks: RockObject[] = [];
-  private readonly bushes: BushObject[] = [];
   private readonly walls: WallObject[] = [];
   private readonly floors: FloorTile[] = [];
-  private readonly staticCasters: Mesh[] = [];
   private readonly houseOrigin = new Vector3(8, 0, -10);
   private readonly textures: ProceduralTextureFactory;
   private readonly ground: GroundSurface;
@@ -45,7 +42,6 @@ export class TestLocation {
   constructor(
     private readonly scene: Scene,
     private readonly collision: CollisionWorld,
-    private readonly lighting: Lighting,
     private readonly config: CalibrationConfig,
   ) {
     this.textures = new ProceduralTextureFactory(scene);
@@ -57,10 +53,48 @@ export class TestLocation {
     this.createHouse();
     this.createProps();
     this.applyCalibration();
-    for (const mesh of this.staticCasters) this.lighting.addCaster(mesh);
   }
 
   get clutterCount(): number { return this.clutter.count; }
+
+  /** Live minimap markers sourced from location geometry / harvest state. */
+  collectMinimapMarkers(): readonly MinimapMarker[] {
+    const markers: MinimapMarker[] = [];
+    const cell = this.config.world.gridCellSize;
+    const houseHalf = cell * 1.5;
+    markers.push(Object.freeze({
+      kind: "house-floor",
+      x: this.houseOrigin.x,
+      z: this.houseOrigin.z,
+      halfX: houseHalf,
+      halfZ: houseHalf,
+    }));
+    for (const wall of this.walls) {
+      const cx = this.houseOrigin.x + wall.gridX * cell;
+      const cz = this.houseOrigin.z + wall.gridZ * cell;
+      const halfLen = cell * wall.lengthCells / 2;
+      if (wall.horizontal) {
+        markers.push(Object.freeze({ kind: "wall", x0: cx - halfLen, z0: cz, x1: cx + halfLen, z1: cz }));
+      } else {
+        markers.push(Object.freeze({ kind: "wall", x0: cx, z0: cz - halfLen, x1: cx, z1: cz + halfLen }));
+      }
+    }
+    for (let index = 0; index < this.trees.length; index += 1) {
+      const resource = this.harvestables[index];
+      if (resource?.isDepleted) continue;
+      const tree = this.trees[index];
+      markers.push(Object.freeze({ kind: "tree", x: tree.root.position.x, z: tree.root.position.z }));
+    }
+    for (let index = 0; index < this.rocks.length; index += 1) {
+      const resource = this.harvestables[this.trees.length + index];
+      if (resource?.isDepleted) continue;
+      const rock = this.rocks[index];
+      markers.push(Object.freeze({ kind: "rock", x: rock.root.position.x, z: rock.root.position.z }));
+    }
+    markers.push(Object.freeze({ kind: "crate", x: this.crate.root.position.x, z: this.crate.root.position.z }));
+    markers.push(Object.freeze({ kind: "campfire", x: this.campfire.root.position.x, z: this.campfire.root.position.z }));
+    return Object.freeze(markers);
+  }
 
   removeResourceCollision(resourceId: string): void { this.collision.remove(resourceId); }
 
@@ -91,7 +125,6 @@ export class TestLocation {
       tree.foliageRoot.rotation.z = Math.sin(this.visualTime * 0.72 + tree.swayPhase) * sway * 0.035;
       tree.foliageRoot.rotation.x = Math.cos(this.visualTime * 0.58 + tree.swayPhase) * sway * 0.022;
     }
-    for (const bush of this.bushes) bush.root.rotation.z = Math.sin(this.visualTime * 0.8 + bush.swayPhase) * sway * 0.018;
     for (const resource of this.harvestables) resource.updateVisual(delta);
     this.harvestEffects.update(delta);
     this.campfire.update(delta, getVisualQualitySettings(this.config.visual.qualityPreset).fireComplexity);
@@ -105,7 +138,6 @@ export class TestLocation {
     positions.forEach(([x, z], index) => {
       const tree = createTree(this.scene, this.materials, x, z, index);
       this.trees.push(tree);
-      this.staticCasters.push(...tree.meshes.filter((mesh) => !mesh.name.includes("ContactShadow")));
       const resource = new HarvestableResource({
         id: `tree-${String(index + 1).padStart(2, "0")}`,
         kind: "pine-tree",
@@ -131,7 +163,6 @@ export class TestLocation {
     rocks.forEach(([x, z], index) => {
       const rock = createRock(this.scene, this.materials, x, z, index);
       this.rocks.push(rock);
-      this.staticCasters.push(...rock.meshes.filter((mesh) => !mesh.name.includes("ContactShadow")));
       const resource = new HarvestableResource({
         id: `rock-${String(index + 1).padStart(2, "0")}`,
         kind: "limestone-rock",
@@ -153,13 +184,6 @@ export class TestLocation {
       this.harvestables.push(resource);
       this.interactables.push(resource);
     });
-    const bushPositions = [[-3,9],[2,12],[-6,4],[6,1],[0,-2],[-11,8]];
-    bushPositions.forEach(([x, z], index) => {
-      const bush = createBush(this.scene, this.materials, x, z, index);
-      bush.root.scaling.setAll(0.86 + (index % 3) * 0.08);
-      this.bushes.push(bush);
-      this.staticCasters.push(...bush.meshes.filter((mesh) => !mesh.name.includes("ContactShadow")));
-    });
   }
 
   private createHouse(): void {
@@ -179,13 +203,11 @@ export class TestLocation {
     this.walls.push(createWall(this.scene, this.materials, 1, 1.5, true));
     for (const wall of this.walls) {
       for (const mesh of wall.meshes) mesh.receiveShadows = true;
-      this.staticCasters.push(...wall.meshes);
     }
   }
 
   private createProps(): void {
     this.crate = createCrate(this.scene, this.materials, 2.2, 1.2);
-    this.staticCasters.push(...this.crate.meshes.filter((mesh) => !mesh.name.includes("ContactShadow")));
     this.interactables.push(createInteractable({
       id: "crate-01",
       type: "container",
@@ -194,7 +216,6 @@ export class TestLocation {
       enabled: () => !this.crate.root.isDisposed() && this.crate.root.isEnabled(),
     }));
     this.campfire = new CampfireObject(this.scene, this.materials, -4, 4);
-    this.staticCasters.push(...this.campfire.shadowCasters);
     this.interactables.push(createInteractable({
       id: "campfire-01",
       type: "station",

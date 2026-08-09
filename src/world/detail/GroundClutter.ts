@@ -19,29 +19,31 @@ export class GroundClutter {
   count = 0;
 
   constructor(scene: Scene, materials: WorldMaterials, private readonly config: CalibrationConfig) {
+    // Source meshes only supply geometry/material for thin instances.
+    // Leave them at identity with baked Y offsets in the instance matrices —
+    // never leave visible prototypes stacked at world origin (looks like a false "axes gizmo").
     const grass = MeshBuilder.CreateCylinder("GrassTuftSource", { height: 0.24, diameterTop: 0.015, diameterBottom: 0.12, tessellation: 3 }, scene);
-    grass.position.y = 0.12;
     grass.material = materials.bush;
     const dryGrass = MeshBuilder.CreateCylinder("DryGrassSource", { height: 0.19, diameterTop: 0.01, diameterBottom: 0.1, tessellation: 3 }, scene);
-    dryGrass.position.y = 0.095;
     dryGrass.material = materials.dryGrass;
     const pebble = MeshBuilder.CreateSphere("PebbleSource", { diameter: 0.13, segments: 7 }, scene);
-    pebble.position.y = 0.055;
     pebble.material = materials.rock[1];
     const twig = MeshBuilder.CreateBox("TwigSource", { width: 0.34, height: 0.035, depth: 0.045 }, scene);
-    twig.position.y = 0.035;
     twig.material = materials.trunk;
 
     this.batches.push(
-      this.batch(grass, 180, 401, 0.7, 1.35),
-      this.batch(dryGrass, 72, 773, 0.7, 1.25),
-      this.batch(pebble, 74, 991, 0.65, 1.55),
-      this.batch(twig, 42, 1337, 0.75, 1.35),
+      this.batch(grass, 180, 401, 0.7, 1.35, 0.12),
+      this.batch(dryGrass, 72, 773, 0.7, 1.25, 0.095),
+      this.batch(pebble, 74, 991, 0.65, 1.55, 0.055),
+      this.batch(twig, 42, 1337, 0.75, 1.35, 0.035),
     );
     for (const batch of this.batches) {
       batch.mesh.isPickable = false;
       batch.mesh.receiveShadows = true;
       batch.mesh.alwaysSelectAsActiveMesh = true;
+      // Thin-instance matrices are absolute world matrices; tuck the unused template off-world
+      // so a failed/empty thin-instance bind cannot leave a stacked junk mesh at (0,0,0).
+      batch.mesh.position.set(0, -10_000, 0);
     }
     this.applyCalibration();
   }
@@ -61,7 +63,7 @@ export class GroundClutter {
     this.lastPreset = preset;
   }
 
-  private batch(mesh: Mesh, maxCount: number, seed: number, minScale: number, maxScale: number): ClutterBatch {
+  private batch(mesh: Mesh, maxCount: number, seed: number, minScale: number, maxScale: number, yOffset: number): ClutterBatch {
     const matrices = new Float32Array(maxCount * 16);
     const rng = this.random(seed);
     const scale = new Vector3(1, 1, 1);
@@ -75,7 +77,7 @@ export class GroundClutter {
       }
       const uniform = minScale + rng() * (maxScale - minScale);
       scale.set(uniform * (0.8 + rng() * 0.4), uniform, uniform * (0.8 + rng() * 0.4));
-      translation.set(x, 0, z);
+      translation.set(x, yOffset, z);
       const rotation = Quaternion.RotationYawPitchRoll(rng() * Math.PI * 2, 0, 0);
       Matrix.Compose(scale, rotation, translation).copyToArray(matrices, i * 16);
     }

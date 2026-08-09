@@ -19,6 +19,7 @@ for (const [id, name] of [["hatchet", "Hatchet"], ["pickaxe", "Pickaxe"]]) {
   assert.equal(definition.maxStack, 1);
   assert.equal(definition.iconId, id);
   assert.equal(definition.equipment, undefined);
+  assert.equal(definition.maxDurability, 50, `${id} maxDurability must be 50`);
   assert.throws(() => createItemStack(id, 2), RangeError);
 }
 
@@ -29,7 +30,7 @@ assert.deepEqual(recipes.map((recipe) => recipe.id), ["hatchet", "pickaxe"]);
 for (const id of ["hatchet", "pickaxe"]) {
   const recipe = CRAFTING_RECIPES.get(id);
   assert.equal(recipe.id, id);
-  assert.deepEqual(recipe.output, { itemId: id, quantity: 1 });
+  assert.deepEqual(recipe.output, { itemId: id, quantity: 1, currentDurability: 50 });
   assert.deepEqual(recipe.ingredients, [
     { itemId: "pine-log", quantity: 3 },
     { itemId: "limestone", quantity: 3 },
@@ -64,11 +65,11 @@ assert.deepEqual(state.ingredients.map(({ owned }) => owned), [3, 3]);
 result = exactCrafting.craft("hatchet");
 assert.equal(result.accepted, true);
 assert.equal(result.status, "crafted");
-assert.deepEqual(result.output, { itemId: "hatchet", quantity: 1 });
+assert.deepEqual(result.output, { itemId: "hatchet", quantity: 1, currentDurability: 50 });
 assert.equal(count(exact, "pine-log"), 0);
 assert.equal(count(exact, "limestone"), 0);
 assert.equal(count(exact, "hatchet"), 1);
-assert.deepEqual(stackAt(exact, 0), { itemId: "hatchet", quantity: 1 }, "lowest freed slot receives output");
+assert.deepEqual(stackAt(exact, 0), { itemId: "hatchet", quantity: 1, currentDurability: 50 }, "lowest freed slot receives full-durability output");
 
 const more = new PlayerInventory();
 more.tryInsert(createItemStack("pine-log", 8));

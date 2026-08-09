@@ -32,6 +32,7 @@ import { PlayerEquipment } from "../equipment/PlayerEquipment";
 import { EquipmentSystem } from "../equipment/EquipmentSystem";
 import { EquipmentVisualController } from "../equipment/EquipmentVisualController";
 import { spawnEquipmentCalibrationLoot } from "../equipment/equipmentCalibration";
+import { spawnStarterGroundResources } from "../ground-loot/starterGroundResources";
 import { CraftingSystem } from "../crafting/CraftingSystem";
 import { CraftingPanel } from "../ui/CraftingPanel";
 import { CombatTargetSystem } from "../combat/CombatTargetSystem";
@@ -45,6 +46,11 @@ import { RoamingZombie } from "../enemies/RoamingZombie";
 import { EnemyPresentation } from "../enemies/EnemyPresentation";
 import { ROAMING_ZOMBIE_PROFILE } from "../enemies/enemyConfig";
 import { PlayerDamageResolver } from "../combat/PlayerDamageResolver";
+import { PlayerWeaponSlot } from "../equipment/PlayerWeaponSlot";
+import { WeaponEquipSystem } from "../equipment/WeaponEquipSystem";
+import { resolvePlayerMeleeProfile } from "../combat/resolvePlayerMeleeProfile";
+import type { HarvestTool } from "../harvesting/HarvestingTypes";
+import { HarvestRewardDelivery } from "../harvesting/HarvestRewardDelivery";
 
 export class Game {
   private readonly engine: Engine;
@@ -63,6 +69,8 @@ export class Game {
   private readonly inventory = new PlayerInventory();
   private readonly equipment = new PlayerEquipment();
   private readonly equipmentSystem = new EquipmentSystem(this.inventory, this.equipment);
+  private readonly weaponSlot = new PlayerWeaponSlot();
+  private readonly weaponEquipSystem: WeaponEquipSystem;
   private readonly craftingSystem = new CraftingSystem(this.inventory);
   private readonly combatTargets = new CombatTargetSystem();
   private readonly combatDummies: CombatDummy[] = [];
@@ -76,6 +84,7 @@ export class Game {
   private readonly craftingPanel: CraftingPanel;
   private readonly pickupResults = new TemporaryPickupResultSink();
   private readonly pickup: PickupSystem;
+  private readonly harvestRewardDelivery: HarvestRewardDelivery;
   private readonly harvestTools: InventoryHarvestTools;
   private readonly hud: HUD;
   private readonly input: InputController;
@@ -85,14 +94,20 @@ export class Game {
   private readonly loop: GameLoop;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
-    this.engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: true, adaptToDeviceRatio: false });
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.75);
-    this.engine.setHardwareScalingLevel((window.devicePixelRatio || 1) / pixelRatio);
+    this.engine = new Engine(canvas, true, {
+      preserveDrawingBuffer: false,
+      stencil: true,
+      // Match canvas backing store to device pixels (Retina / high-DPI).
+      // Previously false + capped DPR made the whole frame soft / blurry.
+      adaptToDeviceRatio: true,
+      powerPreference: "high-performance",
+    });
+    this.applyRenderResolution();
     this.scene = new Scene(this.engine);
     this.camera = new GameCamera(this.scene, this.engine, this.config);
     this.lighting = new Lighting(this.scene, this.config);
     this.postProcessing = new PostProcessing(this.scene, this.config);
-    this.world = new World(this.scene, this.collision, this.lighting, this.config);
+    this.world = new World(this.scene, this.collision, this.config);
     this.player = new Player(this.scene, this.collision, this.config);
     for (const mesh of this.player.visual.meshes) this.lighting.addCaster(mesh);
     this.equipmentVisual = new EquipmentVisualController(this.scene, this.player.visual, this.equipment);
@@ -137,8 +152,13 @@ export class Game {
     this.combat = new MeleeCombatSystem(
       this.combatTargets,
       this.player,
+      () => resolvePlayerMeleeProfile(this.weaponSlot),
       () => { this.harvesting.cancel(); this.player.stopMovement(); },
-      ({ target, damage }) => {
+      ({ target, damage, profile }) => {
+        if (profile.consumesDurability && (profile.source === "hatchet" || profile.source === "pickaxe")) {
+          this.weaponSlot.tryConsumeDurability(profile.source, 1);
+          this.syncHeldWeaponVisual();
+        }
         this.combatPresentation.showImpact(target, damage.requested);
         if (this.enemies.handlePlayerCombatImpact(target, damage)) return;
         if (!damage.becameDead) return;
@@ -147,19 +167,35 @@ export class Game {
         this.combatPresentation.beginDeath(target);
       },
     );
-    this.inventoryPanel = new InventoryPanel(uiRoot, this.inventory, this.equipment, this.equipmentSystem, this.hud.inventoryToggle, (open) => { this.setInventoryOpen(open); });
+    this.weaponEquipSystem = new WeaponEquipSystem(this.inventory, this.weaponSlot, () => {
+      this.combat.cancelAttack();
+    });
+    this.inventoryPanel = new InventoryPanel(
+      uiRoot,
+      this.inventory,
+      this.equipment,
+      this.equipmentSystem,
+      this.weaponSlot,
+      this.weaponEquipSystem,
+      this.hud.inventoryToggle,
+      (open) => { this.setInventoryOpen(open); },
+    );
     this.craftingPanel = new CraftingPanel(uiRoot, this.inventory, this.craftingSystem, this.hud.craftingToggle, (message) => { this.inventoryPanel.showStatus(message); }, (open) => { this.setCraftingOpen(open); });
     this.resultFeedback = new ResourceResultFeedback(uiRoot, this.scene, this.engine);
     this.input = new InputController(this.hud.joystick, this.hud.primaryAction, this.hud.attackAction, GAME_CONFIG.joystickDeadZone);
     this.interaction = new InteractionSystem(this.scene, this.world.interactables, this.config);
     this.groundLoot = new GroundLootSystem(this.world, new GroundLootVisuals(this.scene));
     spawnEquipmentCalibrationLoot(this.groundLoot);
+    spawnStarterGroundResources(this.groundLoot);
     this.pickup = new PickupSystem(this.groundLoot, this.interaction, this.inventory, this.pickupResults, this.inventoryPanel);
-    const resourceResults = new CompositeResourceResultSink([this.groundLoot, this.resultFeedback]);
-    this.harvestTools = new InventoryHarvestTools(this.inventory);
+    this.harvestRewardDelivery = new HarvestRewardDelivery(this.inventory);
+    const resourceResults = new CompositeResourceResultSink([this.harvestRewardDelivery, this.resultFeedback]);
+    this.harvestTools = new InventoryHarvestTools(this.inventory, this.weaponSlot);
     this.harvesting = new HarvestingSystem(this.config, this.harvestTools, this.player, this.interaction, resourceResults, (resource) => {
       this.world.removeResourceCollision(resource.resourceId);
     });
+    this.weaponSlot.subscribe(() => { this.syncHeldWeaponVisual(); });
+    this.syncHeldWeaponVisual();
     this.fidelity = new FidelityMode(uiRoot, () => { /* Freeze state is read in the frame loop. */ });
     this.debug = new DebugOverlay(
       uiRoot,
@@ -175,6 +211,7 @@ export class Game {
       this.inventory,
       this.equipment,
       this.equipmentSystem,
+      this.weaponSlot,
       this.craftingSystem,
       this.combatTargets,
       this.combat,
@@ -188,6 +225,7 @@ export class Game {
         input: this.input,
         isInventoryOpen: () => this.inventoryPanel.isOpen,
         isCraftingOpen: () => this.craftingPanel.isOpen,
+        lastHarvestDelivery: () => this.harvestRewardDelivery.lastResult,
       },
     );
     this.calibration = new CalibrationPanel(uiRoot, this.config, () => { this.applyCalibration(); });
@@ -231,7 +269,24 @@ export class Game {
     const combatTarget = this.combatTargets.current;
     this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
     this.hud.setAttackState(this.player.health.alive && combatTarget !== null, this.player.health.alive && this.combatTargets.state.distance <= COMBAT_CONFIG.meleeHitRange, this.combat.state !== "ready");
-    this.hud.updateMinimap(this.player.position, this.player.facingYaw, this.world.interactables);
+    this.hud.updateMinimap({
+      playerX: this.player.position.x,
+      playerZ: this.player.position.z,
+      facingYaw: this.player.facingYaw,
+      cameraYawRad: this.config.camera.yawDeg * Math.PI / 180,
+      worldHalfExtent: GAME_CONFIG.worldSize / 2,
+      markers: Object.freeze([
+        ...this.world.collectMinimapMarkers(),
+        ...this.combatDummies.filter((dummy) => dummy.isCombatAlive()).map((dummy) => {
+          const p = dummy.getCombatPosition();
+          return Object.freeze({ kind: "dummy" as const, x: p.x, z: p.z });
+        }),
+        ...this.enemies.agents.map((enemy) => {
+          const p = enemy.getCombatPosition();
+          return Object.freeze({ kind: "enemy" as const, x: p.x, z: p.z, yaw: enemy.facingYaw });
+        }),
+      ]),
+    });
     const target = this.interaction.target;
     if (!this.player.health.alive) this.hud.setPrimaryActionContext("none");
     else if (target instanceof HarvestableResource) {
@@ -249,6 +304,7 @@ export class Game {
   }
 
   private applyCalibration(): void {
+    this.applyRenderResolution();
     this.player.applyCalibration();
     this.world.applyCalibration();
     this.restoreDynamicCombatCollisions();
@@ -258,7 +314,31 @@ export class Game {
     this.debug.refreshObstacles();
   }
 
-  private readonly onResize = (): void => { this.engine.resize(); this.camera.applyProjection(); };
+  /**
+   * Prefer native device pixels. Ultra slightly supersamples for cleaner edges.
+   * hardwareScalingLevel: 1 = 1:1 with device canvas buffer; <1 = sharper supersample.
+   */
+  private applyRenderResolution(): void {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const preset = this.config.visual.qualityPreset;
+    // Cap effective DPR for lower presets (perf). Ultra never downsamples.
+    const maxDeviceRatio = ({
+      low: 1,
+      medium: 1.5,
+      high: 2.5,
+      ultra: Number.POSITIVE_INFINITY,
+    } as const)[preset];
+    const targetRatio = Math.min(dpr, maxDeviceRatio);
+    // Supersample only on ultra for extra edge clarity after MSAA.
+    const superSample = preset === "ultra" ? 0.85 : 1;
+    this.engine.setHardwareScalingLevel((dpr / Math.max(targetRatio, 0.01)) * superSample);
+    this.engine.resize();
+  }
+
+  private readonly onResize = (): void => {
+    this.applyRenderResolution();
+    this.camera.applyProjection();
+  };
   private spawnCombatDummies(): void {
     const positions = Object.freeze([
       Object.freeze({ x: 1.25, y: 0, z: 3.55 }),
@@ -270,7 +350,7 @@ export class Game {
       this.combatDummies.push(dummy);
       this.combatTargets.register(dummy);
       this.collision.addCircle(position.x, position.z, COMBAT_CONFIG.dummyCollisionRadius, `CombatTarget:${dummy.combatId}`);
-      for (const mesh of this.combatPresentation.spawnDummy(dummy)) this.lighting.addCaster(mesh);
+      this.combatPresentation.spawnDummy(dummy);
     });
   }
   private spawnRoamingZombies(): void {
@@ -316,8 +396,17 @@ export class Game {
     const suppressed = open || this.player.health.dead;
     this.input.setSuppressed(suppressed);
     if (!suppressed) return;
+    this.combat.cancelAttack();
     this.harvesting.cancel();
     this.player.stopMovement();
+  }
+
+  private syncHeldWeaponVisual(): void {
+    const stack = this.weaponSlot.current;
+    const tool = stack && (stack.itemId === "hatchet" || stack.itemId === "pickaxe")
+      ? stack.itemId as HarvestTool
+      : null;
+    this.player.setHeldWeapon(tool);
   }
   private readonly onFunctionKey = (event: KeyboardEvent): void => {
     if (this.player.health.dead && (event.code === "KeyI" || event.code === "KeyB")) { event.preventDefault(); return; }

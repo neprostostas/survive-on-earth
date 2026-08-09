@@ -98,32 +98,32 @@ export class GroundLootVisuals implements GroundLootPresentation {
   }
 
   private createLogBundle(root: TransformNode): void {
-    const offsets = [
-      { y: 0.1, z: -0.09, rotation: 0.1 },
-      { y: 0.18, z: 0.09, rotation: -0.08 },
-    ];
-    for (const [index, offset] of offsets.entries()) {
-      const log = MeshBuilder.CreateCylinder(`GroundPineLog:${index}`, { height: 0.62, diameter: 0.17, tessellation: 12 }, this.scene);
-      log.parent = root;
-      log.position.set(0, offset.y, offset.z);
-      log.rotation.set(0, offset.rotation, Math.PI / 2);
-      log.material = this.bark;
-      log.isPickable = false;
-      for (const side of [-1, 1]) {
-        const end = MeshBuilder.CreateCylinder(`GroundPineLogEnd:${index}:${side}`, { height: 0.012, diameter: 0.145, tessellation: 12 }, this.scene);
-        end.parent = log;
-        end.position.y = side * 0.316;
-        end.material = this.cutFace;
-        end.isPickable = false;
-      }
+    // Single short stick for quantity-1 loose drops; multi-stack keeps a small bundle.
+    this.createSingleLog(root, 0.1, 0, 0.08);
+  }
+
+  private createSingleLog(root: TransformNode, y: number, z: number, rotation: number): void {
+    const log = MeshBuilder.CreateCylinder("GroundPineLog", { height: 0.52, diameter: 0.13, tessellation: 10 }, this.scene);
+    log.parent = root;
+    log.position.set(0, y, z);
+    log.rotation.set(0, rotation, Math.PI / 2);
+    log.material = this.bark;
+    log.isPickable = false;
+    for (const side of [-1, 1]) {
+      const end = MeshBuilder.CreateCylinder(`GroundPineLogEnd:${side}`, { height: 0.01, diameter: 0.11, tessellation: 10 }, this.scene);
+      end.parent = log;
+      end.position.y = side * 0.265;
+      end.material = this.cutFace;
+      end.isPickable = false;
     }
   }
 
   private createLimestone(root: TransformNode): void {
-    const stone = MeshBuilder.CreateSphere("GroundLimestone", { diameter: 0.54, segments: 8 }, this.scene);
+    // Smaller loose chunk than harvestable Limestone Rock nodes.
+    const stone = MeshBuilder.CreateSphere("GroundLimestone", { diameter: 0.38, segments: 8 }, this.scene);
     stone.parent = root;
-    stone.position.y = 0.2;
-    stone.scaling.set(1.05, 0.72, 0.9);
+    stone.position.y = 0.14;
+    stone.scaling.set(1.05, 0.7, 0.92);
     stone.rotation.set(0.12, 0.38, -0.08);
     stone.material = this.limestone;
     stone.isPickable = false;

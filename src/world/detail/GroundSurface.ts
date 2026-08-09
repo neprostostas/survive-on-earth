@@ -39,6 +39,7 @@ export class GroundSurface {
     this.material.diffuseColor = Color3.White();
     this.material.specularColor = new Color3(0.015, 0.015, 0.012);
     this.material.specularPower = 18;
+    this.colorTexture.anisotropicFilteringLevel = 16;
     this.mesh.material = this.material;
     this.mesh.useVertexColors = true;
     this.mesh.receiveShadows = true;

@@ -343,9 +343,15 @@ assert.equal(systemSource.includes("applyIncomingDamage"), true);
 assert.equal(gameSource.includes("PlayerDamageResolver"), true);
 assert.equal(gameSource.includes("damage.finalDamage"), true);
 assert.equal(gameSource.includes("applyIncomingDamage"), true);
-assert.equal(/durability|maxDurability|currentDurability|durabilityLoss|broken|repairCost/.test(itemSystem), false);
-assert.equal(/durability/.test(equipmentTypes), false);
-assert.equal(/durability/.test(harvestToolsSource), false);
+// Tool max/current durability is M13 harvest tooling; armor pieces must not wear.
+for (const armorId of ["dad-hat", "shirt", "cargo-pants", "sneakers"]) {
+  assert.equal(ITEM_REGISTRY.get(armorId).maxDurability, undefined, `${armorId} has no armor durability metadata`);
+}
+assert.equal(/durabilityLoss|broken|repairCost|repairKit/.test(itemSystem), false);
+assert.equal(/durability|maxDurability|currentDurability/.test(equipmentTypes), false);
+assert.equal(/tryConsumeDurability|currentDurability/.test(resolverSource), false);
+assert.equal(/tryConsumeDurability|currentDurability/.test(mitigationSource), false);
+assert.equal(harvestToolsSource.includes("consumeImpactUse"), true);
 assert.equal(/weapon|tool|mainHand|offHand/.test(equipmentTypes), false);
 for (const forbidden of ["armorPenetration", "damageType", "TrueDamage", "blockChance", "dodgeChance", "respawnPlayer", "enemyArmor"]) {
   assert.equal(mitigationSource.includes(forbidden) || resolverSource.includes(forbidden), false, `M11 scope excludes ${forbidden}`);

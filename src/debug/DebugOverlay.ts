@@ -21,11 +21,13 @@ import type { TemporaryPickupResultSink } from "../ground-loot/PickupResult";
 import { GroundLoot } from "../ground-loot/GroundLoot";
 import type { PlayerInventory } from "../inventory/PlayerInventory";
 import type { PlayerEquipment } from "../equipment/PlayerEquipment";
+import type { PlayerWeaponSlot } from "../equipment/PlayerWeaponSlot";
 import type { EquipmentSystem } from "../equipment/EquipmentSystem";
 import type { CraftingSystem } from "../crafting/CraftingSystem";
 import type { CombatTargetSystem } from "../combat/CombatTargetSystem";
 import type { MeleeCombatSystem } from "../combat/MeleeCombatSystem";
-import { COMBAT_CONFIG, FISTS_COMBAT_PROFILE } from "../combat/combatConfig";
+import { COMBAT_CONFIG } from "../combat/combatConfig";
+import { describeWeaponStack } from "../combat/resolvePlayerMeleeProfile";
 import type { EnemySystem } from "../enemies/EnemySystem";
 import type { PlayerDamageResolver } from "../combat/PlayerDamageResolver";
 import { ROAMING_ZOMBIE_PROFILE } from "../enemies/enemyConfig";
@@ -34,11 +36,15 @@ import { ITEM_REGISTRY } from "../items/ItemSystem";
 import { calculateArmorMitigatedDamage } from "../combat/ArmorMitigation";
 import type { InputController } from "../input/InputController";
 import { bindDraggableCollapsiblePanel } from "./panelChrome";
+import { HarvestToolResolver } from "../harvesting/HarvestToolResolver";
+import type { HarvestDeliveryResult } from "../harvesting/HarvestRewardDelivery";
+import { countStarterFixtures } from "../ground-loot/starterGroundResources";
 
 export interface DebugPanelSources {
   readonly input: InputController;
   readonly isInventoryOpen: () => boolean;
   readonly isCraftingOpen: () => boolean;
+  readonly lastHarvestDelivery?: () => HarvestDeliveryResult | null;
 }
 
 export class DebugOverlay {
@@ -78,6 +84,7 @@ export class DebugOverlay {
     private readonly inventory: PlayerInventory,
     private readonly equipment: PlayerEquipment,
     private readonly equipmentSystem: EquipmentSystem,
+    private readonly weaponSlot: PlayerWeaponSlot,
     private readonly crafting: CraftingSystem,
     private readonly combatTargets: CombatTargetSystem,
     private readonly combat: MeleeCombatSystem,
@@ -93,7 +100,7 @@ export class DebugOverlay {
     this.root.className = "debug-overlay";
     this.root.innerHTML = [
       `<header class="debug-overlay-header">`,
-      `<div><small>PRODUCTION DEBUG · M01–M12</small><h2>F2 Debug</h2></div>`,
+      `<div><small>PRODUCTION DEBUG · M01–M15</small><h2>F2 Debug</h2></div>`,
       `<div class="panel-header-actions">`,
       `<label class="panel-toggle-label" title="Toggle combat/enemy range rings"><input type="checkbox" data-role="ranges" /> ranges</label>`,
       `<button type="button" data-role="collapse" aria-label="Collapse">−</button>`,
@@ -128,6 +135,8 @@ export class DebugOverlay {
       [Vector3.Zero(), new Vector3(0, 4, 0)],
     ] }, scene);
     this.axes.color = new Color3(1, 0.25, 0.2);
+    this.axes.isPickable = false;
+    this.axes.setEnabled(false);
     this.interactionRange = this.makeRing("DebugInteractionRange", 0.025, this.wireMaterial);
     this.interactionTargetRadius = this.makeRing("DebugInteractionTargetRadius", 0.035, this.wireMaterial);
     this.combatAcquireRing = this.makeRing("DebugCombatAcquire", 0.03, this.combatWireMaterial);
@@ -198,14 +207,17 @@ export class DebugOverlay {
     const lastPickup = this.pickupResults.lastResult;
     const agents = this.enemies.agents;
     const nearestEnemy = agents.reduce<(typeof agents)[number] | null>((nearest, enemy) => !nearest || enemy.playerDistance < nearest.playerDistance ? enemy : nearest, null);
-    const hatchetSlot = this.inventory.findFirstSlotByItemId("hatchet");
-    const pickaxeSlot = this.inventory.findFirstSlotByItemId("pickaxe");
+    const harvestTools = new HarvestToolResolver(this.inventory, this.weaponSlot);
+    const hatchetResolved = harvestTools.resolve("hatchet");
+    const pickaxeResolved = harvestTools.resolve("pickaxe");
+    const weaponDesc = describeWeaponStack(this.weaponSlot.current);
+    const activeProfile = this.combat.activeProfile;
     const lastDamage = this.playerDamage.lastResult;
     const combatTarget = this.combatTargets.current;
     const armor = this.equipment.totalArmor;
     const nextHit = calculateArmorMitigatedDamage(ROAMING_ZOMBIE_PROFILE.damage, armor);
     const movement = this.sources.input.getMovement();
-    const fistProgress = this.combat.attackProgress;
+    const attackProgress = this.combat.attackProgress;
     const enemyProgress = nearestEnemy?.attackProgress ?? 0;
 
     this.interactionRange.position.set(position.x, 0.09, position.z);
@@ -273,10 +285,34 @@ export class DebugOverlay {
       `HITS ${harvestingState.targetId ? `${harvestingState.remainingHits}/${harvestingState.totalHits}` : "-"}  ·  ${this.harvesting.active ? harvestingState.phase : "idle"}`,
       `HELD ${harvestingState.actionHeld ? "yes" : "no"}  ·  LOCK ${harvestingState.targetLocked ? "yes" : "no"}  ·  DONE ${harvestingState.lastResourceDepleted ?? "none"}`,
       "",
-      "TOOLS  (PlayerInventory · lowest slot)",
-      `HATCHET ${hatchetSlot === null ? "NO" : `YES  slot ${hatchetSlot}`}  ·  qty ${this.inventory.totalQuantity("hatchet")}`,
-      `PICKAXE ${pickaxeSlot === null ? "NO" : `YES  slot ${pickaxeSlot}`}  ·  qty ${this.inventory.totalQuantity("pickaxe")}`,
-      "SRC inventory  ·  no equip slot  ·  no durability",
+      "RESOURCE ACQUISITION",
+      (() => {
+        const pineActive = this.groundLoot.active.filter((e) => e.stack.itemId === "pine-log").length;
+        const limeActive = this.groundLoot.active.filter((e) => e.stack.itemId === "limestone").length;
+        const pineTotal = countStarterFixtures("pine-log");
+        const limeTotal = countStarterFixtures("limestone");
+        return `Loose Ground: Pine Log ${pineActive} · Limestone ${limeActive} (starter ${pineTotal}+${limeTotal})`;
+      })(),
+      (() => {
+        const last = this.sources.lastHarvestDelivery?.() ?? null;
+        if (!last) return "LAST HARVEST REWARD none";
+        return `LAST HARVEST ${last.itemId} req ${last.requestedQuantity} ins ${last.insertedQuantity} ovf ${last.overflowQuantity}`;
+      })(),
+      "harvest → Inventory direct · ground → PickupSystem only",
+      "",
+      "HARVEST TOOLS  (weapon-slot preferred · inventory fallback)",
+      `HATCHET ${hatchetResolved ? `YES  src ${hatchetResolved.source}` : "NO"}  ·  inv qty ${this.inventory.totalQuantity("hatchet")}`,
+      `  durability: ${hatchetResolved ? `${hatchetResolved.current} / ${hatchetResolved.max}` : "none"}`,
+      `PICKAXE ${pickaxeResolved ? `YES  src ${pickaxeResolved.source}` : "NO"}  ·  inv qty ${this.inventory.totalQuantity("pickaxe")}`,
+      `  durability: ${pickaxeResolved ? `${pickaxeResolved.current} / ${pickaxeResolved.max}` : "none"}`,
+      "matching equipped first · else lowest inventory slot · impact cost 1",
+      "",
+      "WEAPON",
+      this.weaponSlot.isEmpty ? "slot: empty" : `slot: ${weaponDesc.name}`,
+      this.weaponSlot.isEmpty ? "attack source: Fists" : `durability: ${weaponDesc.durability}`,
+      `damage: ${activeProfile.damage}`,
+      `attack speed: ${activeProfile.attacksPerSecond}/sec`,
+      `active profile: ${activeProfile.source}`,
       "",
       "INVENTORY",
       `SLOTS ${this.inventory.occupiedSlotCount}/${this.inventory.slotCount}  empty ${this.inventory.emptySlotCount}`,
@@ -284,7 +320,8 @@ export class DebugOverlay {
       `LAST INSERT ${this.inventory.lastInsertAccepted === null ? "none" : this.inventory.lastInsertAccepted ? "accepted" : "rejected"}`,
       `MAP ${invMap}`,
       "",
-      "EQUIPMENT  (armor only)",
+      "EQUIPMENT",
+      "(armor only · no armor durability)",
       ...this.equipment.getSlots().map((slot) => {
         const pieceArmor = slot.stack ? ITEM_REGISTRY.get(slot.stack.itemId).equipment?.armor : undefined;
         return `${slot.id.toUpperCase()} ${slot.stack?.itemId ?? "empty"}${pieceArmor !== undefined ? `  +${pieceArmor}` : ""}`;
@@ -300,13 +337,13 @@ export class DebugOverlay {
       `LAST ${this.crafting.lastResult ? `${this.crafting.lastResult.recipeId} ${this.crafting.lastResult.status}` : "none"}`,
       "",
       "COMBAT",
-      "(fists · separate from interaction)",
+      "(melee · separate from interaction)",
       `TARGET ${this.combatTargets.state.targetId ?? "none"}`,
       `DIST ${Number.isFinite(this.combatTargets.state.distance) ? this.combatTargets.state.distance.toFixed(2) : "-"}  ·  hit ${COMBAT_CONFIG.meleeHitRange}  ·  acq ${COMBAT_CONFIG.targetAcquisitionRange}`,
       `HP ${combatTarget ? `${combatTarget.health.currentHealth}/${combatTarget.health.maxHealth}` : "-"}  ·  ${combatTarget?.displayName ?? "-"}`,
       `STATE ${this.combat.state.toUpperCase()}  ·  LAST ${this.combat.lastAttackStatus ?? "none"}`,
-      `FISTS ${FISTS_COMBAT_PROFILE.damage} dmg  ·  ${FISTS_COMBAT_PROFILE.attacksPerSecond.toFixed(1)}/s`,
-      `PROGRESS ${(fistProgress * 100).toFixed(0)}%  ·  IMPACT ${this.combat.impactReached ? "done" : `at ${(FISTS_COMBAT_PROFILE.impactNormalizedTime * 100).toFixed(0)}%`}  ·  LOCK ${this.combat.lockedTarget?.combatId ?? "none"}`,
+      `SOURCE ${activeProfile.source}  ·  ${activeProfile.damage} dmg  ·  ${activeProfile.attacksPerSecond.toFixed(1)}/s`,
+      `PROGRESS ${(attackProgress * 100).toFixed(0)}%  ·  IMPACT ${this.combat.impactReached ? "done" : `at ${(activeProfile.impactNormalizedTime * 100).toFixed(0)}%`}  ·  LOCK ${this.combat.lockedTarget?.combatId ?? "none"}`,
       "",
       "ENEMIES",
       `LIVE ${this.enemies.liveCount}  ·  raw dmg ${ROAMING_ZOMBIE_PROFILE.damage}  ·  ${ROAMING_ZOMBIE_PROFILE.moveSpeed} u/s  ·  ${ROAMING_ZOMBIE_PROFILE.attacksPerSecond}/s`,

@@ -61,6 +61,14 @@ export class Player {
   clearHarvestPose(): void { this.animator.clearHarvestPose(); }
   getCombatPosition(): CombatPoint { return this.position; }
   faceCombatTarget(position: CombatPoint): void { this.requestFacing(position); }
-  applyFistAttackPose(progress: number, fist: FistSide): void { this.animator.applyFistAttackPose(progress, fist); }
-  clearFistAttackPose(): void { this.animator.clearFistAttackPose(); }
+
+  applyMeleeAttackPose(progress: number, profile: import("../combat/MeleeCombatProfile").MeleeCombatProfile, fist: FistSide): void {
+    this.animator.applyMeleeAttackPose(progress, profile, fist);
+  }
+
+  clearMeleeAttackPose(): void { this.animator.clearMeleeAttackPose(); }
+
+  setHeldWeapon(tool: HarvestTool | null): void {
+    this.visual.setHeldWeapon(tool);
+  }
 }

@@ -14,19 +14,22 @@ F1. LDOE Fidelity Audit & Alignment — implemented; F3 manual reference alignme
 10. Roaming Zombie / Enemy AI + Player Health Foundation — complete
 11. Defensive Combat / Armor Damage Mitigation — complete
 12. Inventory-Backed Harvesting Tools — complete
-13. Expanded Enemy AI
-14. Player Death
-15. Base Building
-16. Containers
-17. Workbenches
-18. Home Base
-19. World Map
-20. Resource Locations
-21. Location Reset / Generation
-22. Save System
-23. Audio
-24. VFX / Game Feel
-25. UI Polish
-26. Balancing
+13. Harvesting Tool Durability & Breakage — complete
+14. Active Weapon Slot + Hatchet / Pickaxe Melee Combat — complete
+15. Starter Ground Resources + Direct Harvest-to-Inventory — complete
+16. Expanded Enemy AI
+17. Player Death
+18. Base Building
+19. Containers
+20. Workbenches
+21. Home Base
+22. World Map
+23. Resource Locations
+24. Location Reset / Generation
+25. Save System
+26. Audio
+27. VFX / Game Feel
+28. UI Polish
+29. Balancing
 
-Milestone 12 is complete. The next existing roadmap entry is Milestone 13 — Expanded Enemy AI; it has not been started.
+Milestone 15 is complete. The next existing roadmap entry is Milestone 16 — Expanded Enemy AI; it has not been started.

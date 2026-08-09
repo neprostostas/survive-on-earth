@@ -9,9 +9,12 @@ export class ProceduralTextureFactory {
   constructor(private readonly scene: Scene) {}
 
   createGroundTexture(detail: number, dirtIntensity: number): DynamicTexture {
-    const texture = new DynamicTexture("GeneratedGroundColor", 1024, this.scene, true);
+    // No mip chain: ground covers a huge UV extent and mips wash out detail into a milky look.
+    const texture = new DynamicTexture("GeneratedGroundColor", 1536, this.scene, false);
     texture.wrapU = Texture.CLAMP_ADDRESSMODE;
     texture.wrapV = Texture.CLAMP_ADDRESSMODE;
+    texture.anisotropicFilteringLevel = 16;
+    texture.updateSamplingMode(Texture.BILINEAR_SAMPLINGMODE);
     this.drawGround(texture.getContext(), texture.getSize().width, detail, dirtIntensity);
     texture.update(false);
     return texture;
@@ -46,8 +49,10 @@ export class ProceduralTextureFactory {
   }
 
   createWoodTexture(): DynamicTexture {
-    const size = 256;
-    const texture = new DynamicTexture("GeneratedWood", size, this.scene, true);
+    const size = 512;
+    const texture = new DynamicTexture("GeneratedWood", size, this.scene, false);
+    texture.anisotropicFilteringLevel = 16;
+    texture.updateSamplingMode(Texture.BILINEAR_SAMPLINGMODE);
     const context = texture.getContext();
     const rng = this.random(441);
     context.fillStyle = "#755335";
@@ -75,8 +80,10 @@ export class ProceduralTextureFactory {
   }
 
   createBarkTexture(): DynamicTexture {
-    const size = 256;
-    const texture = new DynamicTexture("GeneratedBark", size, this.scene, true);
+    const size = 512;
+    const texture = new DynamicTexture("GeneratedBark", size, this.scene, false);
+    texture.anisotropicFilteringLevel = 16;
+    texture.updateSamplingMode(Texture.BILINEAR_SAMPLINGMODE);
     const context = texture.getContext();
     const rng = this.random(919);
     context.fillStyle = "#513821";

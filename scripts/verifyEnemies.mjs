@@ -221,7 +221,8 @@ assert.equal((gameSource.match(/Object\.freeze\(\{ x: -?[\d.]+, y: 0, z: -?[\d.]
 assert.equal(hudSource.includes("setPlayerHealth"), true);
 assert.equal(hudSource.includes("PLAYER DEFEATED"), true);
 assert.equal(/weapon|tool|mainHand|offHand/.test(equipmentSource), false);
-assert.equal(/durability/.test(harvestToolsSource), false);
+assert.equal(harvestToolsSource.includes("consumeImpactUse"), true);
+assert.equal(enemySource.includes("consumeImpactUse"), false);
 for (const forbidden of ["FastBiter", "FloaterBloater", "ToxicSpitter", "lootTable", "experiencePoints", "respawnPlayer", "navmesh", "pathfinding", "healthRegeneration", "armorMitigation"]) {
   assert.equal(enemySource.includes(forbidden) || systemSource.includes(forbidden) || configSource.includes(forbidden), false, `M10 scope excludes ${forbidden}`);
 }

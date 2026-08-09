@@ -81,26 +81,36 @@ export class HarvestingSystem {
     );
 
     if (events.impact) {
-      const result = target.applyImpact(target.requiredTool);
-      if (result.accepted) {
+      // Successful harvesting impact: spend one durability use, then resource hit (last point still counts).
+      if (!this.tools.hasTool(target.requiredTool)) {
+        // Tool became unavailable mid-swing; session cancellation handles follow-up.
+      } else {
+        const durability = this.tools.consumeImpactUse(target.requiredTool);
+        if (!durability?.accepted) {
+          throw new Error(`Harvest impact timing without spendable ${target.requiredTool} durability`);
+        }
+        const result = target.applyImpact(target.requiredTool);
+        if (!result.accepted) {
+          throw new Error(`Tool durability spent but resource rejected impact: ${target.resourceId}`);
+        }
         target.playImpact(playerPosition, this.config.harvesting.hitReactionStrength, this.config.harvesting.particleIntensity);
         this.interaction.acknowledge(target);
-      }
-      if (result.accepted && result.depleted) {
-        const resourceYield = target.claimYield();
-        if (!resourceYield) throw new Error(`Depleted resource did not provide a one-shot yield: ${target.resourceId}`);
-        const itemResult = createItemResult(target.resourceId, resourceYield.itemId, resourceYield.quantity);
-        const resourcePosition = target.getInteractionPosition();
-        this.resultSink.handle(itemResult, {
-          x: resourcePosition.x,
-          y: resourcePosition.y,
-          z: resourcePosition.z,
-        });
-        target.playDepletion(playerPosition, this.config.harvesting.hitReactionStrength, this.config.harvesting.particleIntensity);
-        this.debugState.lastResourceDepleted = target.resourceId;
-        this.onResourceDepleted(target);
-        this.interaction.clearTarget(target);
-        this.session.cancel();
+        if (result.depleted) {
+          const resourceYield = target.claimYield();
+          if (!resourceYield) throw new Error(`Depleted resource did not provide a one-shot yield: ${target.resourceId}`);
+          const itemResult = createItemResult(target.resourceId, resourceYield.itemId, resourceYield.quantity);
+          const resourcePosition = target.getInteractionPosition();
+          this.resultSink.handle(itemResult, {
+            x: resourcePosition.x,
+            y: resourcePosition.y,
+            z: resourcePosition.z,
+          });
+          target.playDepletion(playerPosition, this.config.harvesting.hitReactionStrength, this.config.harvesting.particleIntensity);
+          this.debugState.lastResourceDepleted = target.resourceId;
+          this.onResourceDepleted(target);
+          this.interaction.clearTarget(target);
+          this.session.cancel();
+        }
       }
     }
 

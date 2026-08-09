@@ -1,6 +1,7 @@
 import type { Interactable } from "../interaction/Interactable";
 import type { InteractionPoint } from "../interaction/InteractionTypes";
 import type { ItemResult, ResourceResultSink, ResultWorldPoint } from "../items/ItemResult";
+import type { ItemStack } from "../items/ItemSystem";
 import { GroundLoot } from "./GroundLoot.ts";
 import { GROUND_LOOT_CONFIG } from "./groundLootConfig.ts";
 
@@ -70,6 +71,29 @@ export class GroundLootSystem implements ResourceResultSink {
       return entity;
     });
     return Object.freeze(spawned);
+  }
+
+  /**
+   * Authored fixed world item at an absolute XZ (no harvest ring scatter).
+   * Used for starter bootstrap resources and other intentional world pickups.
+   */
+  placeAuthoredStack(stack: ItemStack, position: ResultWorldPoint, sourceLabel: string): GroundLoot {
+    void sourceLabel;
+    const id = `ground-loot-${String(this.nextId++).padStart(4, "0")}`;
+    const entity = new GroundLoot(
+      id,
+      stack,
+      Object.freeze({
+        x: position.x,
+        y: position.y + GROUND_LOOT_CONFIG.spawnHeight,
+        z: position.z,
+      }),
+      GROUND_LOOT_CONFIG.interactionRadius,
+    );
+    this.entities.set(id, entity);
+    this.registry.addInteractable(entity);
+    this.presentation?.spawn(entity);
+    return entity;
   }
 
   claim(

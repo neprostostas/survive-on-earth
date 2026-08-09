@@ -10,7 +10,6 @@ import type { WorldMaterials } from "../../rendering/Materials";
 export class CampfireObject {
   readonly root: TransformNode;
   readonly meshes: Mesh[] = [];
-  readonly shadowCasters: Mesh[] = [];
   private readonly flames: Mesh[] = [];
   private readonly smoke: Mesh[] = [];
   private readonly light: PointLight;
@@ -28,7 +27,6 @@ export class CampfireObject {
       stone.rotation.y = angle;
       stone.material = materials.rock[i % materials.rock.length];
       this.meshes.push(stone);
-      this.shadowCasters.push(stone);
     }
     for (let i = 0; i < 3; i += 1) {
       const log = MeshBuilder.CreateCylinder("CampfireLog", { height: 1.05, diameter: 0.18, tessellation: 8 }, scene);
@@ -38,7 +36,6 @@ export class CampfireObject {
       log.rotation.y = i / 3 * Math.PI;
       log.material = materials.trunk;
       this.meshes.push(log);
-      this.shadowCasters.push(log);
     }
     const ember = MeshBuilder.CreateCylinder("CampfireEmbers", { height: 0.09, diameter: 0.72, tessellation: 14 }, scene);
     ember.parent = this.root;

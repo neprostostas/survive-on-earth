@@ -18,6 +18,9 @@ export class PlayerVisual {
   private readonly hatchetTool: TransformNode;
   private readonly pickaxeTool: TransformNode;
   private readonly baseHeight = 1.8;
+  private heldWeapon: HarvestTool | null = null;
+  private harvestOverride: HarvestTool | null = null;
+  private suppressHeldForUnarmed = false;
 
   constructor(scene: Scene) {
     this.root = new TransformNode("PlayerRoot", scene);
@@ -78,14 +81,31 @@ export class PlayerVisual {
     this.root.scaling.setAll(height / this.baseHeight);
   }
 
+  setHeldWeapon(tool: HarvestTool | null): void {
+    this.heldWeapon = tool;
+    this.syncToolVisibility();
+  }
+
+  /** Temporarily hide held tool for unarmed punches without clearing equip state. */
+  setUnarmedAttackVisual(active: boolean): void {
+    this.suppressHeldForUnarmed = active;
+    this.syncToolVisibility();
+  }
+
   showHarvestTool(tool: HarvestTool): void {
-    this.hatchetTool.setEnabled(tool === "hatchet");
-    this.pickaxeTool.setEnabled(tool === "pickaxe");
+    this.harvestOverride = tool;
+    this.syncToolVisibility();
   }
 
   hideHarvestTool(): void {
-    this.hatchetTool.setEnabled(false);
-    this.pickaxeTool.setEnabled(false);
+    this.harvestOverride = null;
+    this.syncToolVisibility();
+  }
+
+  private syncToolVisibility(): void {
+    const tool = this.harvestOverride ?? (this.suppressHeldForUnarmed ? null : this.heldWeapon);
+    this.hatchetTool.setEnabled(tool === "hatchet");
+    this.pickaxeTool.setEnabled(tool === "pickaxe");
   }
 
   private createHatchet(scene: Scene, wood: StandardMaterial, metal: StandardMaterial): TransformNode {

@@ -221,6 +221,11 @@ assert.equal(iconSource.includes('"cargo-pants"'), true);
 assert.equal(visualSource.includes("equipment.subscribe"), true, "visual projection must subscribe to domain state");
 assert.equal(gameSource.includes("spawnEquipmentCalibrationLoot"), true, "deterministic calibration acquisition must be wired");
 assert.equal(debugSource.includes('"EQUIPMENT"'), true, "F2 must expose equipment state");
-assert.equal(/backpackSlot|weaponSlot|pocketSlot|durability|crafting|dragstart|ondrop|drop item/i.test(`${equipmentSource}\n${systemSource}\n${panelSource}`), false, "M07 must stop at basic armor equipment");
+assert.equal(/backpackSlot|pocketSlot|crafting|dragstart|ondrop|drop item/i.test(`${equipmentSource}\n${systemSource}\n${panelSource}`), false, "M07 armor panel stays without backpack/pocket/crafting/DnD");
+assert.equal(/weapon/.test(equipmentSource), false, "PlayerEquipment domain stays armor-only");
+assert.equal(/weapon/.test(systemSource), false, "EquipmentSystem remains armor-only");
+assert.equal(panelSource.includes("weapon-slot") || panelSource.includes("WEAPON"), true, "M14 inventory shows separate weapon slot UI");
+assert.equal(/currentDurability|maxDurability|tryConsumeDurability/.test(`${equipmentSource}\n${systemSource}`), false, "equipment domain has no armor durability");
+assert.equal(panelSource.includes("stackDurability"), true, "inventory UI may show tool durability bars only");
 
 console.log("Equipment verification passed (84 acceptance checks/groups)");

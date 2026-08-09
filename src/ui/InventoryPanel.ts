@@ -1,15 +1,19 @@
 import type { EquipmentSystem } from "../equipment/EquipmentSystem";
 import { EQUIPMENT_SLOT_IDS, type EquipmentSlotId } from "../equipment/EquipmentTypes";
 import type { PlayerEquipment } from "../equipment/PlayerEquipment";
+import type { PlayerWeaponSlot } from "../equipment/PlayerWeaponSlot";
+import type { WeaponEquipSystem } from "../equipment/WeaponEquipSystem";
+import { isWeaponCapableItemId } from "../equipment/WeaponTypes";
 import type { PickupRejectionSink } from "../ground-loot/PickupResult";
 import { INVENTORY_CONFIG } from "../inventory/inventoryConfig";
 import type { PlayerInventory } from "../inventory/PlayerInventory";
-import { ITEM_REGISTRY, type ItemStack } from "../items/ItemSystem";
+import { ITEM_REGISTRY, stackDurability, type ItemStack } from "../items/ItemSystem";
 import { ITEM_ICONS } from "./itemIcons";
 
 type Selection =
   | { readonly source: "inventory"; readonly index: number; readonly stack: ItemStack }
-  | { readonly source: "equipment"; readonly slot: EquipmentSlotId; readonly stack: ItemStack };
+  | { readonly source: "equipment"; readonly slot: EquipmentSlotId; readonly stack: ItemStack }
+  | { readonly source: "weapon"; readonly stack: ItemStack };
 
 const SLOT_LABELS: Readonly<Record<EquipmentSlotId, string>> = Object.freeze({
   head: "Head",
@@ -19,10 +23,18 @@ const SLOT_LABELS: Readonly<Record<EquipmentSlotId, string>> = Object.freeze({
 });
 
 export class InventoryPanel implements PickupRejectionSink {
+  private readonly inventory: PlayerInventory;
+  private readonly equipment: PlayerEquipment;
+  private readonly equipmentSystem: EquipmentSystem;
+  private readonly weaponSlot: PlayerWeaponSlot;
+  private readonly weaponEquipSystem: WeaponEquipSystem;
+  private readonly toggleButton: HTMLButtonElement;
+  private readonly onVisibilityChange: (open: boolean) => void;
   private readonly overlay: HTMLElement;
   private readonly closeButton: HTMLButtonElement;
   private readonly slots: readonly HTMLButtonElement[];
   private readonly equipmentSlots: Readonly<Record<EquipmentSlotId, HTMLButtonElement>>;
+  private readonly weaponSlotButton: HTMLButtonElement;
   private readonly armorValue: HTMLElement;
   private readonly selectionName: HTMLElement;
   private readonly selectionStats: HTMLElement;
@@ -35,12 +47,21 @@ export class InventoryPanel implements PickupRejectionSink {
 
   constructor(
     root: HTMLElement,
-    private readonly inventory: PlayerInventory,
-    private readonly equipment: PlayerEquipment,
-    private readonly equipmentSystem: EquipmentSystem,
-    private readonly toggleButton: HTMLButtonElement,
-    private readonly onVisibilityChange: (open: boolean) => void,
+    inventory: PlayerInventory,
+    equipment: PlayerEquipment,
+    equipmentSystem: EquipmentSystem,
+    weaponSlot: PlayerWeaponSlot,
+    weaponEquipSystem: WeaponEquipSystem,
+    toggleButton: HTMLButtonElement,
+    onVisibilityChange: (open: boolean) => void,
   ) {
+    this.inventory = inventory;
+    this.equipment = equipment;
+    this.equipmentSystem = equipmentSystem;
+    this.weaponSlot = weaponSlot;
+    this.weaponEquipSystem = weaponEquipSystem;
+    this.toggleButton = toggleButton;
+    this.onVisibilityChange = onVisibilityChange;
     this.overlay = document.createElement("section");
     this.overlay.className = "inventory-overlay";
     this.overlay.setAttribute("aria-hidden", "true");
@@ -49,18 +70,25 @@ export class InventoryPanel implements PickupRejectionSink {
         <header><div><small>PLAYER LOADOUT</small><h2 id="inventory-title">INVENTORY</h2></div><button class="inventory-close" type="button" aria-label="Close inventory">×</button></header>
         <div class="inventory-content">
           <section class="equipment-section" aria-labelledby="equipment-title">
-            <div class="equipment-heading"><h3 id="equipment-title">EQUIPMENT</h3><span class="armor-stat" aria-label="Total armor">ARMOR <b>0</b></span></div>
+            <div class="equipment-heading"><h3 id="equipment-title">ARMOR</h3><span class="armor-stat" aria-label="Total armor">ARMOR <b>0</b></span></div>
             <div class="equipment-layout">
               <div class="equipment-slot-list" aria-label="Four armor slots"></div>
               <div class="equipment-preview" aria-hidden="true">
                 <svg viewBox="0 0 100 190"><circle class="preview-head" cx="50" cy="25" r="17"/><path class="preview-torso" d="M31 47Q50 39 69 47l8 56H23z"/><path class="preview-legs" d="M27 101h21l-5 57H25zm25 0h21l2 57H57z"/><path class="preview-feet" d="M23 156h21l6 18H19zm34 0h20l5 18H52z"/></svg>
               </div>
             </div>
+            <div class="weapon-section" aria-labelledby="weapon-title">
+              <h3 id="weapon-title">WEAPON</h3>
+              <button type="button" class="equipment-slot weapon-slot" data-role="weapon-slot" aria-label="Weapon slot, empty">
+                <span class="equipment-slot-label">Weapon</span>
+                <span class="equipment-slot-content"></span>
+              </button>
+            </div>
           </section>
           <section class="inventory-storage" aria-labelledby="storage-title">
             <div class="inventory-storage-heading"><h3 id="storage-title">BASE STORAGE</h3><small>${INVENTORY_CONFIG.baseSlotCount} SLOTS</small></div>
             <div class="inventory-grid" aria-label="${INVENTORY_CONFIG.baseSlotCount} base inventory slots"></div>
-            <div class="inventory-selection" aria-live="polite"><div><b class="selection-name">SELECT AN ITEM</b><small class="selection-stats">Resources and armor</small></div><button class="inventory-action" type="button" hidden></button></div>
+            <div class="inventory-selection" aria-live="polite"><div><b class="selection-name">SELECT AN ITEM</b><small class="selection-stats">Resources, armor, and tools</small></div><button class="inventory-action" type="button" hidden></button></div>
           </section>
         </div>
       </div>`;
@@ -80,7 +108,8 @@ export class InventoryPanel implements PickupRejectionSink {
     const selectionStats = this.overlay.querySelector<HTMLElement>(".selection-stats");
     const actionButton = this.overlay.querySelector<HTMLButtonElement>(".inventory-action");
     const preview = this.overlay.querySelector<HTMLElement>(".equipment-preview");
-    if (!grid || !equipmentList || !closeButton || !armorValue || !selectionName || !selectionStats || !actionButton || !preview) {
+    const weaponSlotButton = this.overlay.querySelector<HTMLButtonElement>('[data-role="weapon-slot"]');
+    if (!grid || !equipmentList || !closeButton || !armorValue || !selectionName || !selectionStats || !actionButton || !preview || !weaponSlotButton) {
       throw new Error("Inventory UI failed to mount");
     }
     grid.style.setProperty("--inventory-columns", String(INVENTORY_CONFIG.columns));
@@ -90,6 +119,7 @@ export class InventoryPanel implements PickupRejectionSink {
     this.selectionStats = selectionStats;
     this.actionButton = actionButton;
     this.preview = preview;
+    this.weaponSlotButton = weaponSlotButton;
 
     this.slots = Object.freeze(Array.from({ length: INVENTORY_CONFIG.baseSlotCount }, (_, index) => {
       const slot = document.createElement("button");
@@ -114,15 +144,21 @@ export class InventoryPanel implements PickupRejectionSink {
       equipmentSlots[slotId] = slot;
     }
     this.equipmentSlots = Object.freeze(equipmentSlots);
+    this.weaponSlotButton.addEventListener("click", () => { this.selectWeapon(); });
 
     this.renderSlots(Array.from({ length: INVENTORY_CONFIG.baseSlotCount }, (_, index) => index));
     this.renderEquipment();
+    this.renderWeapon();
     inventory.subscribe((result) => {
       this.renderSlots(result.changedSlotIndexes);
       this.validateSelection();
     });
     equipment.subscribe(() => {
       this.renderEquipment();
+      this.validateSelection();
+    });
+    weaponSlot.subscribe(() => {
+      this.renderWeapon();
       this.validateSelection();
     });
     toggleButton.addEventListener("click", this.toggle);
@@ -177,8 +213,17 @@ export class InventoryPanel implements PickupRejectionSink {
         continue;
       }
       const definition = ITEM_REGISTRY.get(slot.stack.itemId);
-      element.innerHTML = `<span class="inventory-item-icon">${ITEM_ICONS[definition.iconId]}</span><b class="inventory-quantity">${slot.stack.quantity}</b>`;
-      element.setAttribute("aria-label", `${definition.displayName}, quantity ${slot.stack.quantity}`);
+      const durability = stackDurability(slot.stack);
+      const durabilityBar = durability
+        ? `<i class="inventory-durability" style="--durability:${(durability.current / durability.max).toFixed(4)}" aria-hidden="true"></i>`
+        : "";
+      element.innerHTML = `<span class="inventory-item-icon">${ITEM_ICONS[definition.iconId]}</span><b class="inventory-quantity">${slot.stack.quantity}</b>${durabilityBar}`;
+      element.setAttribute(
+        "aria-label",
+        durability
+          ? `${definition.displayName}, quantity ${slot.stack.quantity}, durability ${durability.current} of ${durability.max}`
+          : `${definition.displayName}, quantity ${slot.stack.quantity}`,
+      );
     }
   }
 
@@ -202,6 +247,31 @@ export class InventoryPanel implements PickupRejectionSink {
     }
   }
 
+  private renderWeapon(): void {
+    const stack = this.weaponSlot.current;
+    const content = this.weaponSlotButton.querySelector<HTMLElement>(".equipment-slot-content");
+    if (!content) return;
+    this.weaponSlotButton.classList.toggle("occupied", stack !== null);
+    this.weaponSlotButton.classList.toggle("selected", this.selected?.source === "weapon");
+    if (!stack) {
+      content.replaceChildren();
+      this.weaponSlotButton.setAttribute("aria-label", "Weapon slot, empty");
+      return;
+    }
+    const definition = ITEM_REGISTRY.get(stack.itemId);
+    const durability = stackDurability(stack);
+    const durabilityBar = durability
+      ? `<i class="inventory-durability" style="--durability:${(durability.current / durability.max).toFixed(4)}" aria-hidden="true"></i>`
+      : "";
+    content.innerHTML = `<span class="inventory-item-icon">${ITEM_ICONS[definition.iconId]}</span>${durabilityBar}`;
+    this.weaponSlotButton.setAttribute(
+      "aria-label",
+      durability
+        ? `Weapon: ${definition.displayName}, durability ${durability.current} of ${durability.max}`
+        : `Weapon: ${definition.displayName}`,
+    );
+  }
+
   private selectInventory(index: number): void {
     const stack = this.inventory.getSlot(index).stack;
     if (!stack) { this.clearSelection(); return; }
@@ -216,19 +286,46 @@ export class InventoryPanel implements PickupRejectionSink {
     this.renderSelection();
   }
 
+  private selectWeapon(): void {
+    const stack = this.weaponSlot.current;
+    if (!stack) { this.clearSelection(); return; }
+    this.selected = Object.freeze({ source: "weapon", stack });
+    this.renderSelection();
+  }
+
   private renderSelection(): void {
-    for (const [index, slot] of this.slots.entries()) slot.classList.toggle("selected", this.selected?.source === "inventory" && this.selected.index === index);
-    for (const slotId of EQUIPMENT_SLOT_IDS) this.equipmentSlots[slotId].classList.toggle("selected", this.selected?.source === "equipment" && this.selected.slot === slotId);
+    for (const [index, slot] of this.slots.entries()) {
+      slot.classList.toggle("selected", this.selected?.source === "inventory" && this.selected.index === index);
+    }
+    for (const slotId of EQUIPMENT_SLOT_IDS) {
+      this.equipmentSlots[slotId].classList.toggle("selected", this.selected?.source === "equipment" && this.selected.slot === slotId);
+    }
+    this.weaponSlotButton.classList.toggle("selected", this.selected?.source === "weapon");
     if (!this.selected) {
       this.selectionName.textContent = "SELECT AN ITEM";
-      this.selectionStats.textContent = "Resources and armor";
+      this.selectionStats.textContent = "Resources, armor, and tools";
       this.actionButton.hidden = true;
       return;
     }
     const definition = ITEM_REGISTRY.get(this.selected.stack.itemId);
     this.selectionName.textContent = definition.displayName.toUpperCase();
+
+    if (this.selected.source === "weapon" || (this.selected.source === "inventory" && isWeaponCapableItemId(this.selected.stack.itemId) && definition.meleeCombat)) {
+      const durability = stackDurability(this.selected.stack);
+      const melee = definition.meleeCombat;
+      this.selectionStats.textContent = durability && melee
+        ? `WEAPON · ${durability.current} / ${durability.max} · ${melee.damage} dmg · ${melee.attacksPerSecond}/s`
+        : "WEAPON";
+      this.actionButton.textContent = this.selected.source === "inventory" ? "EQUIP" : "UNEQUIP";
+      this.actionButton.hidden = false;
+      return;
+    }
+
     if (!definition.equipment) {
-      this.selectionStats.textContent = `${definition.category.toUpperCase()} · ${this.selected.stack.quantity} / ${definition.maxStack}`;
+      const durability = stackDurability(this.selected.stack);
+      this.selectionStats.textContent = durability
+        ? `${definition.category.toUpperCase()} · ${durability.current} / ${durability.max}`
+        : `${definition.category.toUpperCase()} · ${this.selected.stack.quantity} / ${definition.maxStack}`;
       this.actionButton.hidden = true;
       return;
     }
@@ -246,13 +343,28 @@ export class InventoryPanel implements PickupRejectionSink {
     if (!this.selected) return;
     const current = this.selected.source === "inventory"
       ? this.inventory.getSlot(this.selected.index).stack
-      : this.equipment.getSlot(this.selected.slot).stack;
+      : this.selected.source === "equipment"
+        ? this.equipment.getSlot(this.selected.slot).stack
+        : this.weaponSlot.current;
     if (current !== this.selected.stack) this.clearSelection();
   }
 
   private readonly performSelectedAction = (): void => {
     const selection = this.selected;
     if (!selection) return;
+    if (selection.source === "weapon") {
+      const result = this.weaponEquipSystem.unequipToInventory(selection.stack);
+      if (result.accepted || result.reason === "stale-source" || result.reason === "empty-source") this.clearSelection();
+      else if (result.reason === "inventory-full") this.handleInventoryFull();
+      return;
+    }
+    if (selection.source === "inventory" && isWeaponCapableItemId(selection.stack.itemId) && ITEM_REGISTRY.get(selection.stack.itemId).meleeCombat) {
+      const result = this.weaponEquipSystem.equipFromInventory(selection.index, selection.stack);
+      if (result.accepted || result.reason === "stale-source" || result.reason === "empty-source" || result.reason === "not-weapon") {
+        this.clearSelection();
+      }
+      return;
+    }
     const result = selection.source === "inventory"
       ? this.equipmentSystem.equipFromInventory(selection.index, selection.stack)
       : this.equipmentSystem.unequipToInventory(selection.slot, selection.stack);

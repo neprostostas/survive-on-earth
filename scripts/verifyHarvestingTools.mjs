@@ -5,6 +5,7 @@ import { constants as fsConstants } from "node:fs";
 import { CraftingSystem } from "../src/crafting/CraftingSystem.ts";
 import { HARVESTING_RESOURCES, HarvestableResource } from "../src/harvesting/HarvestableResource.ts";
 import { InventoryHarvestTools } from "../src/harvesting/InventoryHarvestTools.ts";
+import { PlayerWeaponSlot } from "../src/equipment/PlayerWeaponSlot.ts";
 import { PlayerInventory } from "../src/inventory/PlayerInventory.ts";
 import { createItemStack, ITEM_REGISTRY } from "../src/items/ItemSystem.ts";
 import { CRAFTING_RECIPES } from "../src/crafting/CraftingRecipeRegistry.ts";
@@ -39,7 +40,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
 // A. Empty inventory
 {
   const inventory = new PlayerInventory();
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   assert.equal(tools.hasTool("hatchet"), false);
   assert.equal(tools.hasTool("pickaxe"), false);
   assert.equal(tools.findToolSlot("hatchet"), null);
@@ -56,7 +57,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
 {
   const inventory = new PlayerInventory();
   inventory.tryInsert(createItemStack("hatchet", 1));
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   assert.equal(tools.hasTool("hatchet"), true);
   assert.equal(tools.hasTool("pickaxe"), false);
   assert.equal(tools.findToolSlot("hatchet"), 0);
@@ -71,7 +72,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
 {
   const inventory = new PlayerInventory();
   inventory.tryInsert(createItemStack("pickaxe", 1));
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   assert.equal(tools.hasTool("hatchet"), false);
   assert.equal(tools.hasTool("pickaxe"), true);
   const tree = resource("tree-pick", "pine-tree");
@@ -85,7 +86,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
   const inventory = new PlayerInventory();
   inventory.tryInsert(createItemStack("hatchet", 1));
   inventory.tryInsert(createItemStack("pickaxe", 1));
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   assert.equal(tools.hasTool("hatchet"), true);
   assert.equal(tools.hasTool("pickaxe"), true);
   assert.equal(tools.findToolSlot("hatchet"), 0);
@@ -104,7 +105,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
   inventory.tryInsert(createItemStack("dad-hat", 1)); // 5
   inventory.tryInsert(createItemStack("shirt", 1)); // 6
   inventory.tryInsert(createItemStack("hatchet", 1)); // 7
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   assert.equal(tools.findToolSlot("hatchet"), 2);
   assert.equal(inventory.findFirstSlotByItemId("hatchet"), 2);
 }
@@ -115,7 +116,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
   inventory.tryInsert(createItemStack("pine-log", 3));
   inventory.tryInsert(createItemStack("limestone", 3));
   const crafting = new CraftingSystem(inventory);
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   assert.equal(tools.hasTool("hatchet"), false);
   const craft = crafting.craft("hatchet");
   assert.equal(craft.accepted, true);
@@ -130,7 +131,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
   inventory.tryInsert(createItemStack("pine-log", 3));
   inventory.tryInsert(createItemStack("limestone", 3));
   const crafting = new CraftingSystem(inventory);
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   assert.equal(tools.hasTool("pickaxe"), false);
   assert.equal(crafting.craft("pickaxe").accepted, true);
   assert.equal(tools.hasTool("pickaxe"), true);
@@ -140,7 +141,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
 {
   const inventory = new PlayerInventory();
   inventory.tryInsert(createItemStack("hatchet", 1));
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   const tree = resource("tree-full", "pine-tree");
   assert.equal(tree.requiredTool, "hatchet");
   assert.equal(tree.totalHits, 4);
@@ -157,7 +158,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
 {
   const inventory = new PlayerInventory();
   inventory.tryInsert(createItemStack("pickaxe", 1));
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   const rock = resource("rock-full", "limestone-rock");
   assert.equal(rock.requiredTool, "pickaxe");
   assert.equal(rock.totalHits, 5);
@@ -173,7 +174,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
 {
   const inventory = new PlayerInventory();
   inventory.tryInsert(createItemStack("hatchet", 1));
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   assert.equal(tools.hasTool("hatchet"), true);
   // simulate remove by equipping/clearing: exchange whole stack to remove
   const slot = tools.findToolSlot("hatchet");
@@ -188,7 +189,7 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
 {
   const inventory = new PlayerInventory();
   inventory.tryInsert(createItemStack("pickaxe", 1));
-  const tools = new InventoryHarvestTools(inventory);
+  const tools = new InventoryHarvestTools(inventory, new PlayerWeaponSlot());
   const tree = resource("tree-wrong", "pine-tree");
   assert.equal(tree.applyImpact("pickaxe").accepted, false);
   assert.equal(tree.applyImpact(tools.hasTool("hatchet") ? "hatchet" : null).accepted, false);
@@ -210,6 +211,7 @@ await assert.rejects(() => access(new URL("../src/harvesting/PrototypeToolLoadou
 const gameSource = await readFile(new URL("../src/app/Game.ts", import.meta.url), "utf8");
 const harvestSource = await readFile(new URL("../src/harvesting/HarvestingSystem.ts", import.meta.url), "utf8");
 const toolSource = await readFile(new URL("../src/harvesting/InventoryHarvestTools.ts", import.meta.url), "utf8");
+const resolverSource = await readFile(new URL("../src/harvesting/HarvestToolResolver.ts", import.meta.url), "utf8");
 const calibrationSource = await readFile(new URL("../src/debug/CalibrationPanel.ts", import.meta.url), "utf8");
 const debugSource = await readFile(new URL("../src/debug/DebugOverlay.ts", import.meta.url), "utf8");
 const inventorySource = await readFile(new URL("../src/inventory/PlayerInventory.ts", import.meta.url), "utf8");
@@ -218,20 +220,28 @@ const itemSystem = await readFile(new URL("../src/items/ItemSystem.ts", import.m
 const meleeSource = await readFile(new URL("../src/combat/MeleeCombatSystem.ts", import.meta.url), "utf8");
 
 assert.equal(gameSource.includes("InventoryHarvestTools"), true);
+assert.equal(gameSource.includes("PlayerWeaponSlot"), true);
 assert.equal(gameSource.includes("PrototypeToolLoadout"), false);
 assert.equal(harvestSource.includes("PrototypeToolLoadout"), false);
 assert.equal(harvestSource.includes("InventoryHarvestTools"), true);
-assert.equal(toolSource.includes("findFirstSlotByItemId"), true);
+assert.equal(resolverSource.includes("findFirstSlotByItemId"), true);
+assert.equal(resolverSource.includes("weapon-slot"), true);
+assert.equal(toolSource.includes("HarvestToolResolver"), true);
+assert.equal(toolSource.includes("consumeImpactUse"), true);
 assert.equal(inventorySource.includes("findFirstSlotByItemId"), true);
 assert.equal(calibrationSource.includes("PrototypeToolLoadout"), false);
 assert.equal(calibrationSource.includes("prototype-tools"), false);
-assert.equal(debugSource.includes("HARVEST TOOLS") || debugSource.includes("TOOLS  (PlayerInventory"), true);
-assert.equal(debugSource.includes("lowest slot") || debugSource.includes("TOOLS"), true);
-assert.equal(debugSource.includes("no durability"), true);
-assert.equal(debugSource.includes('findFirstSlotByItemId("hatchet")'), true);
-assert.equal(toolSource.includes("Math.random"), false);
-assert.equal(/durability|maxDurability|currentDurability/.test(itemSystem), false);
-assert.equal(/durability/.test(toolSource), false);
+assert.equal(debugSource.includes("HARVEST TOOLS") || debugSource.includes("WEAPON"), true);
+assert.equal(debugSource.includes("weapon-slot") || debugSource.includes("lowest"), true);
+assert.equal(debugSource.includes("durability"), true);
+assert.equal(debugSource.includes("impact cost 1") || debugSource.includes("currentDurability") || debugSource.includes(" / "), true);
+assert.equal(debugSource.includes("HarvestToolResolver") || debugSource.includes("weapon-slot"), true);
+assert.equal(resolverSource.includes("Math.random"), false);
+assert.equal(ITEM_REGISTRY.get("hatchet").maxDurability, 50);
+assert.equal(ITEM_REGISTRY.get("pickaxe").maxDurability, 50);
+assert.equal(itemSystem.includes("maxDurability"), true);
+assert.equal(itemSystem.includes("currentDurability"), true);
+assert.equal(toolSource.includes("consumeImpactUse"), true);
 assert.equal(/weapon|tool|mainHand|offHand/.test(equipmentTypes), false);
 assert.equal(meleeSource.includes("hatchet"), false);
 assert.equal(meleeSource.includes("pickaxe"), false);

@@ -6,7 +6,18 @@ import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator"
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { CalibrationConfig } from "../config/calibrationConfig";
+import { GAME_CONFIG } from "../config/gameConfig";
 import { getVisualQualitySettings } from "../config/visualQualityConfig";
+
+/**
+ * Fixed orthographic shadow span for the full playable plane.
+ * Auto-extend from the initial casters (spawn only) clips shadows a few meters away;
+ * a stable world-sized frustum keeps character shadows valid everywhere without per-frame shimmer.
+ */
+const SHADOW_FRUSTUM_SIZE = GAME_CONFIG.worldSize * 1.4;
+const SHADOW_MIN_Z = 1;
+const SHADOW_MAX_Z = 120;
+const SHADOW_LIGHT_DISTANCE = 55;
 
 export class Lighting {
   readonly shadows: ShadowGenerator;
@@ -18,15 +29,14 @@ export class Lighting {
     this.ambient.diffuse = new Color3(0.92, 0.96, 0.86);
     this.ambient.groundColor = new Color3(0.42, 0.45, 0.34);
     this.sun = new DirectionalLight("sun", new Vector3(-0.5, -1, -0.5), scene);
-    this.sun.position.set(18, 30, 18);
     this.sun.diffuse = new Color3(1, 0.95, 0.82);
     this.sun.specular = new Color3(0.18, 0.17, 0.13);
-    // The player is a shadow caster. Re-fitting the directional-light frustum
-    // every frame as the player moves shifts every shadow texel and makes the
-    // whole scene shimmer. Babylon will calculate the bounds on the first
-    // render, then keep that projection stable.
+    // World-sized fixed frustum (not auto-extend around spawn casters).
     this.sun.autoUpdateExtends = false;
     this.sun.autoCalcShadowZBounds = false;
+    this.sun.shadowFrustumSize = SHADOW_FRUSTUM_SIZE;
+    this.sun.shadowMinZ = SHADOW_MIN_Z;
+    this.sun.shadowMaxZ = SHADOW_MAX_Z;
     this.shadows = new ShadowGenerator(2048, this.sun);
     this.shadows.usePercentageCloserFiltering = true;
     this.shadows.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
@@ -40,6 +50,12 @@ export class Lighting {
   applyCalibration(): void {
     const angle = this.config.lighting.directionalRotationDeg * Math.PI / 180;
     this.sun.direction.set(Math.sin(angle) * 0.72, -1, Math.cos(angle) * 0.72).normalize();
+    // Shadow camera sits along -direction from world origin so the fixed frustum covers the map center.
+    this.sun.position.set(
+      -this.sun.direction.x * SHADOW_LIGHT_DISTANCE,
+      -this.sun.direction.y * SHADOW_LIGHT_DISTANCE,
+      -this.sun.direction.z * SHADOW_LIGHT_DISTANCE,
+    );
     this.sun.intensity = this.config.lighting.directionalIntensity * 0.86;
     this.ambient.intensity = Math.min(1, this.config.lighting.ambientIntensity + 0.16);
     const requestedSoftness = this.config.lighting.shadowSoftness;
