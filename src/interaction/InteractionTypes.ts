@@ -1,4 +1,10 @@
-export type InteractionType = "resource" | "container" | "station";
+export type InteractionType = "resource" | "container" | "station" | "ground-loot";
+
+export interface InteractionPoint {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
 
 export interface InteractionDebugState {
   readonly targetId: string | null;

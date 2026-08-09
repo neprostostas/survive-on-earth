@@ -6,6 +6,7 @@ export class KeyboardInput {
   private primaryActionQueued = false;
   private primaryActionReleased = false;
   private primaryActionHeld = false;
+  private enabled = true;
 
   constructor() {
     window.addEventListener("keydown", this.onKeyDown);
@@ -14,6 +15,7 @@ export class KeyboardInput {
   }
 
   getVector(): Vector2 {
+    if (!this.enabled) return Vector2.Zero();
     const x = Number(this.pressed.has("KeyD") || this.pressed.has("ArrowRight")) - Number(this.pressed.has("KeyA") || this.pressed.has("ArrowLeft"));
     const y = Number(this.pressed.has("KeyW") || this.pressed.has("ArrowUp")) - Number(this.pressed.has("KeyS") || this.pressed.has("ArrowDown"));
     const result = new Vector2(x, y);
@@ -35,6 +37,12 @@ export class KeyboardInput {
 
   get isPrimaryActionHeld(): boolean { return this.primaryActionHeld; }
 
+  setEnabled(enabled: boolean): void {
+    if (this.enabled === enabled) return;
+    this.enabled = enabled;
+    this.clear();
+  }
+
   dispose(): void {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
@@ -42,6 +50,10 @@ export class KeyboardInput {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (!this.enabled) {
+      if (["KeyE", "Space", "KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) event.preventDefault();
+      return;
+    }
     if ((event.code === "KeyE" || event.code === "Space") && !event.repeat) {
       event.preventDefault();
       this.primaryActionQueued = true;
@@ -56,6 +68,7 @@ export class KeyboardInput {
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
+    if (!this.enabled) return;
     this.pressed.delete(event.code);
     if (event.code === "KeyE" || event.code === "Space") {
       event.preventDefault();

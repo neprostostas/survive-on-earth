@@ -6,10 +6,10 @@ V1. LDOE Visual Quality Overhaul — implemented; browser visual review pending
 F1. LDOE Fidelity Audit & Alignment — implemented; F3 manual reference alignment available
 03. Harvestable Resources — complete
 04. Item System / Resource Results — complete
-05. Ground Loot & Pickup
-06. Inventory
-07. Equipment
-08. Crafting
+05. Ground Loot & Pickup — complete
+06. Player Inventory — complete
+07. Equipment / Basic Armor — complete
+08. Crafting / Starter Blueprints — complete
 09. Melee Combat
 10. Zombies
 11. Enemy AI
@@ -27,4 +27,4 @@ F1. LDOE Fidelity Audit & Alignment — implemented; F3 manual reference alignme
 23. UI Polish
 24. Balancing
 
-Milestone 04 is complete. The next planned scope is Milestone 05 — Ground Loot & Pickup.
+Milestone 08 is complete. The next existing roadmap entry is Milestone 09 — Melee Combat; it has not been started.

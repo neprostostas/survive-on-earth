@@ -1,10 +1,9 @@
-import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { InteractionType } from "./InteractionTypes";
+import type { InteractionPoint, InteractionType } from "./InteractionTypes";
 
 export interface Interactable {
   readonly interactionId: string;
   readonly interactionType: InteractionType;
-  getInteractionPosition(): Readonly<Vector3>;
+  getInteractionPosition(): InteractionPoint;
   getInteractionRadius(): number;
   isInteractionEnabled(): boolean;
 }
@@ -12,7 +11,7 @@ export interface Interactable {
 export interface InteractableOptions {
   id: string;
   type: InteractionType;
-  position: () => Readonly<Vector3>;
+  position: () => InteractionPoint;
   radius: () => number;
   enabled: () => boolean;
 }

@@ -8,6 +8,7 @@ export class InputController {
   private readonly keyboard = new KeyboardInput();
   private readonly joystick: VirtualJoystick;
   private readonly primaryAction: PrimaryActionInput;
+  private suppressed = false;
 
   constructor(joystickElement: HTMLElement, primaryActionElement: HTMLElement, deadZone: number) {
     this.joystick = new VirtualJoystick(joystickElement, deadZone);
@@ -15,6 +16,7 @@ export class InputController {
   }
 
   getMovement(): Vector2 {
+    if (this.suppressed) return Vector2.Zero();
     const keyboard = this.keyboard.getVector();
     this.joystick.setKeyboardVisual(keyboard);
     const joystick = this.joystick.getVector();
@@ -24,6 +26,7 @@ export class InputController {
   }
 
   consumePrimaryActionState(): PrimaryActionState {
+    if (this.suppressed) return { pressedThisFrame: false, isHeld: false, releasedThisFrame: false };
     const keyboardPressed = this.keyboard.consumePrimaryAction();
     const pointerPressed = this.primaryAction.consumePressed();
     const keyboardReleased = this.keyboard.consumePrimaryActionReleased();
@@ -33,6 +36,14 @@ export class InputController {
       isHeld: this.keyboard.isPrimaryActionHeld || this.primaryAction.isHeld,
       releasedThisFrame: keyboardReleased || pointerReleased,
     };
+  }
+
+  setSuppressed(suppressed: boolean): void {
+    if (this.suppressed === suppressed) return;
+    this.suppressed = suppressed;
+    this.keyboard.setEnabled(!suppressed);
+    this.joystick.setEnabled(!suppressed);
+    this.primaryAction.setEnabled(!suppressed);
   }
 
   dispose(): void { this.keyboard.dispose(); this.joystick.dispose(); this.primaryAction.dispose(); }

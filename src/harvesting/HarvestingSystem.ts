@@ -93,7 +93,7 @@ export class HarvestingSystem {
         const resourcePosition = target.getInteractionPosition();
         this.resultSink.handle(itemResult, {
           x: resourcePosition.x,
-          y: resourcePosition.y + (target.resourceKind === "pine-tree" ? 1.55 : 0.9),
+          y: resourcePosition.y,
           z: resourcePosition.z,
         });
         target.playDepletion(playerPosition, this.config.harvesting.hitReactionStrength, this.config.harvesting.particleIntensity);

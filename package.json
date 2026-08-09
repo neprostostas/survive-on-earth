@@ -10,6 +10,10 @@
     "test:fidelity": "node --experimental-strip-types scripts/verifyFidelity.mjs",
     "test:harvesting": "node --experimental-strip-types scripts/verifyHarvesting.mjs",
     "test:items": "node --experimental-strip-types scripts/verifyItems.mjs",
+    "test:ground-loot": "node --experimental-strip-types scripts/verifyGroundLoot.mjs",
+    "test:inventory": "node --experimental-strip-types scripts/verifyInventory.mjs",
+    "test:equipment": "node --experimental-strip-types scripts/verifyEquipment.mjs",
+    "test:crafting": "node --experimental-strip-types scripts/verifyCrafting.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

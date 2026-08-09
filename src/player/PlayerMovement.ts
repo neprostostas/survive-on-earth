@@ -2,6 +2,7 @@ import { Scalar } from "@babylonjs/core/Maths/math.scalar";
 import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { CalibrationConfig } from "../config/calibrationConfig";
 import type { CollisionWorld } from "../collision/CollisionWorld";
+import type { InteractionPoint } from "../interaction/InteractionTypes";
 
 export class PlayerMovement {
   readonly velocity = Vector3.Zero();
@@ -42,7 +43,7 @@ export class PlayerMovement {
     } else if (movementYaw !== null) this.rotateTowards(movementYaw, delta);
   }
 
-  requestFacing(targetPosition: Readonly<Vector3>): void {
+  requestFacing(targetPosition: InteractionPoint): void {
     const dx = targetPosition.x - this.rootPosition.x;
     const dz = targetPosition.z - this.rootPosition.z;
     if (dx * dx + dz * dz > 0.0001) this.requestedFacingYaw = Math.atan2(dx, dz);

@@ -7,7 +7,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { CalibrationConfig } from "../config/calibrationConfig";
 import type { Interactable } from "./Interactable";
 import { InteractionTargetSelector } from "./InteractionTargetSelector";
-import type { InteractionDebugState } from "./InteractionTypes";
+import type { InteractionDebugState, InteractionPoint } from "./InteractionTypes";
 
 export class InteractionSystem {
   private readonly selector = new InteractionTargetSelector();
@@ -99,7 +99,7 @@ export class InteractionSystem {
     this.updateIndicator(delta);
   }
 
-  tryInteract(playerPosition: Readonly<Vector3>, requestFacing: (targetPosition: Readonly<Vector3>) => void): boolean {
+  tryInteract(playerPosition: Readonly<Vector3>, requestFacing: (targetPosition: InteractionPoint) => void): boolean {
     const target = this.currentTarget;
     if (!target || !target.isInteractionEnabled()) return false;
     const effectiveDistance = this.selector.measureEffectiveDistance(playerPosition, target);

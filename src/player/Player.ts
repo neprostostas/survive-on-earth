@@ -6,6 +6,7 @@ import { PlayerAnimator } from "./PlayerAnimator";
 import { PlayerMovement } from "./PlayerMovement";
 import { PlayerVisual } from "./PlayerVisual";
 import type { HarvestPhase, HarvestTool } from "../harvesting/HarvestingTypes";
+import type { InteractionPoint } from "../interaction/InteractionTypes";
 
 export class Player {
   readonly visual: PlayerVisual;
@@ -36,10 +37,10 @@ export class Player {
   }
 
   applyCalibration(): void { this.visual.setHeight(this.config.player.visualHeight); }
-  requestFacing(targetPosition: Readonly<Vector3>): void { this.movement.requestFacing(targetPosition); }
+  requestFacing(targetPosition: InteractionPoint): void { this.movement.requestFacing(targetPosition); }
   stopMovement(): void { this.movement.stop(); }
 
-  isFacing(targetPosition: Readonly<Vector3>, toleranceRad: number): boolean {
+  isFacing(targetPosition: InteractionPoint, toleranceRad: number): boolean {
     const dx = targetPosition.x - this.position.x;
     const dz = targetPosition.z - this.position.z;
     if (dx * dx + dz * dz < 0.0001) return true;

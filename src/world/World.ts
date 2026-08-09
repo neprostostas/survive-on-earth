@@ -14,6 +14,11 @@ export class World {
   get interactables(): readonly Interactable[] { return this.location.interactables; }
   get harvestables(): readonly HarvestableResource[] { return this.location.harvestables; }
   get clutterCount(): number { return this.location.clutterCount; }
+  addInteractable(interactable: Interactable): void { this.location.interactables.push(interactable); }
+  removeInteractable(interactable: Interactable): void {
+    const index = this.location.interactables.indexOf(interactable);
+    if (index >= 0) this.location.interactables.splice(index, 1);
+  }
   update(delta: number): void { this.location.update(delta); }
   applyCalibration(): void { this.location.applyCalibration(); }
   removeResourceCollision(resourceId: string): void { this.location.removeResourceCollision(resourceId); }

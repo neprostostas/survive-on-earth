@@ -26,6 +26,7 @@ export class Minimap {
     c.beginPath(); c.moveTo(center, 7); c.lineTo(center, this.size - 7); c.moveTo(7, center); c.lineTo(this.size - 7, center); c.stroke();
     for (const target of interactables) {
       if (!target.isInteractionEnabled()) continue;
+      if (target.interactionType === "ground-loot") continue;
       const position = target.getInteractionPosition();
       const dx = position.x - player.x;
       const dz = position.z - player.z;

@@ -5,6 +5,7 @@ export class VirtualJoystick {
   private value = Vector2.Zero();
   private readonly keyboardVisual = Vector2.Zero();
   private readonly knob: HTMLElement;
+  private enabled = true;
 
   constructor(private readonly element: HTMLElement, private readonly deadZone: number) {
     const knob = element.querySelector<HTMLElement>(".joystick-knob");
@@ -17,6 +18,16 @@ export class VirtualJoystick {
   }
 
   getVector(): Vector2 { return this.value.clone(); }
+
+  setEnabled(enabled: boolean): void {
+    if (this.enabled === enabled) return;
+    this.enabled = enabled;
+    this.pointerId = null;
+    this.value.set(0, 0);
+    this.keyboardVisual.set(0, 0);
+    this.element.classList.remove("pointer-active", "keyboard-input");
+    this.renderKnob(Vector2.Zero());
+  }
 
   setKeyboardVisual(vector: Vector2): void {
     if (this.keyboardVisual.equalsWithEpsilon(vector, 0.001)) return;
@@ -34,6 +45,7 @@ export class VirtualJoystick {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    if (!this.enabled) return;
     if (this.pointerId !== null) return;
     this.pointerId = event.pointerId;
     this.element.classList.add("pointer-active");
@@ -42,6 +54,7 @@ export class VirtualJoystick {
   };
 
   private readonly onPointerMove = (event: PointerEvent): void => {
+    if (!this.enabled) return;
     if (event.pointerId === this.pointerId) this.update(event);
   };
 

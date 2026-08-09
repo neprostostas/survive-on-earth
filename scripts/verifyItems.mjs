@@ -9,16 +9,30 @@ import {
 import { HarvestableResource } from "../src/harvesting/HarvestableResource.ts";
 
 const definitions = ITEM_REGISTRY.getAll();
-assert.equal(definitions.length, 2, "initial registry must contain exactly two item definitions");
+assert.equal(definitions.length, 8, "M08 registry must contain exactly eight item definitions");
 assert.equal(ITEM_REGISTRY.has("pine-log"), true, "pine-log definition must exist");
 assert.equal(ITEM_REGISTRY.has("limestone"), true, "limestone definition must exist");
 assert.equal(ITEM_REGISTRY.get("pine-log").maxStack, 20, "Pine Log max stack must be 20");
 assert.equal(ITEM_REGISTRY.get("limestone").maxStack, 20, "Limestone max stack must be 20");
+for (const [id, slot, armor] of [["dad-hat", "head", 2], ["shirt", "torso", 3], ["cargo-pants", "legs", 3], ["sneakers", "feet", 0]]) {
+  const definition = ITEM_REGISTRY.get(id);
+  assert.equal(definition.category, "armor");
+  assert.equal(definition.maxStack, 1);
+  assert.deepEqual(definition.equipment, { slot, armor });
+}
 assert.throws(() => ITEM_REGISTRY.get("unknown-item"), /Unknown item definition/, "unknown item must fail predictably");
 
 assert.deepEqual(createItemStack("pine-log", 3), { itemId: "pine-log", quantity: 3 });
 assert.deepEqual(createItemStack("limestone", 3), { itemId: "limestone", quantity: 3 });
 for (const invalid of [0, -5, 21, 1.5]) assert.throws(() => createItemStack("pine-log", invalid), RangeError);
+assert.throws(() => createItemStack("dad-hat", 2), RangeError, "armor is non-stackable");
+for (const id of ["hatchet", "pickaxe"]) {
+  const definition = ITEM_REGISTRY.get(id);
+  assert.equal(definition.category, "tool");
+  assert.equal(definition.maxStack, 1);
+  assert.equal(definition.equipment, undefined);
+  assert.throws(() => createItemStack(id, 2), RangeError, `${id} is non-stackable`);
+}
 
 for (const [quantity, expected] of [[1, [1]], [20, [20]], [21, [20, 1]], [40, [20, 20]], [47, [20, 20, 7]]]) {
   assert.deepEqual(createItemStacks("pine-log", quantity).map((stack) => stack.quantity), expected, `pine-log split ${quantity}`);

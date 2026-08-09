@@ -16,6 +16,13 @@ import type { World } from "../world/World";
 import type { PostProcessing } from "../rendering/PostProcessing";
 import type { HarvestingSystem } from "../harvesting/HarvestingSystem";
 import type { ResourceResultFeedback } from "../ui/ResourceResultFeedback";
+import type { GroundLootSystem } from "../ground-loot/GroundLootSystem";
+import type { TemporaryPickupResultSink } from "../ground-loot/PickupResult";
+import { GroundLoot } from "../ground-loot/GroundLoot";
+import type { PlayerInventory } from "../inventory/PlayerInventory";
+import type { PlayerEquipment } from "../equipment/PlayerEquipment";
+import type { EquipmentSystem } from "../equipment/EquipmentSystem";
+import type { CraftingSystem } from "../crafting/CraftingSystem";
 
 export class DebugOverlay {
   private visible = false;
@@ -40,6 +47,12 @@ export class DebugOverlay {
     private readonly interaction: InteractionSystem,
     private readonly harvesting: HarvestingSystem,
     private readonly itemResults: ResourceResultFeedback,
+    private readonly groundLoot: GroundLootSystem,
+    private readonly pickupResults: TemporaryPickupResultSink,
+    private readonly inventory: PlayerInventory,
+    private readonly equipment: PlayerEquipment,
+    private readonly equipmentSystem: EquipmentSystem,
+    private readonly crafting: CraftingSystem,
     private readonly world: World,
     private readonly postProcessing: PostProcessing,
     private readonly config: CalibrationConfig,
@@ -109,6 +122,8 @@ export class DebugOverlay {
     const interactionState = this.interaction.state;
     const harvestingState = this.harvesting.state;
     const lastItemResult = this.itemResults.lastResult;
+    const selectedGroundLoot = this.interaction.target instanceof GroundLoot ? this.interaction.target : null;
+    const lastPickup = this.pickupResults.lastResult;
     this.interactionRange.position.set(position.x, 0.09, position.z);
     this.interactionRange.scaling.set(this.config.interaction.range, 1, this.config.interaction.range);
     const interactionTarget = this.interaction.target;
@@ -154,6 +169,34 @@ export class DebugOverlay {
       `ITEM ${lastItemResult?.itemId ?? "-"}`,
       `QUANTITY ${lastItemResult?.quantity ?? "-"}`,
       `STACKS ${lastItemResult ? `[${lastItemResult.stacks.map((stack) => stack.quantity).join(", ")}]` : "-"}`,
+      "",
+      "GROUND LOOT",
+      `ACTIVE ${this.groundLoot.activeCount}`,
+      `TARGET ${selectedGroundLoot?.interactionId ?? "none"}`,
+      `ITEM ${selectedGroundLoot?.stack.itemId ?? "none"}`,
+      `QUANTITY ${selectedGroundLoot?.stack.quantity ?? 0}`,
+      `PICKUPS ${this.pickupResults.resultCount}`,
+      `LAST PICKUP ${lastPickup ? `${lastPickup.stack.itemId} × ${lastPickup.stack.quantity}` : "none"}`,
+      "",
+      "INVENTORY",
+      `SLOTS ${this.inventory.slotCount}`,
+      `OCCUPIED ${this.inventory.occupiedSlotCount}`,
+      `EMPTY ${this.inventory.emptySlotCount}`,
+      `PINE LOG ${this.inventory.totalQuantity("pine-log")}`,
+      `LIMESTONE ${this.inventory.totalQuantity("limestone")}`,
+      `LAST INSERT ${this.inventory.lastInsertAccepted === null ? "none" : this.inventory.lastInsertAccepted ? "accepted" : "rejected"}`,
+      "",
+      "EQUIPMENT",
+      ...this.equipment.getSlots().map((slot) => `${slot.id.toUpperCase()} ${slot.stack?.itemId ?? "empty"}`),
+      `ARMOR ${this.equipment.totalArmor}`,
+      `LAST ${this.equipmentSystem.lastResult ? `${this.equipmentSystem.lastResult.operation} ${this.equipmentSystem.lastResult.accepted ? "accepted" : this.equipmentSystem.lastResult.reason}` : "none"}`,
+      "",
+      "CRAFTING",
+      ...this.crafting.recipeRegistry.getAll().map((recipe) => {
+        const state = this.crafting.getRecipeState(recipe.id);
+        return `${recipe.id.toUpperCase()} ${state?.craftable ? "READY" : state?.blockedBy === "inventory-full" ? "FULL" : "MISSING"}`;
+      }),
+      `LAST ${this.crafting.lastResult ? `${this.crafting.lastResult.recipeId} ${this.crafting.lastResult.status}` : "none"}`,
       "",
       "VISUAL",
       `QUALITY ${this.config.visual.qualityPreset.toUpperCase()}`,

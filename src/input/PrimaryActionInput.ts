@@ -3,6 +3,7 @@ export class PrimaryActionInput {
   private released = false;
   private held = false;
   private pointerId: number | null = null;
+  private enabled = true;
 
   constructor(private readonly element: HTMLElement) {
     element.addEventListener("pointerdown", this.onPointerDown);
@@ -25,6 +26,14 @@ export class PrimaryActionInput {
 
   get isHeld(): boolean { return this.held; }
 
+  setEnabled(enabled: boolean): void {
+    if (this.enabled === enabled) return;
+    this.enabled = enabled;
+    this.onBlur();
+    this.queued = false;
+    this.released = false;
+  }
+
   dispose(): void {
     this.element.removeEventListener("pointerdown", this.onPointerDown);
     window.removeEventListener("pointerup", this.onPointerUp);
@@ -33,6 +42,7 @@ export class PrimaryActionInput {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    if (!this.enabled) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
     if (this.pointerId !== null) return;
     event.preventDefault();

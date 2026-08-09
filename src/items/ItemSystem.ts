@@ -1,6 +1,7 @@
 import type { ItemDefinition } from "./ItemDefinition";
 import type { ItemId } from "./ItemId";
 import type { ItemResult } from "./ItemResult";
+import { EQUIPMENT_SLOT_IDS } from "../equipment/EquipmentTypes.ts";
 
 export interface ItemStack {
   readonly itemId: ItemId;
@@ -15,6 +16,12 @@ export interface StackMergeResult {
 const INITIAL_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
   Object.freeze({ id: "pine-log", displayName: "Pine Log", category: "resource", maxStack: 20, iconId: "pine-log" }),
   Object.freeze({ id: "limestone", displayName: "Limestone", category: "resource", maxStack: 20, iconId: "limestone" }),
+  Object.freeze({ id: "dad-hat", displayName: "Dad Hat", category: "armor", maxStack: 1, iconId: "dad-hat", equipment: Object.freeze({ slot: "head", armor: 2 }) }),
+  Object.freeze({ id: "shirt", displayName: "Shirt", category: "armor", maxStack: 1, iconId: "shirt", equipment: Object.freeze({ slot: "torso", armor: 3 }) }),
+  Object.freeze({ id: "cargo-pants", displayName: "Cargo Pants", category: "armor", maxStack: 1, iconId: "cargo-pants", equipment: Object.freeze({ slot: "legs", armor: 3 }) }),
+  Object.freeze({ id: "sneakers", displayName: "Sneakers", category: "armor", maxStack: 1, iconId: "sneakers", equipment: Object.freeze({ slot: "feet", armor: 0 }) }),
+  Object.freeze({ id: "hatchet", displayName: "Hatchet", category: "tool", maxStack: 1, iconId: "hatchet" }),
+  Object.freeze({ id: "pickaxe", displayName: "Pickaxe", category: "tool", maxStack: 1, iconId: "pickaxe" }),
 ]);
 
 export class ItemRegistry {
@@ -26,7 +33,15 @@ export class ItemRegistry {
     for (const definition of definitions) {
       if (map.has(definition.id)) throw new Error(`Duplicate item definition: ${definition.id}`);
       if (!Number.isInteger(definition.maxStack) || definition.maxStack < 1) throw new Error(`Invalid max stack for item: ${definition.id}`);
-      map.set(definition.id, Object.freeze({ ...definition }));
+      if (definition.category === "armor") {
+        if (!definition.equipment || !EQUIPMENT_SLOT_IDS.includes(definition.equipment.slot) || !Number.isFinite(definition.equipment.armor) || definition.equipment.armor < 0) {
+          throw new Error(`Invalid equipment metadata for item: ${definition.id}`);
+        }
+      } else if (definition.equipment) throw new Error(`Non-armor item cannot declare equipment metadata: ${definition.id}`);
+      map.set(definition.id, Object.freeze({
+        ...definition,
+        equipment: definition.equipment ? Object.freeze({ ...definition.equipment }) : undefined,
+      }));
     }
     this.definitions = map;
     this.all = Object.freeze([...map.values()]);
