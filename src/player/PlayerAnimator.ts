@@ -1,6 +1,8 @@
 import { Scalar } from "@babylonjs/core/Maths/math.scalar";
 import type { PlayerVisual } from "./PlayerVisual";
 import type { HarvestPhase, HarvestTool } from "../harvesting/HarvestingTypes";
+import type { FistSide } from "../combat/MeleeCombatSystem";
+import { FISTS_COMBAT_PROFILE } from "../combat/combatConfig";
 
 export class PlayerAnimator {
   private time = 0;
@@ -65,6 +67,32 @@ export class PlayerAnimator {
     this.visual.hideHarvestTool();
     this.visual.leftArm.rotation.z = 0;
     this.visual.rightArm.rotation.z = 0;
+  }
+
+  applyFistAttackPose(progress: number, fist: FistSide): void {
+    this.visual.hideHarvestTool();
+    const impactAt = FISTS_COMBAT_PROFILE.impactNormalizedTime;
+    const windup = Math.min(1, progress / impactAt);
+    const recovery = Math.max(0, (progress - impactAt) / (1 - impactAt));
+    const extension = progress <= impactAt ? this.smooth(windup) : 1 - this.smooth(recovery);
+    const side = fist === "right" ? 1 : -1;
+    const strikingArm = fist === "right" ? this.visual.rightArm : this.visual.leftArm;
+    const guardArm = fist === "right" ? this.visual.leftArm : this.visual.rightArm;
+    strikingArm.rotation.x = -0.38 + extension * 1.62;
+    strikingArm.rotation.z = -side * (0.18 - extension * 0.08);
+    guardArm.rotation.x = -0.2 - extension * 0.18;
+    guardArm.rotation.z = side * 0.1;
+    this.visual.bodyPivot.rotation.y = side * (-0.13 + extension * 0.27);
+    this.visual.bodyPivot.rotation.x = extension * 0.075;
+    this.visual.bodyPivot.rotation.z = side * extension * 0.025;
+    this.visual.bodyPivot.position.y = -Math.sin(Math.PI * Math.min(1, progress)) * 0.018;
+  }
+
+  clearFistAttackPose(): void {
+    this.visual.leftArm.rotation.set(0, 0, 0);
+    this.visual.rightArm.rotation.set(0, 0, 0);
+    this.visual.bodyPivot.rotation.set(0, 0, 0);
+    this.visual.bodyPivot.position.y = 0;
   }
 
   private smooth(value: number): number { return value * value * (3 - 2 * value); }

@@ -83,7 +83,7 @@ Current project behavior:
 - Unequipping uses the M06 deterministic insertion rules; a full Inventory rejects the action without changing equipment.
 - Four deterministic armor Ground Loot fixtures near the test spawn provide a calibration-only pickup path.
 - Equipped armor projects onto the existing procedural player hierarchy and follows locomotion/harvesting animation without changing collision, speed, camera, capacity, or world generation.
-- Armor values are displayed and derived but do not reduce damage yet. Weapons, backpack equipment, durability, combat, drag/drop, and persistence remain later milestones.
+- Armor values are displayed and derived but do not reduce damage yet. Weapons, backpack equipment, durability, drag/drop, and persistence remain later milestones.
 
 ## Starter blueprints from Milestone 08
 
@@ -103,3 +103,51 @@ Current project M08 behavior:
 - Hatchet and Pickaxe are non-stackable Item System / Inventory items with no equipment metadata.
 - Crafted tools intentionally do not change current harvesting availability. `PrototypeToolLoadout` remains the M03 calibration source until a later dedicated tool-lifecycle milestone.
 - Durability, tool/weapon equipment, combat stats, stations, storage crafting, timers, queues, multi-craft, progression, and persistence remain absent.
+
+## Unarmed melee foundation from Milestone 09
+
+Current project calibration:
+
+- Fists deal exactly 6 damage per accepted impact.
+- Fists attack at 1.8 attacks per second, giving a cycle duration of `1 / 1.8` seconds.
+- The single impact occurs at normalized attack time `0.38`.
+- Combat target acquisition range is 2.2 world units; impact range is 1.15 world units.
+- A Combat Dummy has exactly 40 health. Its health after seven uninterrupted fist impacts is `34 → 28 → 22 → 16 → 10 → 4 → 0`.
+
+Current project M09 behavior:
+
+- The existing attack HUD button and `F` key create one intentional attack request per press. Keyboard repeat and pointer hold do not create automatic attacks.
+- Combat targets are explicitly registered and selected independently from contextual interaction. Selection is nearest-first with runtime-ID tie-breaking and a small switch bias.
+- An attack locks its target at start and applies damage exactly once at the configured impact moment, after confirming that the target is still registered, alive, and in hit range.
+- Movement is blocked only from attack start through impact. Recovery allows movement, while the next attack remains unavailable until the full cycle ends.
+- Fists alternate right/left. Their lightweight procedural pose uses the existing player pivots, so sleeves and harvesting visuals continue to follow the same character hierarchy.
+- Three deterministic Combat Dummies provide collision, target ring/health feedback, `-6` impact feedback, recoil, and death cleanup. They do not provide AI, loot, or rewards.
+- Unarmed damage, cadence, impact timing, ranges, dummy placement, and presentation timing are project calibration values chosen to establish LDOE-like melee pacing; they are not claimed as extracted official internal LDOE values.
+- Player health/damage intake, enemies, AI, weapons, tools-as-weapons, durability, armor mitigation, loot, knockback simulation, and persistence remain later milestones.
+
+## Roaming Zombie and Player health from Milestone 10
+
+Verified LDOE reference used by this milestone:
+
+- Roaming Zombie: 40 HP, 0 Armor, 6 Damage, movement-speed reference 14, and attack speed described as “Very Slow”.
+- Player base health: 100 HP.
+
+Survive on Earth project calibration for the current world scale:
+
+- Zombie world movement speed: 1.6 units/second, compared with Player speed 4.5.
+- Zombie attack rate: 0.8 attacks/second; derived cycle: `1 / 0.8 = 1.25` seconds.
+- Normalized attack impact time: 0.42.
+- Radial acquire range: 4.0; lose range: 8.0.
+- Attack-start range: 1.05; impact hit range: 1.15.
+
+Current project M10 behavior:
+
+- Three fixed Roaming Zombie calibration fixtures independently idle, detect, chase by direct steering, stop for timed melee attacks, recover, and disengage using range hysteresis.
+- A successful Zombie impact deals 6 raw and final damage to the Player `HealthPool`. Existing armor metadata does not mitigate damage in M10.
+- Player attacks use the existing CombatTargetSystem and 6-damage fists. A fresh 40-HP Roaming Zombie dies after exactly seven successful fist impacts.
+- The Player can leave hit range during the Zombie windup to make the impact miss. A Zombie killed before impact cannot deal phantom damage.
+- Player health reaching zero enters a temporary terminal M10 gameplay state. Production death, corpse, inventory loss, respawn, and recovery are deferred.
+- Detection is radial and ignores line of sight. Movement respects supported collision geometry but has no pathfinding, so an obstacle can leave a Zombie stuck.
+- Fixed fixtures are calibration content, not a production spawn table. Zombie death produces no loot or XP.
+
+The world-space speed, numeric attack cadence/timing, and ranges above are project calibration values. They are not presented as extracted internal LDOE constants.

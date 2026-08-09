@@ -22,11 +22,20 @@ export class CollisionWorld {
     return true;
   }
 
-  move(position: Vector3, displacement: Vector3, radius: number): Vector3 {
+  updateCircle(label: string, x: number, z: number): boolean {
+    const obstacle = this.obstacles.find((candidate): candidate is CircleObstacle => candidate.label === label && candidate.kind === "circle");
+    if (!obstacle) return false;
+    obstacle.x = x;
+    obstacle.z = z;
+    return true;
+  }
+
+  move(position: Vector3, displacement: Vector3, radius: number, ignoredLabel: string | null = null): Vector3 {
     const result = position.add(displacement);
     for (let pass = 0; pass < 3; pass += 1) {
       let corrected = false;
       for (const obstacle of this.obstacles) {
+        if (obstacle.label === ignoredLabel) continue;
         const push = obstacle.kind === "circle"
           ? this.circlePush(result.x, result.z, radius, obstacle)
           : this.boxPush(result.x, result.z, radius, obstacle);

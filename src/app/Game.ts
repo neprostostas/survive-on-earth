@@ -34,6 +34,16 @@ import { EquipmentVisualController } from "../equipment/EquipmentVisualControlle
 import { spawnEquipmentCalibrationLoot } from "../equipment/equipmentCalibration";
 import { CraftingSystem } from "../crafting/CraftingSystem";
 import { CraftingPanel } from "../ui/CraftingPanel";
+import { CombatTargetSystem } from "../combat/CombatTargetSystem";
+import { MeleeCombatSystem } from "../combat/MeleeCombatSystem";
+import { CombatDummy } from "../combat/CombatDummy";
+import { CombatPresentation } from "../combat/CombatPresentation";
+import { COMBAT_CONFIG } from "../combat/combatConfig";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { EnemySystem } from "../enemies/EnemySystem";
+import { RoamingZombie } from "../enemies/RoamingZombie";
+import { EnemyPresentation } from "../enemies/EnemyPresentation";
+import { ROAMING_ZOMBIE_PROFILE } from "../enemies/enemyConfig";
 
 export class Game {
   private readonly engine: Engine;
@@ -53,7 +63,13 @@ export class Game {
   private readonly equipment = new PlayerEquipment();
   private readonly equipmentSystem = new EquipmentSystem(this.inventory, this.equipment);
   private readonly craftingSystem = new CraftingSystem(this.inventory);
+  private readonly combatTargets = new CombatTargetSystem();
+  private readonly combatDummies: CombatDummy[] = [];
   private readonly equipmentVisual: EquipmentVisualController;
+  private readonly combatPresentation: CombatPresentation;
+  private readonly enemyPresentation: EnemyPresentation;
+  private readonly enemies: EnemySystem;
+  private readonly combat: MeleeCombatSystem;
   private readonly inventoryPanel: InventoryPanel;
   private readonly craftingPanel: CraftingPanel;
   private readonly pickupResults = new TemporaryPickupResultSink();
@@ -80,10 +96,54 @@ export class Game {
     this.equipmentVisual = new EquipmentVisualController(this.scene, this.player.visual, this.equipment);
     for (const mesh of this.equipmentVisual.meshes) this.lighting.addCaster(mesh);
     this.hud = new HUD(uiRoot);
+    this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
+    this.combatPresentation = new CombatPresentation(this.scene, this.engine, uiRoot);
+    this.enemyPresentation = new EnemyPresentation(this.scene);
+    this.spawnCombatDummies();
+    this.enemies = new EnemySystem(
+      this.combatTargets,
+      { health: this.player.health, getPosition: () => this.player.position },
+      {
+        move: (enemy, position, displacement) => {
+          const label = this.enemyCollisionLabel(enemy);
+          const moved = this.collision.move(
+            new Vector3(position.x, position.y, position.z),
+            new Vector3(displacement.x, displacement.y, displacement.z),
+            ROAMING_ZOMBIE_PROFILE.collisionRadius,
+            label,
+          );
+          this.collision.updateCircle(label, moved.x, moved.z);
+          return moved;
+        },
+        remove: (enemy) => { this.collision.remove(this.enemyCollisionLabel(enemy)); },
+      },
+      {
+        onPlayerDamage: (_enemy, damage) => {
+          this.combatPresentation.showDamage(this.player.position, damage.requested, 1.9);
+          if (damage.becameDead) this.enterPlayerDefeatedState();
+        },
+        onEnemyHit: (enemy) => { this.enemyPresentation.showHit(enemy); },
+        onEnemyDeath: (enemy) => { this.enemyPresentation.beginDeath(enemy); },
+      },
+    );
+    this.spawnRoamingZombies();
+    this.combat = new MeleeCombatSystem(
+      this.combatTargets,
+      this.player,
+      () => { this.harvesting.cancel(); this.player.stopMovement(); },
+      ({ target, damage }) => {
+        this.combatPresentation.showImpact(target, damage.requested);
+        if (this.enemies.handlePlayerCombatImpact(target, damage)) return;
+        if (!damage.becameDead) return;
+        this.combatTargets.unregister(target);
+        this.collision.remove(`CombatTarget:${target.combatId}`);
+        this.combatPresentation.beginDeath(target);
+      },
+    );
     this.inventoryPanel = new InventoryPanel(uiRoot, this.inventory, this.equipment, this.equipmentSystem, this.hud.inventoryToggle, (open) => { this.setInventoryOpen(open); });
     this.craftingPanel = new CraftingPanel(uiRoot, this.inventory, this.craftingSystem, this.hud.craftingToggle, (message) => { this.inventoryPanel.showStatus(message); }, (open) => { this.setCraftingOpen(open); });
     this.resultFeedback = new ResourceResultFeedback(uiRoot, this.scene, this.engine);
-    this.input = new InputController(this.hud.joystick, this.hud.primaryAction, GAME_CONFIG.joystickDeadZone);
+    this.input = new InputController(this.hud.joystick, this.hud.primaryAction, this.hud.attackAction, GAME_CONFIG.joystickDeadZone);
     this.interaction = new InteractionSystem(this.scene, this.world.interactables, this.config);
     this.groundLoot = new GroundLootSystem(this.world, new GroundLootVisuals(this.scene));
     spawnEquipmentCalibrationLoot(this.groundLoot);
@@ -92,7 +152,7 @@ export class Game {
     this.harvesting = new HarvestingSystem(this.config, this.prototypeTools, this.player, this.interaction, resourceResults, (resource) => {
       this.world.removeResourceCollision(resource.resourceId);
     });
-    this.debug = new DebugOverlay(uiRoot, this.scene, this.engine, this.player, this.collision, this.interaction, this.harvesting, this.resultFeedback, this.groundLoot, this.pickupResults, this.inventory, this.equipment, this.equipmentSystem, this.craftingSystem, this.world, this.postProcessing, this.config);
+    this.debug = new DebugOverlay(uiRoot, this.scene, this.engine, this.player, this.collision, this.interaction, this.harvesting, this.resultFeedback, this.groundLoot, this.pickupResults, this.inventory, this.equipment, this.equipmentSystem, this.craftingSystem, this.combatTargets, this.combat, this.enemies, this.world, this.postProcessing, this.config);
     this.calibration = new CalibrationPanel(uiRoot, this.config, this.prototypeTools, () => { this.applyCalibration(); });
     this.fidelity = new FidelityMode(uiRoot, () => { /* Freeze state is read in the frame loop. */ });
     this.loop = new GameLoop(this.engine, (delta) => { this.update(delta); });
@@ -111,10 +171,20 @@ export class Game {
     const frameDelta = this.fidelity.motionFrozen ? 0 : delta;
     const movement = this.input.getMovement();
     const action = this.input.consumePrimaryActionState();
-    if (!this.fidelity.motionFrozen) this.player.update(delta, movement, this.camera.screenRight, this.camera.screenUp);
+    const attackPressed = this.input.consumeAttackPressed();
+    this.combatTargets.update(this.player.position);
+    if (!this.fidelity.motionFrozen && this.player.health.alive && attackPressed) this.combat.requestAttack();
+    if (!this.fidelity.motionFrozen && this.player.health.alive) {
+      if (this.combat.movementCommitted) { movement.setAll(0); this.player.stopMovement(); }
+      this.player.update(delta, movement, this.camera.screenRight, this.camera.screenUp);
+      this.combat.update(delta);
+    }
+    this.combatTargets.update(this.player.position);
+    this.enemies.update(frameDelta);
+    this.combatTargets.update(this.player.position);
     this.world.update(frameDelta);
     this.interaction.update(frameDelta, this.player.position, this.player.facingYaw);
-    if (!this.fidelity.motionFrozen) {
+    if (!this.fidelity.motionFrozen && this.player.health.alive && this.combat.state === "ready") {
       const harvestingConsumed = this.harvesting.update(delta, action, movement, this.player.position);
       if (action.pressedThisFrame && !harvestingConsumed) {
         const selected = this.interaction.target;
@@ -122,9 +192,13 @@ export class Game {
         if (interactionAccepted && selected instanceof GroundLoot) this.pickup.tryPickup(selected, this.player.position);
       }
     }
+    const combatTarget = this.combatTargets.current;
+    this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
+    this.hud.setAttackState(this.player.health.alive && combatTarget !== null, this.player.health.alive && this.combatTargets.state.distance <= COMBAT_CONFIG.meleeHitRange, this.combat.state !== "ready");
     this.hud.updateMinimap(this.player.position, this.player.facingYaw, this.world.interactables);
     const target = this.interaction.target;
-    if (target instanceof HarvestableResource) {
+    if (!this.player.health.alive) this.hud.setPrimaryActionContext("none");
+    else if (target instanceof HarvestableResource) {
       this.hud.setPrimaryActionContext(target.requiredTool, this.prototypeTools.hasTool(target.requiredTool), this.harvesting.state.unavailableFeedback);
     } else if (target instanceof GroundLoot) {
       this.hud.setGroundLootActionContext(ITEM_REGISTRY.get(target.stack.itemId), target.stack.quantity);
@@ -132,6 +206,8 @@ export class Game {
     this.camera.update(frameDelta, this.player.position);
     this.groundLoot.update(frameDelta);
     this.resultFeedback.update(frameDelta);
+    this.combatPresentation.update(frameDelta, combatTarget);
+    this.enemyPresentation.update(frameDelta, this.enemies.agents);
     this.debug.update();
     this.scene.render();
   }
@@ -139,6 +215,7 @@ export class Game {
   private applyCalibration(): void {
     this.player.applyCalibration();
     this.world.applyCalibration();
+    this.restoreDynamicCombatCollisions();
     this.lighting.applyCalibration();
     this.postProcessing.applyCalibration();
     this.camera.applyProjection();
@@ -146,21 +223,68 @@ export class Game {
   }
 
   private readonly onResize = (): void => { this.engine.resize(); this.camera.applyProjection(); };
+  private spawnCombatDummies(): void {
+    const positions = Object.freeze([
+      Object.freeze({ x: 1.25, y: 0, z: 3.55 }),
+      Object.freeze({ x: 2.3, y: 0, z: 4.55 }),
+      Object.freeze({ x: 1.75, y: 0, z: 5.85 }),
+    ]);
+    positions.forEach((position, index) => {
+      const dummy = new CombatDummy(`combat-dummy-${String(index + 1).padStart(2, "0")}`, position);
+      this.combatDummies.push(dummy);
+      this.combatTargets.register(dummy);
+      this.collision.addCircle(position.x, position.z, COMBAT_CONFIG.dummyCollisionRadius, `CombatTarget:${dummy.combatId}`);
+      for (const mesh of this.combatPresentation.spawnDummy(dummy)) this.lighting.addCaster(mesh);
+    });
+  }
+  private spawnRoamingZombies(): void {
+    const positions = Object.freeze([
+      Object.freeze({ x: -1.5, y: 0, z: 10 }),
+      Object.freeze({ x: 4.6, y: 0, z: 8.5 }),
+      Object.freeze({ x: -5.5, y: 0, z: 6.5 }),
+    ]);
+    positions.forEach((position, index) => {
+      const enemy = new RoamingZombie(`roaming-zombie-${String(index + 1).padStart(2, "0")}`, position);
+      this.enemies.register(enemy);
+      this.collision.addCircle(position.x, position.z, ROAMING_ZOMBIE_PROFILE.collisionRadius, this.enemyCollisionLabel(enemy));
+      for (const mesh of this.enemyPresentation.spawn(enemy)) this.lighting.addCaster(mesh);
+    });
+  }
+  private restoreDynamicCombatCollisions(): void {
+    for (const dummy of this.combatDummies) {
+      if (dummy.isCombatAlive()) this.collision.addCircle(dummy.getCombatPosition().x, dummy.getCombatPosition().z, COMBAT_CONFIG.dummyCollisionRadius, `CombatTarget:${dummy.combatId}`);
+    }
+    for (const enemy of this.enemies.agents) {
+      const position = enemy.getCombatPosition();
+      this.collision.addCircle(position.x, position.z, ROAMING_ZOMBIE_PROFILE.collisionRadius, this.enemyCollisionLabel(enemy));
+    }
+  }
+  private enemyCollisionLabel(enemy: RoamingZombie): string { return `Enemy:${enemy.combatId}`; }
+  private enterPlayerDefeatedState(): void {
+    this.combat.cancelAttack();
+    this.harvesting.cancel();
+    this.player.stopMovement();
+    this.inventoryPanel.close();
+    this.craftingPanel.close();
+    this.applyGameplayPanelState(true);
+  }
   private setInventoryOpen(open: boolean): void {
     if (open) this.craftingPanel.close();
-    this.applyGameplayPanelState(open || this.craftingPanel.isOpen);
+    this.applyGameplayPanelState(open || this.craftingPanel.isOpen || this.fidelity.isOpen);
   }
   private setCraftingOpen(open: boolean): void {
     if (open) this.inventoryPanel.close();
-    this.applyGameplayPanelState(open || this.inventoryPanel.isOpen);
+    this.applyGameplayPanelState(open || this.inventoryPanel.isOpen || this.fidelity.isOpen);
   }
   private applyGameplayPanelState(open: boolean): void {
-    this.input.setSuppressed(open);
-    if (!open) return;
+    const suppressed = open || this.player.health.dead;
+    this.input.setSuppressed(suppressed);
+    if (!suppressed) return;
     this.harvesting.cancel();
     this.player.stopMovement();
   }
   private readonly onFunctionKey = (event: KeyboardEvent): void => {
+    if (this.player.health.dead && (event.code === "KeyI" || event.code === "KeyB")) { event.preventDefault(); return; }
     if (event.code === "KeyI" && !event.repeat) { event.preventDefault(); this.inventoryPanel.toggle(); return; }
     if (event.code === "KeyB" && !event.repeat) { event.preventDefault(); this.craftingPanel.toggle(); return; }
     if (event.code === "Escape" && (this.inventoryPanel.isOpen || this.craftingPanel.isOpen)) {
@@ -171,6 +295,10 @@ export class Game {
     }
     if (event.code === "F1") { event.preventDefault(); this.calibration.toggle(); }
     if (event.code === "F2") { event.preventDefault(); this.debug.toggle(); }
-    if (event.code === "F3") { event.preventDefault(); this.fidelity.toggle(); }
+    if (event.code === "F3") {
+      event.preventDefault();
+      this.fidelity.toggle();
+      this.applyGameplayPanelState(this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.fidelity.isOpen);
+    }
   };
 }

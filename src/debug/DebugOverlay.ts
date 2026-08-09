@@ -23,6 +23,10 @@ import type { PlayerInventory } from "../inventory/PlayerInventory";
 import type { PlayerEquipment } from "../equipment/PlayerEquipment";
 import type { EquipmentSystem } from "../equipment/EquipmentSystem";
 import type { CraftingSystem } from "../crafting/CraftingSystem";
+import type { CombatTargetSystem } from "../combat/CombatTargetSystem";
+import type { MeleeCombatSystem } from "../combat/MeleeCombatSystem";
+import { FISTS_COMBAT_PROFILE } from "../combat/combatConfig";
+import type { EnemySystem } from "../enemies/EnemySystem";
 
 export class DebugOverlay {
   private visible = false;
@@ -53,6 +57,9 @@ export class DebugOverlay {
     private readonly equipment: PlayerEquipment,
     private readonly equipmentSystem: EquipmentSystem,
     private readonly crafting: CraftingSystem,
+    private readonly combatTargets: CombatTargetSystem,
+    private readonly combat: MeleeCombatSystem,
+    private readonly enemies: EnemySystem,
     private readonly world: World,
     private readonly postProcessing: PostProcessing,
     private readonly config: CalibrationConfig,
@@ -124,6 +131,7 @@ export class DebugOverlay {
     const lastItemResult = this.itemResults.lastResult;
     const selectedGroundLoot = this.interaction.target instanceof GroundLoot ? this.interaction.target : null;
     const lastPickup = this.pickupResults.lastResult;
+    const nearestEnemy = this.enemies.agents.reduce<(typeof this.enemies.agents)[number] | null>((nearest, enemy) => !nearest || enemy.playerDistance < nearest.playerDistance ? enemy : nearest, null);
     this.interactionRange.position.set(position.x, 0.09, position.z);
     this.interactionRange.scaling.set(this.config.interaction.range, 1, this.config.interaction.range);
     const interactionTarget = this.interaction.target;
@@ -197,6 +205,28 @@ export class DebugOverlay {
         return `${recipe.id.toUpperCase()} ${state?.craftable ? "READY" : state?.blockedBy === "inventory-full" ? "FULL" : "MISSING"}`;
       }),
       `LAST ${this.crafting.lastResult ? `${this.crafting.lastResult.recipeId} ${this.crafting.lastResult.status}` : "none"}`,
+      "",
+      "COMBAT",
+      `TARGET ${this.combatTargets.state.targetId ?? "none"}`,
+      `DIST ${Number.isFinite(this.combatTargets.state.distance) ? this.combatTargets.state.distance.toFixed(2) : "-"}`,
+      `HP ${this.combatTargets.current ? `${this.combatTargets.current.health.currentHealth}/${this.combatTargets.current.health.maxHealth}` : "-"}`,
+      `STATE ${this.combat.state.toUpperCase()}`,
+      `LAST ATTACK ${this.combat.lastAttackStatus ?? "none"}`,
+      `DAMAGE ${FISTS_COMBAT_PROFILE.damage}`,
+      `RATE ${FISTS_COMBAT_PROFILE.attacksPerSecond.toFixed(1)}/s`,
+      "",
+      "PLAYER",
+      `HP ${this.player.health.currentHealth} / ${this.player.health.maxHealth}`,
+      `STATE ${this.player.health.alive ? "ALIVE" : "DEFEATED"}`,
+      `LAST DAMAGE ${this.enemies.lastPlayerDamage || "none"}`,
+      "",
+      "ENEMIES",
+      `LIVE ${this.enemies.liveCount}`,
+      `TARGET ${nearestEnemy?.combatId ?? "none"}`,
+      `STATE ${nearestEnemy?.state.toUpperCase() ?? "-"}`,
+      `DIST ${nearestEnemy && Number.isFinite(nearestEnemy.playerDistance) ? nearestEnemy.playerDistance.toFixed(2) : "-"}`,
+      `HP ${nearestEnemy ? `${nearestEnemy.health.currentHealth}/${nearestEnemy.health.maxHealth}` : "-"}`,
+      `LAST ${nearestEnemy?.lastAttackResult ?? "none"}`,
       "",
       "VISUAL",
       `QUALITY ${this.config.visual.qualityPreset.toUpperCase()}`,

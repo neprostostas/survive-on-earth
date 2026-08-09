@@ -7,10 +7,15 @@ import { PlayerMovement } from "./PlayerMovement";
 import { PlayerVisual } from "./PlayerVisual";
 import type { HarvestPhase, HarvestTool } from "../harvesting/HarvestingTypes";
 import type { InteractionPoint } from "../interaction/InteractionTypes";
+import type { CombatPoint } from "../combat/CombatTarget";
+import type { FistSide } from "../combat/MeleeCombatSystem";
+import { HealthPool } from "../combat/HealthPool";
+import { PLAYER_HEALTH_CONFIG } from "../enemies/enemyConfig";
 
 export class Player {
   readonly visual: PlayerVisual;
   readonly movement: PlayerMovement;
+  readonly health = new HealthPool(PLAYER_HEALTH_CONFIG.maxHealth);
   private readonly animator: PlayerAnimator;
 
   constructor(scene: Scene, collisionWorld: CollisionWorld, private readonly config: CalibrationConfig) {
@@ -54,4 +59,8 @@ export class Player {
   }
 
   clearHarvestPose(): void { this.animator.clearHarvestPose(); }
+  getCombatPosition(): CombatPoint { return this.position; }
+  faceCombatTarget(position: CombatPoint): void { this.requestFacing(position); }
+  applyFistAttackPose(progress: number, fist: FistSide): void { this.animator.applyFistAttackPose(progress, fist); }
+  clearFistAttackPose(): void { this.animator.clearFistAttackPose(); }
 }

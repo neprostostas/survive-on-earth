@@ -1,4 +1,5 @@
 import { Vector2 } from "@babylonjs/core/Maths/math.vector";
+import { isIntentionalAttackKey } from "./attackInputRules";
 
 export class KeyboardInput {
   private readonly pressed = new Set<string>();
@@ -6,6 +7,7 @@ export class KeyboardInput {
   private primaryActionQueued = false;
   private primaryActionReleased = false;
   private primaryActionHeld = false;
+  private attackQueued = false;
   private enabled = true;
 
   constructor() {
@@ -37,6 +39,12 @@ export class KeyboardInput {
 
   get isPrimaryActionHeld(): boolean { return this.primaryActionHeld; }
 
+  consumeAttack(): boolean {
+    const queued = this.attackQueued;
+    this.attackQueued = false;
+    return queued;
+  }
+
   setEnabled(enabled: boolean): void {
     if (this.enabled === enabled) return;
     this.enabled = enabled;
@@ -51,7 +59,12 @@ export class KeyboardInput {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!this.enabled) {
-      if (["KeyE", "Space", "KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) event.preventDefault();
+      if (["KeyE", "Space", "KeyF", "KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) event.preventDefault();
+      return;
+    }
+    if (isIntentionalAttackKey(event.code, event.repeat, this.enabled)) {
+      event.preventDefault();
+      this.attackQueued = true;
       return;
     }
     if ((event.code === "KeyE" || event.code === "Space") && !event.repeat) {
@@ -80,6 +93,7 @@ export class KeyboardInput {
   private readonly clear = (): void => {
     this.pressed.clear();
     this.primaryActionQueued = false;
+    this.attackQueued = false;
     this.primaryActionReleased = this.primaryActionHeld;
     this.primaryActionKeys.clear();
     this.primaryActionHeld = false;

@@ -93,6 +93,7 @@ export class FidelityMode {
   }
 
   get motionFrozen(): boolean { return this.visible && this.freezeInput.checked; }
+  get isOpen(): boolean { return this.visible; }
 
   toggle(): void {
     this.visible = !this.visible;

@@ -10,9 +10,9 @@ F1. LDOE Fidelity Audit & Alignment — implemented; F3 manual reference alignme
 06. Player Inventory — complete
 07. Equipment / Basic Armor — complete
 08. Crafting / Starter Blueprints — complete
-09. Melee Combat
-10. Zombies
-11. Enemy AI
+09. Melee Combat Foundation / Unarmed — complete
+10. Roaming Zombie / Enemy AI + Player Health Foundation — complete
+11. Expanded Enemy AI
 12. Player Death
 13. Base Building
 14. Containers
@@ -27,4 +27,4 @@ F1. LDOE Fidelity Audit & Alignment — implemented; F3 manual reference alignme
 23. UI Polish
 24. Balancing
 
-Milestone 08 is complete. The next existing roadmap entry is Milestone 09 — Melee Combat; it has not been started.
+Milestone 10 is complete. The next existing roadmap entry is Milestone 11 — Expanded Enemy AI; it has not been started.

@@ -8,11 +8,13 @@ export class InputController {
   private readonly keyboard = new KeyboardInput();
   private readonly joystick: VirtualJoystick;
   private readonly primaryAction: PrimaryActionInput;
+  private readonly attackAction: PrimaryActionInput;
   private suppressed = false;
 
-  constructor(joystickElement: HTMLElement, primaryActionElement: HTMLElement, deadZone: number) {
+  constructor(joystickElement: HTMLElement, primaryActionElement: HTMLElement, attackActionElement: HTMLElement, deadZone: number) {
     this.joystick = new VirtualJoystick(joystickElement, deadZone);
     this.primaryAction = new PrimaryActionInput(primaryActionElement);
+    this.attackAction = new PrimaryActionInput(attackActionElement);
   }
 
   getMovement(): Vector2 {
@@ -38,13 +40,19 @@ export class InputController {
     };
   }
 
+  consumeAttackPressed(): boolean {
+    if (this.suppressed) return false;
+    return this.keyboard.consumeAttack() || this.attackAction.consumePressed();
+  }
+
   setSuppressed(suppressed: boolean): void {
     if (this.suppressed === suppressed) return;
     this.suppressed = suppressed;
     this.keyboard.setEnabled(!suppressed);
     this.joystick.setEnabled(!suppressed);
     this.primaryAction.setEnabled(!suppressed);
+    this.attackAction.setEnabled(!suppressed);
   }
 
-  dispose(): void { this.keyboard.dispose(); this.joystick.dispose(); this.primaryAction.dispose(); }
+  dispose(): void { this.keyboard.dispose(); this.joystick.dispose(); this.primaryAction.dispose(); this.attackAction.dispose(); }
 }

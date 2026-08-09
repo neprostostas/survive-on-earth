@@ -18,9 +18,14 @@ const PRIMARY_ICONS: Record<Exclude<PrimaryActionContext, "none">, string> = {
 export class HUD {
   readonly joystick: HTMLElement;
   readonly primaryAction: HTMLButtonElement;
+  readonly attackAction: HTMLButtonElement;
   readonly inventoryToggle: HTMLButtonElement;
   readonly craftingToggle: HTMLButtonElement;
   private readonly minimap: Minimap;
+  private readonly healthFill: HTMLElement;
+  private readonly healthTrack: HTMLElement;
+  private readonly healthValue: HTMLElement;
+  private readonly defeatedFeedback: HTMLElement;
   private primaryContext: PrimaryActionContext = "none";
   private pickupContextKey = "";
 
@@ -30,7 +35,7 @@ export class HUD {
         <section class="player-status">
           <div class="status-copy">
             <span class="player-name">SURVIVOR <b>LV. 1</b></span>
-            <div class="hp-track"><div class="hp-fill"></div><span>100</span></div>
+            <div class="hp-track" role="progressbar" aria-label="Player health" aria-live="polite" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div class="hp-fill"></div><span>100 / 100</span></div>
           </div>
         </section>
         <div class="joystick" aria-label="Movement joystick"><div class="joystick-ring"></div><div class="joystick-knob"></div></div>
@@ -50,7 +55,7 @@ export class HUD {
         <div class="actions" aria-label="Action controls">
           <button class="action shell build-action" type="button" aria-label="Building unavailable" disabled><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 20 9.2-9.2M11.7 5.8l2.7-2.7 6.5 6.5-2.7 2.7z"/><path d="m3.5 18.4 2.1 2.1"/></svg></button>
           <button class="action shell quick-action" type="button" aria-label="Quick slot unavailable" disabled><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7.5h10a2 2 0 0 1 2 2V20H5V9.5a2 2 0 0 1 2-2Z"/><path d="M9 7.5V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8v1.7M8.2 12h7.6M8.2 15.5h7.6"/></svg></button>
-          <button class="action shell attack-action" type="button" aria-label="Attack unavailable" disabled><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 11.8V7.2a1.7 1.7 0 0 1 3.4 0v3.2-5a1.7 1.7 0 0 1 3.4 0v5-4a1.7 1.7 0 0 1 3.4 0v5.3-2.6a1.7 1.7 0 0 1 3.4 0v5.2c0 4.1-2.8 6.7-6.8 6.7h-1.5c-2.2 0-3.8-.8-5.2-2.4l-3.7-4.4a1.8 1.8 0 0 1 2.6-2.5l2.1 1.8"/></svg></button>
+          <button class="action attack-action" type="button" aria-label="No combat target nearby" aria-disabled="true"><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 11.8V7.2a1.7 1.7 0 0 1 3.4 0v3.2-5a1.7 1.7 0 0 1 3.4 0v5-4a1.7 1.7 0 0 1 3.4 0v5.3-2.6a1.7 1.7 0 0 1 3.4 0v5.2c0 4.1-2.8 6.7-6.8 6.7h-1.5c-2.2 0-3.8-.8-5.2-2.4l-3.7-4.4a1.8 1.8 0 0 1 2.6-2.5l2.1 1.8"/></svg></button>
           <button class="action primary" type="button" aria-label="Primary action"><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.7 12.3V8a1.6 1.6 0 0 1 3.2 0v3-5.2a1.6 1.6 0 0 1 3.2 0V11 7a1.6 1.6 0 0 1 3.2 0v5.3-2.4a1.6 1.6 0 0 1 3.2 0v4.2c0 4.3-2.8 6.9-6.8 6.9h-.9c-2.6 0-4.3-1.2-5.7-3.2l-2.6-3.9a1.7 1.7 0 0 1 2.7-2l1.5 1.8"/></svg></button>
           <button class="action shell sneak-action" type="button" aria-label="Sneak unavailable" disabled><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="14.8" cy="4.5" r="2.2"/><path d="m13.7 8-3.1 3.8-4.2.5M10.7 11.8l4 2.1 3.4 4M14.7 13.9l-2.1 5.6M7.8 18.8H4"/></svg></button>
         </div>
@@ -59,6 +64,7 @@ export class HUD {
           <button disabled aria-label="Events unavailable">!</button><button class="inventory-toggle" type="button" aria-label="Open inventory" aria-expanded="false">I</button>
           <button class="crafting-toggle" type="button" aria-label="Open blueprints" aria-expanded="false">B</button>
         </nav>
+        <div class="player-defeated-feedback" role="status" aria-live="assertive">PLAYER DEFEATED</div>
       </div>`;
     const hud = root.querySelector<HTMLElement>(".hud");
     if (!hud) throw new Error("HUD failed to mount");
@@ -69,6 +75,9 @@ export class HUD {
     if (!primaryAction) throw new Error("HUD primary action failed to mount");
     this.joystick = joystick;
     this.primaryAction = primaryAction;
+    const attackAction = root.querySelector<HTMLButtonElement>(".attack-action");
+    if (!attackAction) throw new Error("HUD attack control failed to mount");
+    this.attackAction = attackAction;
     const inventoryToggle = root.querySelector<HTMLButtonElement>(".inventory-toggle");
     if (!inventoryToggle) throw new Error("HUD inventory control failed to mount");
     this.inventoryToggle = inventoryToggle;
@@ -78,6 +87,26 @@ export class HUD {
     const minimapCanvas = root.querySelector<HTMLCanvasElement>(".minimap-canvas");
     if (!minimapCanvas) throw new Error("HUD minimap failed to mount");
     this.minimap = new Minimap(minimapCanvas);
+    const healthFill = root.querySelector<HTMLElement>(".hp-fill");
+    const healthTrack = root.querySelector<HTMLElement>(".hp-track");
+    const healthValue = root.querySelector<HTMLElement>(".hp-track span");
+    const defeatedFeedback = root.querySelector<HTMLElement>(".player-defeated-feedback");
+    if (!healthFill || !healthTrack || !healthValue || !defeatedFeedback) throw new Error("HUD player health failed to mount");
+    this.healthFill = healthFill;
+    this.healthTrack = healthTrack;
+    this.healthValue = healthValue;
+    this.defeatedFeedback = defeatedFeedback;
+  }
+
+  setPlayerHealth(current: number, maximum: number): void {
+    this.healthValue.textContent = `${current} / ${maximum}`;
+    this.healthFill.style.width = `${maximum > 0 ? current / maximum * 100 : 0}%`;
+    this.healthTrack.setAttribute("aria-valuemax", String(maximum));
+    this.healthTrack.setAttribute("aria-valuenow", String(current));
+    const defeated = current <= 0;
+    this.defeatedFeedback.classList.toggle("visible", defeated);
+    this.inventoryToggle.disabled = defeated;
+    this.craftingToggle.disabled = defeated;
   }
 
   updateMinimap(player: Readonly<Vector3>, facingYaw: number, interactables: readonly Interactable[]): void {
@@ -88,6 +117,15 @@ export class HUD {
     this.primaryAction.classList.toggle("available", available);
     this.primaryAction.setAttribute("aria-label", available ? "Interact with selected target" : "No interaction target nearby");
     this.primaryAction.setAttribute("aria-disabled", String(!available));
+  }
+
+  setAttackState(hasTarget: boolean, inRange: boolean, recovering: boolean): void {
+    const available = hasTarget && inRange && !recovering;
+    this.attackAction.classList.toggle("available", hasTarget && inRange);
+    this.attackAction.classList.toggle("recovering", recovering);
+    this.attackAction.classList.toggle("out-of-range", hasTarget && !inRange);
+    this.attackAction.setAttribute("aria-disabled", String(!available));
+    this.attackAction.setAttribute("aria-label", !hasTarget ? "No combat target nearby" : !inRange ? "Combat target out of range" : recovering ? "Fist attack recovering" : "Punch combat target");
   }
 
   setPrimaryActionContext(context: PrimaryActionContext, toolAvailable = true, unavailableFeedback = 0): void {
