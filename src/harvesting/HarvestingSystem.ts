@@ -6,7 +6,7 @@ import { HarvestableResource } from "./HarvestableResource";
 import { HARVEST_FACING_TOLERANCE_RAD } from "./harvestingConfig";
 import { HarvestingSession, type SwingTiming } from "./HarvestingSession";
 import type { HarvestingDebugState, PrimaryActionState } from "./HarvestingTypes";
-import type { HarvestToolAvailability } from "./PrototypeToolLoadout";
+import type { InventoryHarvestTools } from "./InventoryHarvestTools";
 import { createItemResult } from "../items/ItemSystem";
 import type { ResourceResultSink } from "../items/ItemResult";
 
@@ -28,7 +28,7 @@ export class HarvestingSystem {
 
   constructor(
     private readonly config: CalibrationConfig,
-    private readonly tools: HarvestToolAvailability,
+    private readonly tools: InventoryHarvestTools,
     private readonly player: Player,
     private readonly interaction: InteractionSystem,
     private readonly resultSink: ResourceResultSink,

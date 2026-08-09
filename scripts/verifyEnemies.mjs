@@ -28,12 +28,28 @@ assert.equal(Object.isFrozen(ROAMING_ZOMBIE_PROFILE), true);
 function harness(enemyPositions = [{ x: 0, y: 0, z: 0 }], playerPosition = { x: 10, y: 0, z: 0 }) {
   const targets = new CombatTargetSystem();
   const health = new HealthPool(PLAYER_HEALTH_CONFIG.maxHealth);
-  const player = { position: { ...playerPosition }, health, getPosition() { return this.position; } };
-  const movementCalls = [];
-  const removed = [];
   const playerDamage = [];
   const enemyHits = [];
   const deaths = [];
+  const removed = [];
+  const movementCalls = [];
+  const player = {
+    position: { ...playerPosition },
+    health,
+    getPosition() { return this.position; },
+    applyIncomingDamage(rawDamage) {
+      const result = health.applyDamage(rawDamage);
+      return Object.freeze({
+        rawDamage,
+        armor: 0,
+        damageReduction: 0,
+        finalDamage: result.applied > 0 ? result.requested : 0,
+        previousHealth: result.before,
+        currentHealth: result.current,
+        becameDefeated: result.becameDead,
+      });
+    },
+  };
   const system = new EnemySystem(targets, player, {
     move(enemy, position, displacement) {
       movementCalls.push({ enemy, position: { ...position }, displacement: { ...displacement } });
@@ -169,7 +185,9 @@ assert.equal(CRAFTING_RECIPES.getAll().length, 2);
 assert.equal(INVENTORY_CONFIG.baseSlotCount, 10);
 assert.deepEqual(EQUIPMENT_SLOT_IDS, ["head", "torso", "legs", "feet"]);
 assert.equal(["dad-hat", "shirt", "cargo-pants", "sneakers"].reduce((total, itemId) => total + ITEM_REGISTRY.get(itemId).equipment.armor, 0), 8);
-assert.equal(attack.playerDamage[0].result.requested, 6, "full armor metadata is deliberately absent from M10 damage calculation");
+assert.equal(attack.playerDamage[0].result.rawDamage, 6, "enemy delivers raw damage 6");
+assert.equal(attack.playerDamage[0].result.finalDamage, 6, "armor 0 leaves final damage equal to raw");
+assert.equal(attack.playerDamage[0].result.becameDefeated, false);
 
 const enemySource = await readFile(new URL("../src/enemies/RoamingZombie.ts", import.meta.url), "utf8");
 const systemSource = await readFile(new URL("../src/enemies/EnemySystem.ts", import.meta.url), "utf8");
@@ -179,7 +197,7 @@ const hudSource = await readFile(new URL("../src/ui/HUD.ts", import.meta.url), "
 const interactionSource = await readFile(new URL("../src/interaction/InteractionSystem.ts", import.meta.url), "utf8");
 const targetContract = await readFile(new URL("../src/combat/CombatTarget.ts", import.meta.url), "utf8");
 const equipmentSource = await readFile(new URL("../src/equipment/EquipmentTypes.ts", import.meta.url), "utf8");
-const prototypeSource = await readFile(new URL("../src/harvesting/PrototypeToolLoadout.ts", import.meta.url), "utf8");
+const harvestToolsSource = await readFile(new URL("../src/harvesting/InventoryHarvestTools.ts", import.meta.url), "utf8");
 
 for (const source of [enemySource, systemSource, configSource]) {
   for (const forbidden of ["@babylonjs", "document", "window", "HTMLElement", "ITEM_ICONS", "CraftingSystem", "GroundLoot", "InventoryPanel", "PlayerEquipment"]) {
@@ -203,7 +221,7 @@ assert.equal((gameSource.match(/Object\.freeze\(\{ x: -?[\d.]+, y: 0, z: -?[\d.]
 assert.equal(hudSource.includes("setPlayerHealth"), true);
 assert.equal(hudSource.includes("PLAYER DEFEATED"), true);
 assert.equal(/weapon|tool|mainHand|offHand/.test(equipmentSource), false);
-assert.equal(prototypeSource.includes("durability"), false);
+assert.equal(/durability/.test(harvestToolsSource), false);
 for (const forbidden of ["FastBiter", "FloaterBloater", "ToxicSpitter", "lootTable", "experiencePoints", "respawnPlayer", "navmesh", "pathfinding", "healthRegeneration", "armorMitigation"]) {
   assert.equal(enemySource.includes(forbidden) || systemSource.includes(forbidden) || configSource.includes(forbidden), false, `M10 scope excludes ${forbidden}`);
 }

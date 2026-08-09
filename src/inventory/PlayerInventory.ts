@@ -169,6 +169,15 @@ export class PlayerInventory {
     return this.stacks.reduce((total, stack) => total + (stack?.itemId === itemId ? stack.quantity : 0), 0);
   }
 
+  /** Lowest occupied slot index holding the item, or null. Deterministic ascending scan. */
+  findFirstSlotByItemId(itemId: ItemId): number | null {
+    ITEM_REGISTRY.get(itemId);
+    for (let index = 0; index < this.stacks.length; index += 1) {
+      if (this.stacks[index]?.itemId === itemId) return index;
+    }
+    return null;
+  }
+
   subscribe(listener: InventoryChangeListener): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };

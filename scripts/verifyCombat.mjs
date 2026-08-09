@@ -236,7 +236,7 @@ const keyboardSource = await readFile(new URL("../src/input/KeyboardInput.ts", i
 const pointerSource = await readFile(new URL("../src/input/PrimaryActionInput.ts", import.meta.url), "utf8");
 const debugSource = await readFile(new URL("../src/debug/DebugOverlay.ts", import.meta.url), "utf8");
 const equipmentSource = await readFile(new URL("../src/equipment/EquipmentTypes.ts", import.meta.url), "utf8");
-const prototypeSource = await readFile(new URL("../src/harvesting/PrototypeToolLoadout.ts", import.meta.url), "utf8");
+const harvestToolsSource = await readFile(new URL("../src/harvesting/InventoryHarvestTools.ts", import.meta.url), "utf8");
 
 for (const source of [healthSource, targetSource, meleeSource]) {
   for (const forbidden of ["@babylonjs", "document", "window", "HTMLElement", "PlayerInventory", "CraftingSystem", "PlayerEquipment", "GroundLoot", "InteractionSystem"]) {
@@ -260,7 +260,7 @@ assert.equal(pointerSource.includes("setInterval"), false, "holding HUD Attack c
 assert.equal(pointerSource.includes("this.pointerId !== null"), true, "one pointer hold queues at most one press");
 assert.equal(debugSource.includes('"COMBAT"'), true);
 assert.equal(/weapon|tool|mainHand|offHand/.test(equipmentSource), false, "equipment slots remain armor-only");
-assert.equal(prototypeSource.includes("durability"), false);
+assert.equal(/durability/.test(harvestToolsSource), false);
 assert.equal(meleeSource.includes("hatchet"), false);
 assert.equal(meleeSource.includes("pickaxe"), false);
 assert.equal(/critical|sneak|combo|autoAttack|enemyAI|pathfinding|playerDamage|lootTable/i.test(meleeSource), false, "M09 melee domain must stay unarmed and deterministic");

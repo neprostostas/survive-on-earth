@@ -2,8 +2,7 @@ import type { CalibrationConfig } from "../config/calibrationConfig";
 import { cloneCalibration, DEFAULT_CALIBRATION } from "../config/calibrationConfig";
 import { GAME_CONFIG } from "../config/gameConfig";
 import type { VisualQualityPreset } from "../config/visualQualityConfig";
-import type { HarvestTool } from "../harvesting/HarvestingTypes";
-import type { PrototypeToolLoadout } from "../harvesting/PrototypeToolLoadout";
+import { bindDraggableCollapsiblePanel } from "./panelChrome";
 
 interface ControlDefinition {
   group: string;
@@ -17,13 +16,27 @@ interface ControlDefinition {
 
 export class CalibrationPanel {
   private readonly element: HTMLElement;
+  private readonly body: HTMLElement;
   private readonly controls: ControlDefinition[];
   private visible = false;
 
-  constructor(root: HTMLElement, private readonly config: CalibrationConfig, private readonly tools: PrototypeToolLoadout, private readonly onChange: () => void) {
+  constructor(root: HTMLElement, private readonly config: CalibrationConfig, private readonly onChange: () => void) {
     this.element = document.createElement("aside");
     this.element.className = "calibration-panel";
+    this.element.innerHTML = [
+      `<header class="calibration-header">`,
+      `<div><small>SURVIVE ON EARTH · M01–M12</small><h2>Calibration</h2></div>`,
+      `<div class="panel-header-actions">`,
+      `<button type="button" data-role="collapse" aria-label="Collapse">−</button>`,
+      `<span class="panel-key">F1</span>`,
+      `</div></header>`,
+      `<div class="calibration-scroll"></div>`,
+    ].join("");
     root.append(this.element);
+    this.body = this.element.querySelector(".calibration-scroll") as HTMLElement;
+    const collapseBtn = this.element.querySelector('button[data-role="collapse"]') as HTMLButtonElement;
+    const header = this.element.querySelector(".calibration-header") as HTMLElement;
+    bindDraggableCollapsiblePanel(this.element, header, this.body, collapseBtn);
     this.controls = this.createDefinitions();
     this.render();
   }
@@ -65,6 +78,8 @@ export class CalibrationPanel {
       this.def("Lighting", "Shadow softness", 1, 3, 1, () => c.lighting.shadowSoftness, v => { c.lighting.shadowSoftness = v; }),
       this.def("Interaction", "Interaction range", 0.5, 3, 0.05, () => c.interaction.range, v => { c.interaction.range = v; }),
       this.def("Interaction", "Target switch bias", 0, 0.6, 0.01, () => c.interaction.targetSwitchBias, v => { c.interaction.targetSwitchBias = v; }),
+      this.def("Interaction", "Facing tie distance", 0, 0.8, 0.01, () => c.interaction.facingTieDistance, v => { c.interaction.facingTieDistance = v; }),
+      this.def("Interaction", "Indicator fade", 0.5, 8, 0.1, () => c.interaction.indicatorFadeSpeed, v => { c.interaction.indicatorFadeSpeed = v; }),
       this.def("Harvesting", "Hatchet swing", 0.7, 1.5, 0.01, () => c.harvesting.hatchetSwingDuration, v => { c.harvesting.hatchetSwingDuration = v; }),
       this.def("Harvesting", "Hatchet impact", 0.3, 0.75, 0.01, () => c.harvesting.hatchetImpactTiming, v => { c.harvesting.hatchetImpactTiming = v; }),
       this.def("Harvesting", "Pickaxe swing", 0.65, 1.35, 0.01, () => c.harvesting.pickaxeSwingDuration, v => { c.harvesting.pickaxeSwingDuration = v; }),
@@ -80,9 +95,8 @@ export class CalibrationPanel {
   }
 
   private render(): void {
-    this.element.innerHTML = `<header><div><small>VISUAL MILESTONE V1</small><h2>Calibration</h2></div><span>F1</span></header><div class="calibration-scroll"></div>`;
-    const scroll = this.element.querySelector<HTMLElement>(".calibration-scroll");
-    if (!scroll) return;
+    const scroll = this.body;
+    scroll.replaceChildren();
     let activeGroup = "";
     for (const control of this.controls) {
       if (control.group !== activeGroup) {
@@ -127,21 +141,22 @@ export class CalibrationPanel {
     });
     qualityRow.append(qualitySelect);
     scroll.append(qualityRow);
-    const toolHeading = document.createElement("h3");
-    toolHeading.textContent = "Prototype Tools";
-    scroll.append(toolHeading);
-    const toolControls = document.createElement("div");
-    toolControls.className = "prototype-tools";
-    for (const [tool, label] of [["hatchet", "Hatchet"], ["pickaxe", "Pickaxe"]] satisfies [HarvestTool, string][]) {
-      const row = document.createElement("label");
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = this.tools.hasTool(tool);
-      checkbox.addEventListener("change", () => { this.tools.setTool(tool, checkbox.checked); });
-      row.append(checkbox, document.createTextNode(label));
-      toolControls.append(row);
-    }
-    scroll.append(toolControls);
+
+    const notes = document.createElement("section");
+    notes.className = "calibration-notes";
+    notes.innerHTML = [
+      "<h3>Production notes (not sliders)</h3>",
+      "<ul>",
+      "<li><b>Tools</b> — Hatchet / Pickaxe only from Inventory (craft or loot). No prototype toggles.</li>",
+      "<li><b>Tree</b> — Hatchet · 4 hits · Pine Log ×3</li>",
+      "<li><b>Rock</b> — Pickaxe · 5 hits · Limestone ×3</li>",
+      "<li><b>Combat</b> — fists 6 dmg · 1.8/s · Zombie raw 6 · armor mitigates incoming only</li>",
+      "<li><b>Armor</b> — head / torso / legs / feet metadata; LDOE formula · no durability</li>",
+      "<li><b>F2</b> live gameplay · <b>F3</b> fidelity / freeze · drag panels by header</li>",
+      "</ul>",
+    ].join("");
+    scroll.append(notes);
+
     const actions = document.createElement("div");
     actions.className = "calibration-actions";
     actions.innerHTML = `<button data-action="save">Save calibration</button><button data-action="copy">Copy config</button><button data-action="reset" class="muted">Reset</button>`;

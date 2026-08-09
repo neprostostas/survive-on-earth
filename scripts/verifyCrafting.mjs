@@ -182,7 +182,8 @@ const iconSource = await readFile(new URL("../src/ui/itemIcons.ts", import.meta.
 const hudSource = await readFile(new URL("../src/ui/HUD.ts", import.meta.url), "utf8");
 const gameSource = await readFile(new URL("../src/app/Game.ts", import.meta.url), "utf8");
 const equipmentTypesSource = await readFile(new URL("../src/equipment/EquipmentTypes.ts", import.meta.url), "utf8");
-const prototypeSource = await readFile(new URL("../src/harvesting/PrototypeToolLoadout.ts", import.meta.url), "utf8");
+const harvestToolsSource = await readFile(new URL("../src/harvesting/InventoryHarvestTools.ts", import.meta.url), "utf8");
+const harvestSystemSource = await readFile(new URL("../src/harvesting/HarvestingSystem.ts", import.meta.url), "utf8");
 
 for (const source of [craftingSystemSource, recipeSource, craftingTypesSource]) {
   for (const forbidden of ["@babylonjs", "document", "window", "HTMLElement", "GroundLoot", "HarvestingSystem", "PlayerEquipment", "EquipmentVisualController"]) {
@@ -204,9 +205,11 @@ assert.equal(gameSource.includes("this.harvesting.cancel()"), true);
 assert.equal(gameSource.includes("this.craftingPanel.close()"), true, "Inventory and Crafting panels must coordinate exclusivity");
 assert.equal(equipmentTypesSource.includes('"head", "torso", "legs", "feet"'), true);
 assert.equal(/weapon|tool|mainHand|offHand/.test(equipmentTypesSource), false, "M08 must not add a tool/weapon Equipment slot");
-assert.equal(prototypeSource.includes("hatchet"), true);
-assert.equal(prototypeSource.includes("pickaxe"), true);
-assert.equal(craftingSystemSource.includes("PrototypeToolLoadout"), false, "crafted tools must not activate harvesting in M08");
+assert.equal(harvestToolsSource.includes("PlayerInventory"), true, "production harvest tools read PlayerInventory");
+assert.equal(harvestSystemSource.includes("InventoryHarvestTools"), true);
+assert.equal(harvestSystemSource.includes("PrototypeToolLoadout"), false, "harvesting must not depend on PrototypeToolLoadout");
+assert.equal(gameSource.includes("PrototypeToolLoadout"), false);
+assert.equal(craftingSystemSource.includes("PrototypeToolLoadout"), false, "crafting remains inventory-only for tool output");
 assert.equal(/durability|maxDurability|craftTime|workbench|stationType|craftAll|craftQueue|remoteStorage/i.test(`${craftingSystemSource}\n${recipeSource}\n${craftingTypesSource}`), false, "M08 domain must stay within starter instant crafting scope");
 
 console.log("Crafting verification passed (starter recipes, atomicity, capacity, and boundaries)");

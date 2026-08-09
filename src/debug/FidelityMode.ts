@@ -1,3 +1,5 @@
+import { bindDraggableCollapsiblePanel } from "./panelChrome";
+
 type ComparisonMode = "overlay" | "current" | "reference" | "blink" | "split";
 type FitMode = "viewport" | "width" | "height";
 
@@ -50,7 +52,13 @@ export class FidelityMode {
     this.panel = document.createElement("aside");
     this.panel.className = "fidelity-panel";
     this.panel.innerHTML = `
-      <header><div><small>MILESTONE F1</small><h2>LDOE Fidelity</h2></div><span>F3</span></header>
+      <header class="fidelity-header">
+        <div><small>MILESTONE F1</small><h2>LDOE Fidelity</h2></div>
+        <div class="panel-header-actions">
+          <button type="button" data-role="collapse" aria-label="Collapse">−</button>
+          <span class="panel-key">F3</span>
+        </div>
+      </header>
       <div class="fidelity-scroll">
         <section class="fidelity-file-actions">
           <button type="button" data-action="load">Load reference</button>
@@ -87,6 +95,10 @@ export class FidelityMode {
     this.fileInput.hidden = true;
     this.freezeInput = this.require<HTMLInputElement>("[data-control='freeze']");
     root.append(this.referenceLayer, this.guides, this.panel, this.fileInput);
+    const scroll = this.require<HTMLElement>(".fidelity-scroll");
+    const header = this.require<HTMLElement>(".fidelity-header");
+    const collapseBtn = this.require<HTMLButtonElement>("[data-role='collapse']");
+    bindDraggableCollapsiblePanel(this.panel, header, scroll, collapseBtn);
     this.bindControls();
     this.applyReferenceLayout();
     this.applyVisibility();

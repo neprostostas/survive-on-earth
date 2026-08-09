@@ -1,6 +1,7 @@
 import type { CombatPoint, CombatTarget } from "../combat/CombatTarget.ts";
 import type { CombatTargetSystem } from "../combat/CombatTargetSystem.ts";
 import type { DamageResult, HealthPool } from "../combat/HealthPool.ts";
+import type { PlayerIncomingDamageResult } from "../combat/PlayerDamageResolver.ts";
 import { RoamingZombie } from "./RoamingZombie.ts";
 
 export interface EnemyMovementAdapter {
@@ -11,10 +12,12 @@ export interface EnemyMovementAdapter {
 export interface EnemyPlayerAdapter {
   readonly health: HealthPool;
   getPosition(): CombatPoint;
+  /** Apply raw enemy damage through Player-side mitigation at impact time. */
+  applyIncomingDamage(rawDamage: number): PlayerIncomingDamageResult;
 }
 
 export interface EnemySystemCallbacks {
-  readonly onPlayerDamage: (enemy: RoamingZombie, result: DamageResult) => void;
+  readonly onPlayerDamage: (enemy: RoamingZombie, result: PlayerIncomingDamageResult) => void;
   readonly onEnemyHit: (enemy: RoamingZombie, result: DamageResult) => void;
   readonly onEnemyDeath: (enemy: RoamingZombie) => void;
 }
@@ -25,7 +28,8 @@ export class EnemySystem {
   private readonly player: EnemyPlayerAdapter;
   private readonly movement: EnemyMovementAdapter;
   private readonly callbacks: EnemySystemCallbacks;
-  private lastDamage = 0;
+  private lastRawDamage = 0;
+  private lastFinalDamage = 0;
   private defeatedTransitions = 0;
 
   constructor(
@@ -42,7 +46,10 @@ export class EnemySystem {
 
   get liveCount(): number { return this.enemies.size; }
   get agents(): readonly RoamingZombie[] { return Object.freeze([...this.enemies.values()]); }
-  get lastPlayerDamage(): number { return this.lastDamage; }
+  /** Final received damage from the last successful Player hit (after armor). */
+  get lastPlayerDamage(): number { return this.lastFinalDamage; }
+  get lastPlayerRawDamage(): number { return this.lastRawDamage; }
+  get lastPlayerFinalDamage(): number { return this.lastFinalDamage; }
   get playerDefeatTransitions(): number { return this.defeatedTransitions; }
 
   register(enemy: RoamingZombie): void {
@@ -77,10 +84,11 @@ export class EnemySystem {
 
   private applyPlayerDamage(enemy: RoamingZombie, amount: number): void {
     if (!enemy.isCombatAlive() || !this.player.health.alive) return;
-    const result = this.player.health.applyDamage(amount);
-    if (result.applied <= 0) return;
-    this.lastDamage = result.requested;
-    if (result.becameDead) this.defeatedTransitions += 1;
+    const result = this.player.applyIncomingDamage(amount);
+    if (result.previousHealth === result.currentHealth) return;
+    this.lastRawDamage = result.rawDamage;
+    this.lastFinalDamage = result.finalDamage;
+    if (result.becameDefeated) this.defeatedTransitions += 1;
     this.callbacks.onPlayerDamage(enemy, result);
   }
 

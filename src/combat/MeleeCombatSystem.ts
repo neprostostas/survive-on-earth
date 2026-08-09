@@ -44,6 +44,12 @@ export class MeleeCombatSystem {
   get lockedTarget(): CombatTarget | null { return this.locked; }
   get lastAttackStatus(): AttackRequestStatus | null { return this.lastStatus; }
   get impactCount(): number { return this.impacts; }
+  /** 0..1 through the current fist attack cycle; 0 when ready. */
+  get attackProgress(): number {
+    if (!this.locked) return 0;
+    return this.elapsed / FISTS_COMBAT_PROFILE.cycleDuration;
+  }
+  get impactReached(): boolean { return this.impacted; }
 
   cancelAttack(): void {
     if (!this.locked) return;

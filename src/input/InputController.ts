@@ -54,5 +54,7 @@ export class InputController {
     this.attackAction.setEnabled(!suppressed);
   }
 
+  get isSuppressed(): boolean { return this.suppressed; }
+
   dispose(): void { this.keyboard.dispose(); this.joystick.dispose(); this.primaryAction.dispose(); this.attackAction.dispose(); }
 }

@@ -15,7 +15,7 @@ import { InteractionSystem } from "../interaction/InteractionSystem";
 import { PostProcessing } from "../rendering/PostProcessing";
 import { GameLoop } from "./GameLoop";
 import { FidelityMode } from "../debug/FidelityMode";
-import { PrototypeToolLoadout } from "../harvesting/PrototypeToolLoadout";
+import { InventoryHarvestTools } from "../harvesting/InventoryHarvestTools";
 import { HarvestingSystem } from "../harvesting/HarvestingSystem";
 import { HarvestableResource } from "../harvesting/HarvestableResource";
 import { ResourceResultFeedback } from "../ui/ResourceResultFeedback";
@@ -44,6 +44,7 @@ import { EnemySystem } from "../enemies/EnemySystem";
 import { RoamingZombie } from "../enemies/RoamingZombie";
 import { EnemyPresentation } from "../enemies/EnemyPresentation";
 import { ROAMING_ZOMBIE_PROFILE } from "../enemies/enemyConfig";
+import { PlayerDamageResolver } from "../combat/PlayerDamageResolver";
 
 export class Game {
   private readonly engine: Engine;
@@ -68,13 +69,14 @@ export class Game {
   private readonly equipmentVisual: EquipmentVisualController;
   private readonly combatPresentation: CombatPresentation;
   private readonly enemyPresentation: EnemyPresentation;
+  private readonly playerDamage: PlayerDamageResolver;
   private readonly enemies: EnemySystem;
   private readonly combat: MeleeCombatSystem;
   private readonly inventoryPanel: InventoryPanel;
   private readonly craftingPanel: CraftingPanel;
   private readonly pickupResults = new TemporaryPickupResultSink();
   private readonly pickup: PickupSystem;
-  private readonly prototypeTools = new PrototypeToolLoadout();
+  private readonly harvestTools: InventoryHarvestTools;
   private readonly hud: HUD;
   private readonly input: InputController;
   private readonly calibration: CalibrationPanel;
@@ -99,10 +101,15 @@ export class Game {
     this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
     this.combatPresentation = new CombatPresentation(this.scene, this.engine, uiRoot);
     this.enemyPresentation = new EnemyPresentation(this.scene);
+    this.playerDamage = new PlayerDamageResolver(this.player.health, this.equipment);
     this.spawnCombatDummies();
     this.enemies = new EnemySystem(
       this.combatTargets,
-      { health: this.player.health, getPosition: () => this.player.position },
+      {
+        health: this.player.health,
+        getPosition: () => this.player.position,
+        applyIncomingDamage: (rawDamage) => this.playerDamage.applyRawDamage(rawDamage),
+      },
       {
         move: (enemy, position, displacement) => {
           const label = this.enemyCollisionLabel(enemy);
@@ -119,8 +126,8 @@ export class Game {
       },
       {
         onPlayerDamage: (_enemy, damage) => {
-          this.combatPresentation.showDamage(this.player.position, damage.requested, 1.9);
-          if (damage.becameDead) this.enterPlayerDefeatedState();
+          this.combatPresentation.showDamage(this.player.position, damage.finalDamage, 1.9);
+          if (damage.becameDefeated) this.enterPlayerDefeatedState();
         },
         onEnemyHit: (enemy) => { this.enemyPresentation.showHit(enemy); },
         onEnemyDeath: (enemy) => { this.enemyPresentation.beginDeath(enemy); },
@@ -149,12 +156,41 @@ export class Game {
     spawnEquipmentCalibrationLoot(this.groundLoot);
     this.pickup = new PickupSystem(this.groundLoot, this.interaction, this.inventory, this.pickupResults, this.inventoryPanel);
     const resourceResults = new CompositeResourceResultSink([this.groundLoot, this.resultFeedback]);
-    this.harvesting = new HarvestingSystem(this.config, this.prototypeTools, this.player, this.interaction, resourceResults, (resource) => {
+    this.harvestTools = new InventoryHarvestTools(this.inventory);
+    this.harvesting = new HarvestingSystem(this.config, this.harvestTools, this.player, this.interaction, resourceResults, (resource) => {
       this.world.removeResourceCollision(resource.resourceId);
     });
-    this.debug = new DebugOverlay(uiRoot, this.scene, this.engine, this.player, this.collision, this.interaction, this.harvesting, this.resultFeedback, this.groundLoot, this.pickupResults, this.inventory, this.equipment, this.equipmentSystem, this.craftingSystem, this.combatTargets, this.combat, this.enemies, this.world, this.postProcessing, this.config);
-    this.calibration = new CalibrationPanel(uiRoot, this.config, this.prototypeTools, () => { this.applyCalibration(); });
     this.fidelity = new FidelityMode(uiRoot, () => { /* Freeze state is read in the frame loop. */ });
+    this.debug = new DebugOverlay(
+      uiRoot,
+      this.scene,
+      this.engine,
+      this.player,
+      this.collision,
+      this.interaction,
+      this.harvesting,
+      this.resultFeedback,
+      this.groundLoot,
+      this.pickupResults,
+      this.inventory,
+      this.equipment,
+      this.equipmentSystem,
+      this.craftingSystem,
+      this.combatTargets,
+      this.combat,
+      this.enemies,
+      this.playerDamage,
+      this.fidelity,
+      this.world,
+      this.postProcessing,
+      this.config,
+      {
+        input: this.input,
+        isInventoryOpen: () => this.inventoryPanel.isOpen,
+        isCraftingOpen: () => this.craftingPanel.isOpen,
+      },
+    );
+    this.calibration = new CalibrationPanel(uiRoot, this.config, () => { this.applyCalibration(); });
     this.loop = new GameLoop(this.engine, (delta) => { this.update(delta); });
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onFunctionKey);
@@ -199,7 +235,7 @@ export class Game {
     const target = this.interaction.target;
     if (!this.player.health.alive) this.hud.setPrimaryActionContext("none");
     else if (target instanceof HarvestableResource) {
-      this.hud.setPrimaryActionContext(target.requiredTool, this.prototypeTools.hasTool(target.requiredTool), this.harvesting.state.unavailableFeedback);
+      this.hud.setPrimaryActionContext(target.requiredTool, this.harvestTools.hasTool(target.requiredTool), this.harvesting.state.unavailableFeedback);
     } else if (target instanceof GroundLoot) {
       this.hud.setGroundLootActionContext(ITEM_REGISTRY.get(target.stack.itemId), target.stack.quantity);
     } else this.hud.setPrimaryActionContext(target ? "generic" : "none");

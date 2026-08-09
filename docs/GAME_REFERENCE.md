@@ -100,9 +100,20 @@ Current project M08 behavior:
 - Ingredients may be split across slots and are consumed from the lowest slot index first.
 - Crafting is instant, one click produces at most one item, and the full consume-plus-output transaction is atomic.
 - Output capacity is checked against the post-consumption Inventory layout, including slots freed by ingredients.
-- Hatchet and Pickaxe are non-stackable Item System / Inventory items with no equipment metadata.
-- Crafted tools intentionally do not change current harvesting availability. `PrototypeToolLoadout` remains the M03 calibration source until a later dedicated tool-lifecycle milestone.
+- Crafted Hatchet and Pickaxe are non-stackable Item System / Inventory items with no equipment metadata.
 - Durability, tool/weapon equipment, combat stats, stations, storage crafting, timers, queues, multi-craft, progression, and persistence remain absent.
+
+## Inventory-backed harvesting tools from Milestone 12
+
+Current project M12 behavior:
+
+- Harvesting reads Hatchet/Pickaxe ownership only from live `PlayerInventory` (via thin `InventoryHarvestTools`).
+- Pine Tree requires a Hatchet in Inventory; Limestone Rock requires a Pickaxe.
+- Matching tools resolve by lowest occupied inventory slot index. No equip action and no tool equipment slot.
+- Crafting a tool inserts it into Inventory, and the next harvest check immediately sees it without a sync callback.
+- Successful harvest does not consume or degrade tools (durability is explicitly deferred).
+- Hatchet/Pickaxe remain non-combat inventory items. Player melee stays fists only (damage 6).
+- `PrototypeToolLoadout` no longer exists in production code.
 
 ## Unarmed melee foundation from Milestone 09
 
@@ -123,7 +134,7 @@ Current project M09 behavior:
 - Fists alternate right/left. Their lightweight procedural pose uses the existing player pivots, so sleeves and harvesting visuals continue to follow the same character hierarchy.
 - Three deterministic Combat Dummies provide collision, target ring/health feedback, `-6` impact feedback, recoil, and death cleanup. They do not provide AI, loot, or rewards.
 - Unarmed damage, cadence, impact timing, ranges, dummy placement, and presentation timing are project calibration values chosen to establish LDOE-like melee pacing; they are not claimed as extracted official internal LDOE values.
-- Player health/damage intake, enemies, AI, weapons, tools-as-weapons, durability, armor mitigation, loot, knockback simulation, and persistence remain later milestones.
+- Enemy AI, healing, weapons, tools-as-weapons, durability, respawn, loot, knockback simulation, and persistence remain later milestones where still marked deferred.
 
 ## Roaming Zombie and Player health from Milestone 10
 
@@ -140,10 +151,10 @@ Survive on Earth project calibration for the current world scale:
 - Radial acquire range: 4.0; lose range: 8.0.
 - Attack-start range: 1.05; impact hit range: 1.15.
 
-Current project M10 behavior:
+Current project M10 behavior (still active except where M11 supersedes raw damage application):
 
 - Three fixed Roaming Zombie calibration fixtures independently idle, detect, chase by direct steering, stop for timed melee attacks, recover, and disengage using range hysteresis.
-- A successful Zombie impact deals 6 raw and final damage to the Player `HealthPool`. Existing armor metadata does not mitigate damage in M10.
+- A successful Zombie impact deals **raw** damage 6. Final Player HP change is resolved by armor mitigation (Milestone 11).
 - Player attacks use the existing CombatTargetSystem and 6-damage fists. A fresh 40-HP Roaming Zombie dies after exactly seven successful fist impacts.
 - The Player can leave hit range during the Zombie windup to make the impact miss. A Zombie killed before impact cannot deal phantom damage.
 - Player health reaching zero enters a temporary terminal M10 gameplay state. Production death, corpse, inventory loss, respawn, and recovery are deferred.
@@ -151,3 +162,38 @@ Current project M10 behavior:
 - Fixed fixtures are calibration content, not a production spawn table. Zombie death produces no loot or XP.
 
 The world-space speed, numeric attack cadence/timing, and ranges above are project calibration values. They are not presented as extracted internal LDOE constants.
+
+## Player armor damage mitigation from Milestone 11
+
+LDOE reference rule used by the project:
+
+```text
+DamageReduction = Armor / (Armor + 50/3)
+Damage Taken is rounded to nearest whole number.
+```
+
+Current Survive on Earth equipment metadata (project values; not necessarily claimed exact current LDOE item stats):
+
+- Dad Hat: Head, Armor 2
+- Shirt: Torso, Armor 3
+- Cargo Pants: Legs, Armor 3
+- Sneakers: Feet, Armor 0
+- Full current set total: Armor 8
+
+Current calibration for Roaming Zombie raw damage 6:
+
+- Armor 0 → final damage 6 (`100 → 94`)
+- Armor 2 (Dad Hat) → final 5
+- Armor 3 (Shirt or Cargo Pants) → final 5
+- Armor 5 (Dad Hat + Shirt) → final 5
+- Armor 8 (full set) → final 4 (`100 → 96`)
+
+Current project M11 behavior:
+
+- Armor points are read from live `PlayerEquipment.totalArmor` at enemy impact resolution time only.
+- `PlayerDamageResolver` applies pure mitigation, then commits final damage to the existing Player `HealthPool`.
+- Enemy AI stores and emits only raw damage 6; equipping armor never mutates the enemy profile.
+- Sneakers remain equippable with armor 0 and therefore do not change incoming damage by themselves.
+- Armor metadata is display/combat-mitigation only: no durability, wear, breaking, or repair.
+- Enemy armor, armor penetration, damage types, block/dodge, healing, and respawn remain deferred.
+- Outgoing Player fists remain unmitigated 6 damage against Zombies and Combat Dummies.

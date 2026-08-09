@@ -25,22 +25,44 @@ import type { EquipmentSystem } from "../equipment/EquipmentSystem";
 import type { CraftingSystem } from "../crafting/CraftingSystem";
 import type { CombatTargetSystem } from "../combat/CombatTargetSystem";
 import type { MeleeCombatSystem } from "../combat/MeleeCombatSystem";
-import { FISTS_COMBAT_PROFILE } from "../combat/combatConfig";
+import { COMBAT_CONFIG, FISTS_COMBAT_PROFILE } from "../combat/combatConfig";
 import type { EnemySystem } from "../enemies/EnemySystem";
+import type { PlayerDamageResolver } from "../combat/PlayerDamageResolver";
+import { ROAMING_ZOMBIE_PROFILE } from "../enemies/enemyConfig";
+import type { FidelityMode } from "./FidelityMode";
+import { ITEM_REGISTRY } from "../items/ItemSystem";
+import { calculateArmorMitigatedDamage } from "../combat/ArmorMitigation";
+import type { InputController } from "../input/InputController";
+import { bindDraggableCollapsiblePanel } from "./panelChrome";
+
+export interface DebugPanelSources {
+  readonly input: InputController;
+  readonly isInventoryOpen: () => boolean;
+  readonly isCraftingOpen: () => boolean;
+}
 
 export class DebugOverlay {
   private visible = false;
-  private readonly element: HTMLElement;
+  private showRanges = false;
+  private readonly root: HTMLElement;
+  private readonly body: HTMLElement;
+  private readonly rangesToggle: HTMLInputElement;
   private readonly playerCollider: Mesh;
   private readonly forwardLine: LinesMesh;
   private readonly velocityLine: LinesMesh;
   private readonly axes: LinesMesh;
   private readonly interactionRange: Mesh;
   private readonly interactionTargetRadius: Mesh;
+  private readonly combatAcquireRing: Mesh;
+  private readonly combatHitRing: Mesh;
+  private readonly enemyAcquireRing: Mesh;
+  private readonly enemyLoseRing: Mesh;
   private grid: WorldGrid;
   private obstacleMeshes: Mesh[] = [];
-  private obstacleCount = -1;
+  private obstacleSignature = "";
   private readonly wireMaterial: StandardMaterial;
+  private readonly combatWireMaterial: StandardMaterial;
+  private readonly enemyWireMaterial: StandardMaterial;
 
   constructor(
     root: HTMLElement,
@@ -60,17 +82,40 @@ export class DebugOverlay {
     private readonly combatTargets: CombatTargetSystem,
     private readonly combat: MeleeCombatSystem,
     private readonly enemies: EnemySystem,
+    private readonly playerDamage: PlayerDamageResolver,
+    private readonly fidelity: FidelityMode,
     private readonly world: World,
     private readonly postProcessing: PostProcessing,
     private readonly config: CalibrationConfig,
+    private readonly sources: DebugPanelSources,
   ) {
-    this.element = document.createElement("pre");
-    this.element.className = "debug-overlay";
-    root.append(this.element);
-    this.wireMaterial = new StandardMaterial("DebugCollisionMaterial", scene);
-    this.wireMaterial.wireframe = true;
-    this.wireMaterial.emissiveColor = new Color3(0.2, 1, 0.48);
-    this.wireMaterial.disableLighting = true;
+    this.root = document.createElement("div");
+    this.root.className = "debug-overlay";
+    this.root.innerHTML = [
+      `<header class="debug-overlay-header">`,
+      `<div><small>PRODUCTION DEBUG · M01–M12</small><h2>F2 Debug</h2></div>`,
+      `<div class="panel-header-actions">`,
+      `<label class="panel-toggle-label" title="Toggle combat/enemy range rings"><input type="checkbox" data-role="ranges" /> ranges</label>`,
+      `<button type="button" data-role="collapse" aria-label="Collapse">−</button>`,
+      `<span class="panel-key">F2</span>`,
+      `</div></header>`,
+      `<pre class="debug-overlay-body"></pre>`,
+    ].join("");
+    root.append(this.root);
+    this.body = this.root.querySelector(".debug-overlay-body") as HTMLElement;
+    this.rangesToggle = this.root.querySelector('input[data-role="ranges"]') as HTMLInputElement;
+    const collapseBtn = this.root.querySelector('button[data-role="collapse"]') as HTMLButtonElement;
+    const header = this.root.querySelector(".debug-overlay-header") as HTMLElement;
+    bindDraggableCollapsiblePanel(this.root, header, this.body, collapseBtn);
+    this.rangesToggle.addEventListener("change", () => {
+      this.showRanges = this.rangesToggle.checked;
+      this.applyRangeVisibility();
+    });
+
+    this.wireMaterial = this.makeWireMaterial("DebugCollisionMaterial", new Color3(0.2, 1, 0.48));
+    this.combatWireMaterial = this.makeWireMaterial("DebugCombatRangeMaterial", new Color3(1, 0.55, 0.2));
+    this.enemyWireMaterial = this.makeWireMaterial("DebugEnemyRangeMaterial", new Color3(1, 0.28, 0.32));
+
     this.playerCollider = MeshBuilder.CreateCylinder("DebugPlayerCollider", { height: 1.5, diameter: 1, tessellation: 20 }, scene);
     this.playerCollider.material = this.wireMaterial;
     this.forwardLine = MeshBuilder.CreateLines("DebugForward", { points: [Vector3.Zero(), Vector3.Forward()], updatable: true }, scene);
@@ -83,12 +128,12 @@ export class DebugOverlay {
       [Vector3.Zero(), new Vector3(0, 4, 0)],
     ] }, scene);
     this.axes.color = new Color3(1, 0.25, 0.2);
-    this.interactionRange = MeshBuilder.CreateTorus("DebugInteractionRange", { diameter: 2, thickness: 0.025, tessellation: 48 }, scene);
-    this.interactionRange.material = this.wireMaterial;
-    this.interactionRange.isPickable = false;
-    this.interactionTargetRadius = MeshBuilder.CreateTorus("DebugInteractionTargetRadius", { diameter: 2, thickness: 0.035, tessellation: 36 }, scene);
-    this.interactionTargetRadius.material = this.wireMaterial;
-    this.interactionTargetRadius.isPickable = false;
+    this.interactionRange = this.makeRing("DebugInteractionRange", 0.025, this.wireMaterial);
+    this.interactionTargetRadius = this.makeRing("DebugInteractionTargetRadius", 0.035, this.wireMaterial);
+    this.combatAcquireRing = this.makeRing("DebugCombatAcquire", 0.03, this.combatWireMaterial);
+    this.combatHitRing = this.makeRing("DebugCombatHit", 0.04, this.combatWireMaterial);
+    this.enemyAcquireRing = this.makeRing("DebugEnemyAcquire", 0.03, this.enemyWireMaterial);
+    this.enemyLoseRing = this.makeRing("DebugEnemyLose", 0.028, this.enemyWireMaterial);
     this.grid = new WorldGrid(scene, GAME_CONFIG.worldSize, config.world.gridCellSize);
     this.refreshObstacles();
     this.applyVisibility();
@@ -97,7 +142,6 @@ export class DebugOverlay {
   toggle(): void { this.visible = !this.visible; this.applyVisibility(); }
 
   refreshObstacles(): void {
-    this.obstacleCount = this.collision.obstacles.length;
     if (Math.abs(this.grid.cellSize - this.config.world.gridCellSize) > 0.0001) {
       this.grid.dispose();
       this.grid = new WorldGrid(this.scene, GAME_CONFIG.worldSize, this.config.world.gridCellSize);
@@ -110,14 +154,35 @@ export class DebugOverlay {
         : MeshBuilder.CreateBox("DebugBoxObstacle", { width: obstacle.halfX * 2, height: 1.1, depth: obstacle.halfZ * 2 }, this.scene);
       mesh.position.set(obstacle.x, 0.55, obstacle.z);
       mesh.material = this.wireMaterial;
+      mesh.isPickable = false;
       mesh.setEnabled(this.visible);
       return mesh;
     });
+    this.obstacleSignature = this.buildObstacleSignature();
+  }
+
+  private syncObstacleMeshes(): void {
+    const signature = this.buildObstacleSignature();
+    if (signature !== this.obstacleSignature || this.obstacleMeshes.length !== this.collision.obstacles.length) {
+      this.refreshObstacles();
+      return;
+    }
+    for (let index = 0; index < this.collision.obstacles.length; index += 1) {
+      const obstacle = this.collision.obstacles[index];
+      this.obstacleMeshes[index].position.set(obstacle.x, 0.55, obstacle.z);
+    }
+  }
+
+  private buildObstacleSignature(): string {
+    return this.collision.obstacles.map((obstacle) => {
+      if (obstacle.kind === "circle") return `c:${obstacle.label}:${obstacle.radius.toFixed(3)}`;
+      return `b:${obstacle.label}:${obstacle.halfX.toFixed(3)}:${obstacle.halfZ.toFixed(3)}`;
+    }).join("|");
   }
 
   update(): void {
     if (!this.visible) return;
-    if (this.obstacleCount !== this.collision.obstacles.length) this.refreshObstacles();
+    this.syncObstacleMeshes();
     const position = this.player.position;
     const yaw = this.player.visual.root.rotation.y;
     const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
@@ -131,9 +196,33 @@ export class DebugOverlay {
     const lastItemResult = this.itemResults.lastResult;
     const selectedGroundLoot = this.interaction.target instanceof GroundLoot ? this.interaction.target : null;
     const lastPickup = this.pickupResults.lastResult;
-    const nearestEnemy = this.enemies.agents.reduce<(typeof this.enemies.agents)[number] | null>((nearest, enemy) => !nearest || enemy.playerDistance < nearest.playerDistance ? enemy : nearest, null);
+    const agents = this.enemies.agents;
+    const nearestEnemy = agents.reduce<(typeof agents)[number] | null>((nearest, enemy) => !nearest || enemy.playerDistance < nearest.playerDistance ? enemy : nearest, null);
+    const hatchetSlot = this.inventory.findFirstSlotByItemId("hatchet");
+    const pickaxeSlot = this.inventory.findFirstSlotByItemId("pickaxe");
+    const lastDamage = this.playerDamage.lastResult;
+    const combatTarget = this.combatTargets.current;
+    const armor = this.equipment.totalArmor;
+    const nextHit = calculateArmorMitigatedDamage(ROAMING_ZOMBIE_PROFILE.damage, armor);
+    const movement = this.sources.input.getMovement();
+    const fistProgress = this.combat.attackProgress;
+    const enemyProgress = nearestEnemy?.attackProgress ?? 0;
+
     this.interactionRange.position.set(position.x, 0.09, position.z);
     this.interactionRange.scaling.set(this.config.interaction.range, 1, this.config.interaction.range);
+    this.combatAcquireRing.position.set(position.x, 0.07, position.z);
+    this.combatAcquireRing.scaling.set(COMBAT_CONFIG.targetAcquisitionRange, 1, COMBAT_CONFIG.targetAcquisitionRange);
+    this.combatHitRing.position.set(position.x, 0.075, position.z);
+    this.combatHitRing.scaling.set(COMBAT_CONFIG.meleeHitRange, 1, COMBAT_CONFIG.meleeHitRange);
+    if (nearestEnemy) {
+      const ep = nearestEnemy.getCombatPosition();
+      this.enemyAcquireRing.position.set(ep.x, 0.08, ep.z);
+      this.enemyAcquireRing.scaling.set(ROAMING_ZOMBIE_PROFILE.acquireRange, 1, ROAMING_ZOMBIE_PROFILE.acquireRange);
+      this.enemyLoseRing.position.set(ep.x, 0.085, ep.z);
+      this.enemyLoseRing.scaling.set(ROAMING_ZOMBIE_PROFILE.loseRange, 1, ROAMING_ZOMBIE_PROFILE.loseRange);
+    }
+    this.applyRangeVisibility(nearestEnemy !== null);
+
     const interactionTarget = this.interaction.target;
     if (interactionTarget) {
       const targetPosition = interactionTarget.getInteractionPosition();
@@ -142,62 +231,66 @@ export class DebugOverlay {
       this.interactionTargetRadius.scaling.set(targetRadius, 1, targetRadius);
       this.interactionTargetRadius.setEnabled(true);
     } else this.interactionTargetRadius.setEnabled(false);
-    this.element.textContent = [
-      `FPS  ${this.engine.getFps().toFixed(0)}`,
-      `XYZ  ${position.x.toFixed(2)}  ${position.y.toFixed(2)}  ${position.z.toFixed(2)}`,
-      `VEL  ${velocity.x.toFixed(2)}  ${velocity.z.toFixed(2)}`,
-      `SPEED ${velocity.length().toFixed(2)} u/s`,
-      `FACING ${(yaw * 180 / Math.PI).toFixed(1)}°`,
-      `OBSTACLES ${this.collision.obstacles.length}`,
+
+    const invMap = this.inventory.getSlots().map((slot) => {
+      if (!slot.stack) return `${slot.index}:-`;
+      const short = slot.stack.itemId.replace("cargo-pants", "pants").replace("limestone", "lime").replace("pine-log", "log").replace("dad-hat", "hat").replace("sneakers", "shoes");
+      return `${slot.index}:${short}${slot.stack.quantity > 1 ? `×${slot.stack.quantity}` : ""}`;
+    }).join(" ");
+
+    this.body.textContent = [
+      `FPS ${this.engine.getFps().toFixed(0)}  ·  F3 ${this.fidelity.isOpen ? "OPEN" : "closed"}${this.fidelity.motionFrozen ? "  FREEZE" : ""}`,
+      `XYZ ${position.x.toFixed(2)}  ${position.y.toFixed(2)}  ${position.z.toFixed(2)}`,
+      `VEL ${velocity.x.toFixed(2)}  ${velocity.z.toFixed(2)}  ·  ${velocity.length().toFixed(2)} u/s`,
+      `FACING ${(yaw * 180 / Math.PI).toFixed(1)}°  ·  OBS ${this.collision.obstacles.length}`,
+      `CAM yaw ${this.config.camera.yawDeg}  pitch ${this.config.camera.pitchDeg}  ortho ${this.config.camera.orthoHeight}`,
       "",
-      "INTERACTION",
-      `TARGET ${interactionState.targetId ?? "none"}`,
-      `TYPE ${interactionState.targetType ?? "-"}`,
-      `DIST ${Number.isFinite(interactionState.effectiveDistance) ? interactionState.effectiveDistance.toFixed(2) : "-"}`,
-      `RANGE ${this.config.interaction.range.toFixed(2)}`,
-      `CANDIDATES ${interactionState.candidateCount}`,
-      `LAST ${interactionState.lastInteractionId ?? "none"}`,
+      "INPUT",
+      `SUPPRESSED ${this.sources.input.isSuppressed ? "yes" : "no"}  ·  INV ${this.sources.isInventoryOpen() ? "open" : "closed"}  ·  CRAFT ${this.sources.isCraftingOpen() ? "open" : "closed"}`,
+      `MOVE ${movement.length().toFixed(2)}  ·  READY ATTACK ${this.player.health.alive && !this.sources.input.isSuppressed && this.combat.state === "ready" ? "yes" : "no"}`,
+      `FREEZE ${this.fidelity.motionFrozen ? "yes" : "no"}  ·  RINGS ${this.showRanges ? "on" : "off"}`,
+      "",
+      "PLAYER",
+      `HP ${this.player.health.currentHealth} / ${this.player.health.maxHealth}  ·  ${this.player.health.alive ? "ALIVE" : "DEFEATED"}`,
+      `ARMOR ${armor}  (equipped metadata)`,
+      `SPEED CAP ${this.config.player.movementSpeed.toFixed(1)}  ·  R ${this.config.player.collisionRadius.toFixed(2)}  ·  H ${this.config.player.visualHeight.toFixed(2)}`,
+      lastDamage
+        ? `LAST HIT raw ${lastDamage.rawDamage} → final ${lastDamage.finalDamage}  ·  red ${(lastDamage.damageReduction * 100).toFixed(1)}%  ·  arm ${lastDamage.armor}`
+        : "LAST HIT none",
+      "",
+      "NEXT HIT PREVIEW  (live armor, no apply)",
+      `RAW ${ROAMING_ZOMBIE_PROFILE.damage}  ·  ARMOR ${nextHit.armorPoints}  ·  RED ${(nextHit.damageReduction * 100).toFixed(1)}%  ·  FINAL ${nextHit.finalDamage}`,
+      `HP IF HIT ${Math.max(0, this.player.health.currentHealth - nextHit.finalDamage)} / ${this.player.health.maxHealth}`,
+      "",
+      "INTERACTION  (contextual)",
+      `TARGET ${interactionState.targetId ?? "none"}  ·  TYPE ${interactionState.targetType ?? "-"}`,
+      `DIST ${Number.isFinite(interactionState.effectiveDistance) ? interactionState.effectiveDistance.toFixed(2) : "-"}  /  ${this.config.interaction.range.toFixed(2)}`,
+      `CAND ${interactionState.candidateCount}  ·  LAST ${interactionState.lastInteractionId ?? "none"}`,
       "",
       "HARVESTING",
-      `TARGET ${harvestingState.targetId ?? "none"}`,
-      `RESOURCE ${harvestingState.resourceKind ?? "-"}`,
-      `TOOL ${harvestingState.requiredTool ?? "-"}`,
-      `AVAILABLE ${harvestingState.requiredTool ? (harvestingState.toolAvailable ? "yes" : "no") : "-"}`,
-      `HITS ${harvestingState.targetId ? `${harvestingState.remainingHits} / ${harvestingState.totalHits}` : "-"}`,
-      `STATE ${this.harvesting.active ? "swinging" : "idle"}`,
-      `PHASE ${harvestingState.phase}`,
-      `HELD ${harvestingState.actionHeld ? "true" : "false"}`,
-      `LOCKED ${harvestingState.targetLocked ? "true" : "false"}`,
-      `DEPLETED ${harvestingState.lastResourceDepleted ?? "none"}`,
+      `TARGET ${harvestingState.targetId ?? "none"}  ·  ${harvestingState.resourceKind ?? "-"}`,
+      `NEED ${harvestingState.requiredTool ?? "-"}  ·  AVAIL ${harvestingState.requiredTool ? (harvestingState.toolAvailable ? "yes" : "no") : "-"}`,
+      `HITS ${harvestingState.targetId ? `${harvestingState.remainingHits}/${harvestingState.totalHits}` : "-"}  ·  ${this.harvesting.active ? harvestingState.phase : "idle"}`,
+      `HELD ${harvestingState.actionHeld ? "yes" : "no"}  ·  LOCK ${harvestingState.targetLocked ? "yes" : "no"}  ·  DONE ${harvestingState.lastResourceDepleted ?? "none"}`,
       "",
-      "ITEM SYSTEM",
-      `DEFINITIONS ${this.itemResults.definitionCount}`,
-      `RESULTS ${this.itemResults.resultCount}`,
-      `SOURCE ${lastItemResult?.sourceId ?? "none"}`,
-      `ITEM ${lastItemResult?.itemId ?? "-"}`,
-      `QUANTITY ${lastItemResult?.quantity ?? "-"}`,
-      `STACKS ${lastItemResult ? `[${lastItemResult.stacks.map((stack) => stack.quantity).join(", ")}]` : "-"}`,
-      "",
-      "GROUND LOOT",
-      `ACTIVE ${this.groundLoot.activeCount}`,
-      `TARGET ${selectedGroundLoot?.interactionId ?? "none"}`,
-      `ITEM ${selectedGroundLoot?.stack.itemId ?? "none"}`,
-      `QUANTITY ${selectedGroundLoot?.stack.quantity ?? 0}`,
-      `PICKUPS ${this.pickupResults.resultCount}`,
-      `LAST PICKUP ${lastPickup ? `${lastPickup.stack.itemId} × ${lastPickup.stack.quantity}` : "none"}`,
+      "TOOLS  (PlayerInventory · lowest slot)",
+      `HATCHET ${hatchetSlot === null ? "NO" : `YES  slot ${hatchetSlot}`}  ·  qty ${this.inventory.totalQuantity("hatchet")}`,
+      `PICKAXE ${pickaxeSlot === null ? "NO" : `YES  slot ${pickaxeSlot}`}  ·  qty ${this.inventory.totalQuantity("pickaxe")}`,
+      "SRC inventory  ·  no equip slot  ·  no durability",
       "",
       "INVENTORY",
-      `SLOTS ${this.inventory.slotCount}`,
-      `OCCUPIED ${this.inventory.occupiedSlotCount}`,
-      `EMPTY ${this.inventory.emptySlotCount}`,
-      `PINE LOG ${this.inventory.totalQuantity("pine-log")}`,
-      `LIMESTONE ${this.inventory.totalQuantity("limestone")}`,
+      `SLOTS ${this.inventory.occupiedSlotCount}/${this.inventory.slotCount}  empty ${this.inventory.emptySlotCount}`,
+      `PINE LOG ${this.inventory.totalQuantity("pine-log")}  ·  LIMESTONE ${this.inventory.totalQuantity("limestone")}`,
       `LAST INSERT ${this.inventory.lastInsertAccepted === null ? "none" : this.inventory.lastInsertAccepted ? "accepted" : "rejected"}`,
+      `MAP ${invMap}`,
       "",
-      "EQUIPMENT",
-      ...this.equipment.getSlots().map((slot) => `${slot.id.toUpperCase()} ${slot.stack?.itemId ?? "empty"}`),
-      `ARMOR ${this.equipment.totalArmor}`,
-      `LAST ${this.equipmentSystem.lastResult ? `${this.equipmentSystem.lastResult.operation} ${this.equipmentSystem.lastResult.accepted ? "accepted" : this.equipmentSystem.lastResult.reason}` : "none"}`,
+      "EQUIPMENT  (armor only)",
+      ...this.equipment.getSlots().map((slot) => {
+        const pieceArmor = slot.stack ? ITEM_REGISTRY.get(slot.stack.itemId).equipment?.armor : undefined;
+        return `${slot.id.toUpperCase()} ${slot.stack?.itemId ?? "empty"}${pieceArmor !== undefined ? `  +${pieceArmor}` : ""}`;
+      }),
+      `TOTAL ARMOR ${armor}`,
+      `LAST ${this.equipmentSystem.lastResult ? `${this.equipmentSystem.lastResult.operation} ${this.equipmentSystem.lastResult.accepted ? "ok" : this.equipmentSystem.lastResult.reason}` : "none"}`,
       "",
       "CRAFTING",
       ...this.crafting.recipeRegistry.getAll().map((recipe) => {
@@ -207,38 +300,59 @@ export class DebugOverlay {
       `LAST ${this.crafting.lastResult ? `${this.crafting.lastResult.recipeId} ${this.crafting.lastResult.status}` : "none"}`,
       "",
       "COMBAT",
+      "(fists · separate from interaction)",
       `TARGET ${this.combatTargets.state.targetId ?? "none"}`,
-      `DIST ${Number.isFinite(this.combatTargets.state.distance) ? this.combatTargets.state.distance.toFixed(2) : "-"}`,
-      `HP ${this.combatTargets.current ? `${this.combatTargets.current.health.currentHealth}/${this.combatTargets.current.health.maxHealth}` : "-"}`,
-      `STATE ${this.combat.state.toUpperCase()}`,
-      `LAST ATTACK ${this.combat.lastAttackStatus ?? "none"}`,
-      `DAMAGE ${FISTS_COMBAT_PROFILE.damage}`,
-      `RATE ${FISTS_COMBAT_PROFILE.attacksPerSecond.toFixed(1)}/s`,
-      "",
-      "PLAYER",
-      `HP ${this.player.health.currentHealth} / ${this.player.health.maxHealth}`,
-      `STATE ${this.player.health.alive ? "ALIVE" : "DEFEATED"}`,
-      `LAST DAMAGE ${this.enemies.lastPlayerDamage || "none"}`,
+      `DIST ${Number.isFinite(this.combatTargets.state.distance) ? this.combatTargets.state.distance.toFixed(2) : "-"}  ·  hit ${COMBAT_CONFIG.meleeHitRange}  ·  acq ${COMBAT_CONFIG.targetAcquisitionRange}`,
+      `HP ${combatTarget ? `${combatTarget.health.currentHealth}/${combatTarget.health.maxHealth}` : "-"}  ·  ${combatTarget?.displayName ?? "-"}`,
+      `STATE ${this.combat.state.toUpperCase()}  ·  LAST ${this.combat.lastAttackStatus ?? "none"}`,
+      `FISTS ${FISTS_COMBAT_PROFILE.damage} dmg  ·  ${FISTS_COMBAT_PROFILE.attacksPerSecond.toFixed(1)}/s`,
+      `PROGRESS ${(fistProgress * 100).toFixed(0)}%  ·  IMPACT ${this.combat.impactReached ? "done" : `at ${(FISTS_COMBAT_PROFILE.impactNormalizedTime * 100).toFixed(0)}%`}  ·  LOCK ${this.combat.lockedTarget?.combatId ?? "none"}`,
       "",
       "ENEMIES",
-      `LIVE ${this.enemies.liveCount}`,
-      `TARGET ${nearestEnemy?.combatId ?? "none"}`,
-      `STATE ${nearestEnemy?.state.toUpperCase() ?? "-"}`,
-      `DIST ${nearestEnemy && Number.isFinite(nearestEnemy.playerDistance) ? nearestEnemy.playerDistance.toFixed(2) : "-"}`,
-      `HP ${nearestEnemy ? `${nearestEnemy.health.currentHealth}/${nearestEnemy.health.maxHealth}` : "-"}`,
-      `LAST ${nearestEnemy?.lastAttackResult ?? "none"}`,
+      `LIVE ${this.enemies.liveCount}  ·  raw dmg ${ROAMING_ZOMBIE_PROFILE.damage}  ·  ${ROAMING_ZOMBIE_PROFILE.moveSpeed} u/s  ·  ${ROAMING_ZOMBIE_PROFILE.attacksPerSecond}/s`,
+      `NEAR ${nearestEnemy?.combatId ?? "none"}  ·  ${nearestEnemy?.state.toUpperCase() ?? "-"}`,
+      `DIST ${nearestEnemy && Number.isFinite(nearestEnemy.playerDistance) ? nearestEnemy.playerDistance.toFixed(2) : "-"}  ·  HP ${nearestEnemy ? `${nearestEnemy.health.currentHealth}/${nearestEnemy.health.maxHealth}` : "-"}`,
+      `ATK PROGRESS ${(enemyProgress * 100).toFixed(0)}%  ·  IMPACT at ${(ROAMING_ZOMBIE_PROFILE.impactNormalizedTime * 100).toFixed(0)}%  ·  LAST ${nearestEnemy?.lastAttackResult ?? "none"}`,
+      `LAST PLAYER DMG ${this.enemies.lastPlayerFinalDamage || "none"} (final)  ·  AGGRO acq ${ROAMING_ZOMBIE_PROFILE.acquireRange} / lose ${ROAMING_ZOMBIE_PROFILE.loseRange}`,
+      ...agents.slice(0, 4).map((enemy) => `  ${enemy.combatId} ${enemy.state} d${Number.isFinite(enemy.playerDistance) ? enemy.playerDistance.toFixed(1) : "?"} hp${enemy.health.currentHealth} p${(enemy.attackProgress * 100).toFixed(0)}%`),
+      "",
+      "ITEMS / LOOT",
+      `DEFS ${ITEM_REGISTRY.getAll().length}  ·  RESULTS ${this.itemResults.resultCount}  ·  LAST ${lastItemResult ? `${lastItemResult.itemId}×${lastItemResult.quantity}` : "none"}`,
+      `GROUND ${this.groundLoot.activeCount}  ·  TGT ${selectedGroundLoot?.interactionId ?? "none"} ${selectedGroundLoot ? `${selectedGroundLoot.stack.itemId}×${selectedGroundLoot.stack.quantity}` : ""}`,
+      `PICKUPS ${this.pickupResults.resultCount}  ·  LAST ${lastPickup ? `${lastPickup.stack.itemId}×${lastPickup.stack.quantity}` : "none"}`,
       "",
       "VISUAL",
-      `QUALITY ${this.config.visual.qualityPreset.toUpperCase()}`,
-      `SHADOW PCF ${this.config.lighting.shadowSoftness.toFixed(0)}`,
-      `CONTACT ${this.config.visual.contactShadowIntensity.toFixed(2)}`,
-      `POST ${this.postProcessing.enabled ? "on" : "off"}`,
-      `CLUTTER ${this.world.clutterCount}`,
+      `QUALITY ${this.config.visual.qualityPreset.toUpperCase()}  ·  POST ${this.postProcessing.enabled ? "on" : "off"}`,
+      `SHADOW PCF ${this.config.lighting.shadowSoftness.toFixed(0)}  ·  CONTACT ${this.config.visual.contactShadowIntensity.toFixed(2)}  ·  CLUTTER ${this.world.clutterCount}`,
     ].join("\n");
   }
 
+  private makeWireMaterial(name: string, color: Color3): StandardMaterial {
+    const material = new StandardMaterial(name, this.scene);
+    material.wireframe = true;
+    material.emissiveColor = color;
+    material.disableLighting = true;
+    return material;
+  }
+
+  private makeRing(name: string, thickness: number, material: StandardMaterial): Mesh {
+    const mesh = MeshBuilder.CreateTorus(name, { diameter: 2, thickness, tessellation: 48 }, this.scene);
+    mesh.material = material;
+    mesh.isPickable = false;
+    mesh.setEnabled(false);
+    return mesh;
+  }
+
+  private applyRangeVisibility(hasNearestEnemy = false): void {
+    const on = this.visible && this.showRanges;
+    this.combatAcquireRing.setEnabled(on);
+    this.combatHitRing.setEnabled(on);
+    this.enemyAcquireRing.setEnabled(on && hasNearestEnemy);
+    this.enemyLoseRing.setEnabled(on && hasNearestEnemy);
+  }
+
   private applyVisibility(): void {
-    this.element.classList.toggle("visible", this.visible);
+    this.root.classList.toggle("visible", this.visible);
     this.playerCollider.setEnabled(this.visible);
     this.forwardLine.setEnabled(this.visible);
     this.velocityLine.setEnabled(this.visible);
@@ -247,5 +361,6 @@ export class DebugOverlay {
     this.interactionTargetRadius.setEnabled(this.visible && this.interaction.hasTarget);
     this.grid.setVisible(this.visible);
     for (const mesh of this.obstacleMeshes) mesh.setEnabled(this.visible);
+    this.applyRangeVisibility(this.enemies.agents.length > 0);
   }
 }
