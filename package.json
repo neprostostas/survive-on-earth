@@ -1,0 +1,19 @@
+{
+  "name": "survive-on-earth",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test:interaction": "node --experimental-strip-types scripts/verifyInteraction.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@babylonjs/core": "9.20.0"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.2.1"
+  }
+}
