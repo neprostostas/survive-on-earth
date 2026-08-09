@@ -42,7 +42,7 @@ export class GroundSurface {
     this.mesh.material = this.material;
     this.mesh.useVertexColors = true;
     this.mesh.receiveShadows = true;
-    scene.clearColor = new Color4(0.36, 0.48, 0.25, 1);
+    scene.clearColor = new Color4(0.39, 0.44, 0.29, 1);
     this.applyCalibration(textures);
   }
 

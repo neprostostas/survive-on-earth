@@ -1,12 +1,14 @@
 # Visual Milestone V1 — LDOE Visual Quality Overhaul
 
+> Historical milestone document. Fidelity F1 later superseded its camera/HUD baselines and removed the generated bump map, ACES, and vignette. See `LDOE_FIDELITY_AUDIT.md` for current values.
+
 ## Goal
 
 Raise the existing calibration scene from a readable prototype toward a clean, stylized mobile-survival presentation while preserving every Milestone 01 and 02 gameplay boundary. All assets and textures remain original and procedural.
 
 ## Visual upgrades
 
-- Ground uses a generated 1024px grass/dirt color map, soft procedural patch transitions, fine color breakup, vertex variation, and a tiled generated bump-detail texture.
+- Ground uses a generated 1024px muted grass color map, soft green patch transitions, fine color breakup, and vertex variation. The experimental bump-detail texture is no longer attached.
 - Thin-instanced grass tufts, dry weeds, pebbles, and twigs add deterministic micro-detail without collision or interaction registrations.
 - Pine trees now use tapered textured trunks, root flares, needle beds, 7–8 asymmetric foliage clusters, deterministic variants, contact shading, and very light sway.
 - Rocks use primary chipped masses, secondary fragments, nearby pebbles, face-tone variation, and contact shading without changing collision radii.
@@ -21,13 +23,13 @@ Raise the existing calibration scene from a readable prototype toward a clean, s
 - `ProceduralTextureFactory` generates ground, bump, wood, bark, and soft contact textures at initialization.
 - `GroundSurface` owns terrain geometry/material and redraws only when ground calibration changes.
 - `GroundClutter` owns deterministic thin-instance batches and rebuilds their buffers only when density or quality changes.
-- `PostProcessing` applies restrained ACES tone mapping, exposure/contrast tuning, and a subtle vignette.
+- `PostProcessing` applies clean exposure/contrast tuning without ACES, bloom, or vignette.
 - `Lighting` retains hemispheric + directional daylight, improves light colors/bias, and maps preset/calibration values to PCF filtering.
 - Soft generated contact discs provide lightweight ambient grounding instead of an expensive screen-space AO pipeline.
 
 ## Visual configuration
 
-Calibration storage is version 4 and merges v3/v2/v1 values with new defaults.
+Calibration storage is now version 5 and selectively migrates untouched v4 camera/clutter baselines while preserving explicit user calibration.
 
 - Quality preset: Low / Medium / High / Ultra (High baseline).
 - Ground detail: `1.0`.

@@ -14,6 +14,7 @@ import { World } from "../world/World";
 import { InteractionSystem } from "../interaction/InteractionSystem";
 import { PostProcessing } from "../rendering/PostProcessing";
 import { GameLoop } from "./GameLoop";
+import { FidelityMode } from "../debug/FidelityMode";
 
 export class Game {
   private readonly engine: Engine;
@@ -30,6 +31,7 @@ export class Game {
   private readonly input: InputController;
   private readonly calibration: CalibrationPanel;
   private readonly debug: DebugOverlay;
+  private readonly fidelity: FidelityMode;
   private readonly loop: GameLoop;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
@@ -48,6 +50,7 @@ export class Game {
     this.interaction = new InteractionSystem(this.scene, this.world.interactables, this.config);
     this.debug = new DebugOverlay(uiRoot, this.scene, this.engine, this.player, this.collision, this.interaction, this.world, this.postProcessing, this.config);
     this.calibration = new CalibrationPanel(uiRoot, this.config, () => { this.applyCalibration(); });
+    this.fidelity = new FidelityMode(uiRoot, () => { /* Freeze state is read in the frame loop. */ });
     this.loop = new GameLoop(this.engine, (delta) => { this.update(delta); });
     window.addEventListener("resize", this.onResize);
     window.addEventListener("keydown", this.onFunctionKey);
@@ -61,14 +64,16 @@ export class Game {
   }
 
   private update(delta: number): void {
-    this.player.update(delta, this.input.getMovement(), this.camera.screenRight, this.camera.screenUp);
-    this.world.update(delta);
-    this.interaction.update(delta, this.player.position, this.player.facingYaw);
+    const frameDelta = this.fidelity.motionFrozen ? 0 : delta;
+    if (!this.fidelity.motionFrozen) this.player.update(delta, this.input.getMovement(), this.camera.screenRight, this.camera.screenUp);
+    this.world.update(frameDelta);
+    this.interaction.update(frameDelta, this.player.position, this.player.facingYaw);
+    this.hud.updateMinimap(this.player.position, this.player.facingYaw, this.world.interactables);
     this.hud.setPrimaryActionAvailable(this.interaction.hasTarget);
-    if (this.input.consumePrimaryAction()) {
+    if (!this.fidelity.motionFrozen && this.input.consumePrimaryAction()) {
       this.interaction.tryInteract(this.player.position, (targetPosition) => { this.player.requestFacing(targetPosition); });
     }
-    this.camera.update(delta, this.player.position);
+    this.camera.update(frameDelta, this.player.position);
     this.debug.update();
     this.scene.render();
   }
@@ -86,5 +91,6 @@ export class Game {
   private readonly onFunctionKey = (event: KeyboardEvent): void => {
     if (event.code === "F1") { event.preventDefault(); this.calibration.toggle(); }
     if (event.code === "F2") { event.preventDefault(); this.debug.toggle(); }
+    if (event.code === "F3") { event.preventDefault(); this.fidelity.toggle(); }
   };
 }

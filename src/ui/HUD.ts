@@ -1,30 +1,65 @@
+import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Interactable } from "../interaction/Interactable";
+import { applyHudLayoutTokens } from "../config/hudLayoutConfig";
+import { Minimap } from "./Minimap";
+
 export class HUD {
   readonly joystick: HTMLElement;
   readonly primaryAction: HTMLButtonElement;
+  private readonly minimap: Minimap;
 
   constructor(root: HTMLElement) {
     root.innerHTML = `
       <div class="hud" aria-label="Gameplay HUD">
         <section class="player-status">
-          <div class="avatar">S</div>
           <div class="status-copy">
-            <span class="player-name">SURVIVOR</span>
+            <span class="player-name">SURVIVOR <b>LV. 1</b></span>
             <div class="hp-track"><div class="hp-fill"></div><span>100</span></div>
           </div>
         </section>
         <div class="joystick" aria-label="Movement joystick"><div class="joystick-ring"></div><div class="joystick-knob"></div></div>
-        <div class="actions">
-          <button class="action secondary" aria-label="Secondary action">✦</button>
-          <button class="action primary" aria-label="Primary action">●</button>
+        <button class="hud-shell auto-control" type="button" aria-label="Automatic collection unavailable" disabled>
+          <svg class="hud-icon auto-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18.7 8.1A7.5 7.5 0 1 0 19 15"/><path d="m18.7 3.8.1 4.5-4.5.1"/></svg>
+          <span class="auto-label">AUTO</span>
+        </button>
+        <div class="top-right-cluster">
+          <button class="hud-shell social-shell" type="button" aria-label="Social unavailable" disabled>
+            <svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="2.7"/><path d="M3.8 18c.4-3.2 2.1-4.8 5.2-4.8s4.8 1.6 5.2 4.8"/><circle cx="17" cy="9" r="2.1"/><path d="M15.4 13.7c2.9-.8 4.7.6 5 3.4"/></svg>
+          </button>
+          <button class="hud-shell settings-shell" type="button" aria-label="Settings unavailable" disabled>
+            <svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg>
+          </button>
+          <div class="minimap-shell" aria-label="Local minimap"><canvas class="minimap-canvas"></canvas><i class="minimap-north">N</i></div>
         </div>
-        <div class="key-hints"><b>E</b> ACTION &nbsp; <b>F1</b> CALIBRATION &nbsp; <b>F2</b> DEBUG</div>
+        <div class="actions" aria-label="Action controls">
+          <button class="action shell build-action" type="button" aria-label="Building unavailable" disabled><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 20 9.2-9.2M11.7 5.8l2.7-2.7 6.5 6.5-2.7 2.7z"/><path d="m3.5 18.4 2.1 2.1"/></svg></button>
+          <button class="action shell quick-action" type="button" aria-label="Quick slot unavailable" disabled><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7.5h10a2 2 0 0 1 2 2V20H5V9.5a2 2 0 0 1 2-2Z"/><path d="M9 7.5V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8v1.7M8.2 12h7.6M8.2 15.5h7.6"/></svg></button>
+          <button class="action shell attack-action" type="button" aria-label="Attack unavailable" disabled><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 11.8V7.2a1.7 1.7 0 0 1 3.4 0v3.2-5a1.7 1.7 0 0 1 3.4 0v5-4a1.7 1.7 0 0 1 3.4 0v5.3-2.6a1.7 1.7 0 0 1 3.4 0v5.2c0 4.1-2.8 6.7-6.8 6.7h-1.5c-2.2 0-3.8-.8-5.2-2.4l-3.7-4.4a1.8 1.8 0 0 1 2.6-2.5l2.1 1.8"/></svg></button>
+          <button class="action primary" type="button" aria-label="Primary action"><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.7 12.3V8a1.6 1.6 0 0 1 3.2 0v3-5.2a1.6 1.6 0 0 1 3.2 0V11 7a1.6 1.6 0 0 1 3.2 0v5.3-2.4a1.6 1.6 0 0 1 3.2 0v4.2c0 4.3-2.8 6.9-6.8 6.9h-.9c-2.6 0-4.3-1.2-5.7-3.2l-2.6-3.9a1.7 1.7 0 0 1 2.7-2l1.5 1.8"/></svg></button>
+          <button class="action shell sneak-action" type="button" aria-label="Sneak unavailable" disabled><svg class="hud-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="14.8" cy="4.5" r="2.2"/><path d="m13.7 8-3.1 3.8-4.2.5M10.7 11.8l4 2.1 3.4 4M14.7 13.9l-2.1 5.6M7.8 18.8H4"/></svg></button>
+        </div>
+        <nav class="utility-strip" aria-label="Unavailable utility controls">
+          <button disabled aria-label="Chat unavailable">C</button><button disabled aria-label="Season unavailable">S</button>
+          <button disabled aria-label="Events unavailable">!</button><button disabled aria-label="Inventory unavailable">I</button>
+          <button disabled aria-label="Blueprints unavailable">B</button>
+        </nav>
       </div>`;
+    const hud = root.querySelector<HTMLElement>(".hud");
+    if (!hud) throw new Error("HUD failed to mount");
+    applyHudLayoutTokens(hud);
     const joystick = root.querySelector<HTMLElement>(".joystick");
     if (!joystick) throw new Error("HUD joystick failed to mount");
     const primaryAction = root.querySelector<HTMLButtonElement>(".action.primary");
     if (!primaryAction) throw new Error("HUD primary action failed to mount");
     this.joystick = joystick;
     this.primaryAction = primaryAction;
+    const minimapCanvas = root.querySelector<HTMLCanvasElement>(".minimap-canvas");
+    if (!minimapCanvas) throw new Error("HUD minimap failed to mount");
+    this.minimap = new Minimap(minimapCanvas);
+  }
+
+  updateMinimap(player: Readonly<Vector3>, facingYaw: number, interactables: readonly Interactable[]): void {
+    this.minimap.update(player, facingYaw, interactables);
   }
 
   setPrimaryActionAvailable(available: boolean): void {

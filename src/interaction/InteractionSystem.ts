@@ -36,12 +36,12 @@ export class InteractionSystem {
     private readonly config: CalibrationConfig,
   ) {
     this.indicatorMaterial = new StandardMaterial("InteractionIndicatorMaterial", scene);
-    this.indicatorMaterial.diffuseColor = new Color3(0.59, 0.57, 0.32);
-    this.indicatorMaterial.emissiveColor = new Color3(0.22, 0.23, 0.10);
+    this.indicatorMaterial.diffuseColor = new Color3(0.42, 0.78, 0.57);
+    this.indicatorMaterial.emissiveColor = new Color3(0.13, 0.36, 0.22);
     this.indicatorMaterial.specularColor = Color3.Black();
     this.indicatorMaterial.disableLighting = true;
     this.indicatorMaterial.alpha = 0;
-    this.indicator = MeshBuilder.CreateTorus("InteractionTargetIndicator", { diameter: 2, thickness: 0.055, tessellation: 40 }, scene);
+    this.indicator = MeshBuilder.CreateTorus("InteractionTargetIndicator", { diameter: 2, thickness: 0.04, tessellation: 48 }, scene);
     this.indicator.material = this.indicatorMaterial;
     this.indicator.isPickable = false;
     this.indicator.setEnabled(false);
@@ -99,7 +99,7 @@ export class InteractionSystem {
       this.indicator.scaling.set(radius * pulseScale, 1, radius * pulseScale);
     }
 
-    this.indicatorMaterial.alpha = this.indicatorAlpha * (0.46 + this.interactionPulse * 0.22);
+    this.indicatorMaterial.alpha = this.indicatorAlpha * (0.38 + this.interactionPulse * 0.2);
     this.indicator.setEnabled(this.indicatorAlpha > 0.01);
   }
 }

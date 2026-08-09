@@ -16,7 +16,7 @@ export function createBush(scene: Scene, materials: WorldMaterials, x: number, z
     const cluster = MeshBuilder.CreateSphere("BushCluster", { diameter: 0.88, segments: 9 }, scene);
     cluster.parent = root;
     cluster.position.set(Math.cos(angle) * 0.32, 0.42 + (i % 2) * 0.12, Math.sin(angle) * 0.32);
-    cluster.scaling.set(1.05, 0.78, 0.92);
+    cluster.scaling.set(0.94 + (i % 2) * 0.16, 0.64 + (i % 3) * 0.08, 0.82 + ((variation + i) % 2) * 0.12);
     cluster.material = i % 3 === 0 ? materials.foliage[2] : materials.bush;
     meshes.push(cluster);
   }

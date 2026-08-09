@@ -41,16 +41,16 @@ export function createTree(scene: Scene, materials: WorldMaterials, x: number, z
   for (let layer = 0; layer < clusters; layer += 1) {
     const angle = layer * 2.13 + variation * 0.77;
     const lowerCrown = layer < 4;
-    const lateral = lowerCrown ? 0.52 : layer < 6 ? 0.27 : 0;
+    const lateral = lowerCrown ? 0.3 + (layer % 3) * 0.13 : layer < 6 ? 0.16 + (layer % 2) * 0.11 : 0.04;
     const foliage = MeshBuilder.CreateSphere("TreeFoliageCluster", { diameter: 2, segments: 10 }, scene);
     foliage.position.set(
       Math.cos(angle) * lateral,
-      lowerCrown ? 3.55 + (layer % 2) * 0.22 : layer < 6 ? 4.25 : 4.72,
+      lowerCrown ? 3.42 + (layer % 3) * 0.17 + ((variation + layer) % 2) * 0.1 : layer < 6 ? 4.08 + (layer % 2) * 0.2 : 4.55,
       Math.sin(angle) * lateral,
     );
-    foliage.rotation.y = angle;
-    const width = lowerCrown ? 1.08 + (variation % 3) * 0.035 : layer < 6 ? 0.92 : 0.72;
-    foliage.scaling.set(width, lowerCrown ? 0.82 : 0.76, width * 0.92);
+    foliage.rotation.set(0.05 * Math.sin(angle), angle, 0.045 * Math.cos(angle));
+    const width = lowerCrown ? 0.98 + ((variation + layer) % 3) * 0.07 : layer < 6 ? 0.84 + (layer % 2) * 0.06 : 0.67;
+    foliage.scaling.set(width, lowerCrown ? 0.72 + (layer % 2) * 0.09 : 0.69, width * (0.78 + (layer % 3) * 0.07));
     foliage.parent = foliageRoot;
     foliage.material = materials.foliage[(variation + layer) % materials.foliage.length];
     meshes.push(foliage);

@@ -36,7 +36,7 @@ export class CalibrationPanel {
     return [
       this.def("Camera", "Yaw", -180, 180, 1, () => c.camera.yawDeg, v => { c.camera.yawDeg = v; }),
       this.def("Camera", "Pitch", 35, 80, 1, () => c.camera.pitchDeg, v => { c.camera.pitchDeg = v; }),
-      this.def("Camera", "Ortho height", 10, 30, 0.2, () => c.camera.orthoHeight, v => { c.camera.orthoHeight = v; }),
+      this.def("Camera", "Ortho height", 6.5, 24, 0.1, () => c.camera.orthoHeight, v => { c.camera.orthoHeight = v; }),
       this.def("Camera", "Target X", -6, 6, 0.1, () => c.camera.targetOffsetX, v => { c.camera.targetOffsetX = v; }),
       this.def("Camera", "Target Y", -2, 5, 0.1, () => c.camera.targetOffsetY, v => { c.camera.targetOffsetY = v; }),
       this.def("Camera", "Target Z", -6, 6, 0.1, () => c.camera.targetOffsetZ, v => { c.camera.targetOffsetZ = v; }),

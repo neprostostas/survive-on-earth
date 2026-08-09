@@ -3,6 +3,7 @@
 01. Camera + Player + Movement — complete
 02. Interaction System — complete
 V1. LDOE Visual Quality Overhaul — implemented; browser visual review pending
+F1. LDOE Fidelity Audit & Alignment — implemented; F3 manual reference alignment available
 03. Harvestable Resources
 04. Item System
 05. Ground Loot
@@ -26,4 +27,4 @@ V1. LDOE Visual Quality Overhaul — implemented; browser visual review pending
 23. UI Polish
 24. Balancing
 
-Visual Milestone V1 is the current scope. Milestone 03 has not started.
+Fidelity Milestone F1 is the current completed scope. Milestone 03 has not started.

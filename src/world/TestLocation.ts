@@ -90,8 +90,8 @@ export class TestLocation {
 
   private createForest(): void {
     const positions = [
-      [-21,-20],[-14,-21],[-6,-19],[2,-22],[12,-21],[21,-18],[-23,-11],[-16,-7],[-7,-10],[20,-8],
-      [-22,1],[-13,3],[18,2],[23,8],[-20,13],[-11,17],[-2,20],[8,19],[17,16],[23,20],
+      [-9,1],[-8,4],[-7,8],[-7,11],[-4,13],[-1,12],[5,12],[8,10],[10,5],[11,2],
+      [5,-4],[1,-6],[-3,-5],[-6,-3],[-15,-9],[-14,10],[14,-11],[17,4],[-3,19],[18,16],
     ];
     positions.forEach(([x, z], index) => {
       const tree = createTree(this.scene, this.materials, x, z, index);
@@ -105,7 +105,7 @@ export class TestLocation {
         enabled: () => !tree.root.isDisposed() && tree.root.isEnabled(),
       }));
     });
-    const rocks = [[-18,-15],[-10,-13],[-3,-16],[17,-14],[-17,-2],[-8,8],[15,7],[-18,20],[5,15],[21,13]];
+    const rocks = [[-5,0],[-5,8],[3,10],[7,5],[3,-2],[-12,-7],[13,-7],[-13,14],[6,17],[17,11]];
     rocks.forEach(([x, z], index) => {
       const rock = createRock(this.scene, this.materials, x, z, index);
       this.rocks.push(rock);
@@ -118,7 +118,7 @@ export class TestLocation {
         enabled: () => !rock.root.isDisposed() && rock.root.isEnabled(),
       }));
     });
-    const bushPositions = [[-4,-6],[4,11],[-13,12],[13,12],[22,-2],[-23,18]];
+    const bushPositions = [[-3,9],[2,12],[-6,4],[6,1],[0,-2],[-11,8]];
     bushPositions.forEach(([x, z], index) => {
       const bush = createBush(this.scene, this.materials, x, z, index);
       bush.root.scaling.setAll(0.86 + (index % 3) * 0.08);

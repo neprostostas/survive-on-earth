@@ -116,14 +116,14 @@ export class ProceduralTextureFactory {
 
   private drawGround(context: DrawContext, size: number, detail: number, dirtIntensity: number): void {
     const rng = this.random(202603);
-    context.fillStyle = "#667d48";
+    context.fillStyle = "#667249";
     context.fillRect(0, 0, size, size);
 
     const broadMarks = Math.floor(260 * detail);
     for (let i = 0; i < broadMarks; i += 1) {
-      const green = 102 + Math.floor(rng() * 34);
+      const green = 94 + Math.floor(rng() * 26);
       const radius = 10 + rng() * 48;
-      context.fillStyle = `rgba(${green - 30},${green},${58 + Math.floor(rng() * 20)},${0.03 + rng() * 0.06})`;
+      context.fillStyle = `rgba(${green - 26},${green},${58 + Math.floor(rng() * 16)},${0.025 + rng() * 0.05})`;
       context.beginPath();
       context.arc(rng() * size, rng() * size, radius * (0.55 + rng() * 0.45), 0, Math.PI * 2);
       context.fill();
@@ -135,20 +135,20 @@ export class ProceduralTextureFactory {
       const y = (0.5 - worldZ / 56) * size;
       const radius = worldRadius / 56 * size * 2.2;
       const gradient = context.createRadialGradient(x, y, radius * 0.08, x, y, radius);
-      const variation = Math.min(1, dirtIntensity) * 0.22;
-      gradient.addColorStop(0, `rgba(68,112,48,${variation})`);
-      gradient.addColorStop(0.52, `rgba(82,126,55,${variation * 0.7})`);
-      gradient.addColorStop(1, "rgba(78,118,52,0)");
+      const variation = Math.min(1, dirtIntensity) * 0.14;
+      gradient.addColorStop(0, `rgba(65,96,47,${variation})`);
+      gradient.addColorStop(0.52, `rgba(82,109,55,${variation * 0.65})`);
+      gradient.addColorStop(1, "rgba(78,105,52,0)");
       context.fillStyle = gradient;
       context.beginPath();
       context.arc(x, y, radius, 0, Math.PI * 2);
       context.fill();
     }
 
-    const speckles = Math.floor(2300 * detail);
+    const speckles = Math.floor(1500 * detail);
     for (let i = 0; i < speckles; i += 1) {
       const alpha = 0.025 + rng() * 0.07;
-      context.fillStyle = rng() > 0.28 ? `rgba(38,78,31,${alpha})` : `rgba(121,153,70,${alpha * 0.65})`;
+      context.fillStyle = rng() > 0.25 ? `rgba(40,72,33,${alpha * 0.8})` : `rgba(116,137,72,${alpha * 0.5})`;
       context.fillRect(rng() * size, rng() * size, 1 + rng() * 2.5, 1 + rng() * 2.5);
     }
   }
