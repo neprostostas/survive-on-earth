@@ -130,7 +130,10 @@ export class HarvestingSystem {
     this.player.clearHarvestPose();
   }
 
-  private timingFor(tool: "hatchet" | "pickaxe"): SwingTiming {
+  private timingFor(tool: "hatchet" | "pickaxe" | "hand"): SwingTiming {
+    if (tool === "hand") {
+      return { duration: 0.55, impactNormalizedTime: 0.55 };
+    }
     return tool === "hatchet"
       ? { duration: this.config.harvesting.hatchetSwingDuration, impactNormalizedTime: this.config.harvesting.hatchetImpactTiming }
       : { duration: this.config.harvesting.pickaxeSwingDuration, impactNormalizedTime: this.config.harvesting.pickaxeImpactTiming };

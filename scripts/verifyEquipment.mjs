@@ -18,8 +18,8 @@ const armorCases = [
 
 assert.deepEqual(EQUIPMENT_SLOT_IDS, ["head", "torso", "legs", "feet"]);
 assert.equal(Object.isFrozen(EQUIPMENT_SLOT_IDS), true);
-assert.equal(ITEM_REGISTRY.getAll().length, 8);
-assert.deepEqual(ITEM_REGISTRY.getAll().map((definition) => definition.id), ["pine-log", "limestone", "dad-hat", "shirt", "cargo-pants", "sneakers", "hatchet", "pickaxe"]);
+assert.equal(ITEM_REGISTRY.getAll().length, 10);
+assert.deepEqual(ITEM_REGISTRY.getAll().map((definition) => definition.id), ["pine-log", "limestone", "dad-hat", "shirt", "cargo-pants", "sneakers", "hatchet", "pickaxe", "spear"]);
 for (const [id, name, slot, armor] of armorCases) {
   const definition = ITEM_REGISTRY.get(id);
   assert.equal(definition.displayName, name);
@@ -221,11 +221,18 @@ assert.equal(iconSource.includes('"cargo-pants"'), true);
 assert.equal(visualSource.includes("equipment.subscribe"), true, "visual projection must subscribe to domain state");
 assert.equal(gameSource.includes("spawnEquipmentCalibrationLoot"), true, "deterministic calibration acquisition must be wired");
 assert.equal(debugSource.includes('"EQUIPMENT"'), true, "F2 must expose equipment state");
-assert.equal(/backpackSlot|pocketSlot|crafting|dragstart|ondrop|drop item/i.test(`${equipmentSource}\n${systemSource}\n${panelSource}`), false, "M07 armor panel stays without backpack/pocket/crafting/DnD");
+assert.equal(/backpackSlot|pocketSlot|crafting|dragstart|ondrop|drop item/i.test(`${equipmentSource}\n${systemSource}`), false, "equipment domain stays without backpack capacity / crafting / HTML5 DnD");
+assert.equal(/backpackSlot|data-drop=["']backpack["']|class PocketSlot/i.test(panelSource), false, "Inventory UI must not treat backpack as droppable capacity slots");
+assert.equal(panelSource.includes('dataset.drop = "inventory"') || panelSource.includes('data-drop="inventory"'), true, "real pocket cells remain inventory drop targets");
+assert.equal(panelSource.includes("FUTURE_BACKPACK_SHELL_COUNT"), true, "future backpack area is presentation shell count only");
+assert.equal(panelSource.includes('dataset.drop = "backpack"') || panelSource.includes('data-drop="backpack"'), false, "no backpack drop kind");
 assert.equal(/weapon/.test(equipmentSource), false, "PlayerEquipment domain stays armor-only");
 assert.equal(/weapon/.test(systemSource), false, "EquipmentSystem remains armor-only");
 assert.equal(panelSource.includes("weapon-slot") || panelSource.includes("WEAPON"), true, "M14 inventory shows separate weapon slot UI");
+assert.equal(panelSource.includes("POCKETS"), true, "M17 presentation names base storage POCKETS");
+assert.equal(panelSource.includes("data-role=\"backpack-equip\""), true, "M17 backpack equip shell present but non-gameplay");
 assert.equal(/currentDurability|maxDurability|tryConsumeDurability/.test(`${equipmentSource}\n${systemSource}`), false, "equipment domain has no armor durability");
 assert.equal(panelSource.includes("stackDurability"), true, "inventory UI may show tool durability bars only");
+assert.equal(visualSource.includes("EquipmentApparelVisuals"), true, "world clothing reuses shared apparel visuals");
 
 console.log("Equipment verification passed (84 acceptance checks/groups)");

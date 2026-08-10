@@ -14,7 +14,7 @@ export interface StarterGroundResourceFixture {
  * Quantity 1 each — no random placement.
  *
  * Coordinates chosen to avoid Player spawn (0,5), armor calib row (z≈3.05),
- * campfire (-4,4), crate (2.2,1.2), dummies, and known tree/rock positions.
+ * campfire (-4,4), house+crate (~8,-10), dummies, and known tree/rock positions.
  */
 export const STARTER_GROUND_RESOURCES: readonly StarterGroundResourceFixture[] = Object.freeze([
   Object.freeze({ id: "starter-pine-log-01", itemId: "pine-log" as const, x: -6.4, z: 1.2 }),

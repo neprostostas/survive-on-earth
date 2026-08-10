@@ -16,11 +16,15 @@ export class PlayerMovement {
     private readonly getRotation: () => number,
   ) {}
 
-  update(delta: number, input: Vector2, screenRight: Vector3, screenUp: Vector3): void {
+  update(delta: number, input: Vector2, screenRight: Vector3, screenUp: Vector3, speedMultiplier = 1): void {
+    const hasMoveInput = input.lengthSquared() > 0.0001;
     const desiredDirection = screenRight.scale(input.x).addInPlace(screenUp.scale(input.y));
     desiredDirection.y = 0;
+    // Normalize only direction — speed comes from movementSpeed * speedMultiplier (sprint = 2×).
+    // Previously clamping length >1 cancelled Shift sprint after input scale.
     if (desiredDirection.lengthSquared() > 1) desiredDirection.normalize();
-    const desiredVelocity = desiredDirection.scale(this.config.player.movementSpeed);
+    const speed = this.config.player.movementSpeed * Math.max(0, speedMultiplier);
+    const desiredVelocity = desiredDirection.scale(speed);
     const rate = desiredVelocity.lengthSquared() > 0 ? this.config.player.acceleration : this.config.player.deceleration;
     this.moveVelocityToward(desiredVelocity, rate * delta);
 
@@ -32,21 +36,32 @@ export class PlayerMovement {
       this.velocity.z = (next.z - previous.z) / delta;
     }
 
-    const facingDirection = this.velocity.lengthSquared() > 0.01
-      ? this.velocity.normalizeToNew()
-      : desiredDirection;
-    const movementYaw = facingDirection.lengthSquared() > 0.001
-      ? Math.atan2(facingDirection.x, facingDirection.z)
-      : null;
+    // Requested facing (combat / harvest / interact) always wins.
+    // Never face from collision bounce — post-slide velocity points away from props and flipped the character.
     if (this.requestedFacingYaw !== null) {
       if (this.rotateTowards(this.requestedFacingYaw, delta)) this.requestedFacingYaw = null;
-    } else if (movementYaw !== null) this.rotateTowards(movementYaw, delta);
+      return;
+    }
+    // Only orient from intentional movement input (desired walk dir), not resolved bounce velocity.
+    if (hasMoveInput && desiredDirection.lengthSquared() > 0.001) {
+      this.rotateTowards(Math.atan2(desiredDirection.x, desiredDirection.z), delta);
+    }
   }
 
   requestFacing(targetPosition: InteractionPoint): void {
     const dx = targetPosition.x - this.rootPosition.x;
     const dz = targetPosition.z - this.rootPosition.z;
     if (dx * dx + dz * dz > 0.0001) this.requestedFacingYaw = Math.atan2(dx, dz);
+  }
+
+  /** Instant root face toward a point (combat start / locked re-aim). */
+  snapFacing(targetPosition: InteractionPoint): void {
+    const dx = targetPosition.x - this.rootPosition.x;
+    const dz = targetPosition.z - this.rootPosition.z;
+    if (dx * dx + dz * dz <= 0.0001) return;
+    const yaw = Math.atan2(dx, dz);
+    this.setRotation(yaw);
+    this.requestedFacingYaw = null;
   }
 
   stop(): void { this.velocity.setAll(0); }

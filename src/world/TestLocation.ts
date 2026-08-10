@@ -19,8 +19,18 @@ import { getVisualQualitySettings } from "../config/visualQualityConfig";
 import { HarvestableResource } from "../harvesting/HarvestableResource";
 import { HarvestImpactEffects } from "./detail/HarvestImpactEffects";
 import type { MinimapMarker } from "../ui/minimapTypes";
+import { createPlantNode, type PlantNode } from "./objects/PlantNode";
+import { createHomeDecorationLayer } from "./detail/HomeDecor";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { LocationId } from "../locations/LocationRegistry";
+import { getLocationVisualTheme, type LocationVisualTheme } from "../locations/LocationVisualTheme";
+import { createBiomePropPack } from "./detail/BiomePropPacks";
+import { createSeededRng, hashString, rngAwayFromOrigin } from "../locations/locationRng";
 
 interface FloorTile { mesh: Mesh; gridX: number; gridZ: number }
+
+/** World XZ of the 3×3 house floor center (middle cell). */
+export const HOME_HOUSE_ORIGIN = Object.freeze({ x: 8, z: -10 });
 
 export class TestLocation {
   readonly interactables: Interactable[] = [];
@@ -28,9 +38,10 @@ export class TestLocation {
   private readonly materials: WorldMaterials;
   private readonly trees: TreeObject[] = [];
   private readonly rocks: RockObject[] = [];
+  private readonly plants: PlantNode[] = [];
   private readonly walls: WallObject[] = [];
   private readonly floors: FloorTile[] = [];
-  private readonly houseOrigin = new Vector3(8, 0, -10);
+  private readonly houseOrigin = new Vector3(HOME_HOUSE_ORIGIN.x, 0, HOME_HOUSE_ORIGIN.z);
   private readonly textures: ProceduralTextureFactory;
   private readonly ground: GroundSurface;
   private readonly clutter: GroundClutter;
@@ -38,6 +49,20 @@ export class TestLocation {
   private crate!: CrateObject;
   private campfire!: CampfireObject;
   private visualTime = 0;
+  private readonly homeDecorRoot: TransformNode;
+  /** Prop packs keyed by locationId — never share meshes across sites. */
+  private readonly locationPacks = new Map<string, TransformNode>();
+  private activePackId: string | null = null;
+  private currentTheme: LocationVisualTheme = getLocationVisualTheme("home");
+  private currentLocationId: LocationId = "home";
+  /** Home baseline positions captured once at boot. */
+  private readonly homeTreePos: { x: number; z: number }[] = [];
+  private readonly homeRockPos: { x: number; z: number }[] = [];
+  private readonly homePlantPos: { x: number; z: number }[] = [];
+  private homeCrateX = 2.2;
+  private homeCrateZ = 1.2;
+  private homeCampX = -4;
+  private homeCampZ = 4;
 
   constructor(
     private readonly scene: Scene,
@@ -52,7 +77,131 @@ export class TestLocation {
     this.createForest();
     this.createHouse();
     this.createProps();
+    this.homeDecorRoot = createHomeDecorationLayer(scene);
+    this.captureHomeLayout();
     this.applyCalibration();
+    this.applyLocationVisual("home");
+  }
+
+  get lastTheme(): LocationVisualTheme { return this.currentTheme; }
+
+  private captureHomeLayout(): void {
+    for (const t of this.trees) this.homeTreePos.push({ x: t.root.position.x, z: t.root.position.z });
+    for (const r of this.rocks) this.homeRockPos.push({ x: r.root.position.x, z: r.root.position.z });
+    for (const p of this.plants) this.homePlantPos.push({ x: p.root.position.x, z: p.root.position.z });
+    this.homeCrateX = this.crate.root.position.x;
+    this.homeCrateZ = this.crate.root.position.z;
+    this.homeCampX = this.campfire.root.position.x;
+    this.homeCampZ = this.campfire.root.position.z;
+  }
+
+  /**
+   * Re-skin + re-layout the plane for a destination. Natural objects move, packs
+   * are unique per locationId, house/crate/training props home-only.
+   */
+  applyLocationVisual(locationId: LocationId): LocationVisualTheme {
+    const theme = getLocationVisualTheme(locationId);
+    this.currentTheme = theme;
+    this.currentLocationId = locationId;
+    this.ground.applyTheme(theme);
+    this.ground.applyLayoutSeed(hashString(locationId));
+    this.clutter.setThemeDensity(theme.clutterDensity);
+
+    for (const floor of this.floors) floor.mesh.setEnabled(theme.showHouse);
+    for (const wall of this.walls) {
+      wall.root.setEnabled(theme.showHouse);
+      for (const mesh of wall.meshes) mesh.setEnabled(theme.showHouse);
+    }
+    this.homeDecorRoot.setEnabled(theme.showHomeDecor);
+    this.campfire.root.setEnabled(theme.showCampfire);
+    this.crate.root.setEnabled(theme.showCrate && locationId === "home");
+
+    this.relayoutNaturalObjects(locationId, theme);
+
+    // Hide previous location pack; enable/create unique pack for this site
+    if (this.activePackId && this.activePackId !== locationId) {
+      this.locationPacks.get(this.activePackId)?.setEnabled(false);
+    }
+    this.activePackId = locationId === "home" ? null : locationId;
+    if (locationId !== "home") {
+      let pack = this.locationPacks.get(locationId);
+      if (!pack) {
+        pack = createBiomePropPack(this.scene, theme.biome, hashString(locationId) ^ 0xa5a5a5a5);
+        this.locationPacks.set(locationId, pack);
+      }
+      pack.setEnabled(true);
+    } else {
+      for (const pack of this.locationPacks.values()) pack.setEnabled(false);
+    }
+
+    this.rebuildCollisions();
+    return theme;
+  }
+
+  private relayoutNaturalObjects(locationId: LocationId, theme: LocationVisualTheme): void {
+    if (locationId === "home") {
+      this.trees.forEach((tree, i) => {
+        const p = this.homeTreePos[i];
+        if (p) tree.root.position.set(p.x, 0, p.z);
+        tree.root.setEnabled(true);
+        tree.root.scaling.setAll(tree.baseScale * this.config.world.treeScale * theme.treeScale);
+      });
+      this.rocks.forEach((rock, i) => {
+        const p = this.homeRockPos[i];
+        if (p) rock.root.position.set(p.x, 0, p.z);
+        rock.root.setEnabled(i / Math.max(1, this.rocks.length) < theme.rockVisibility);
+        rock.root.scaling.setAll(rock.baseScale * this.config.world.rockScale * theme.rockScale);
+      });
+      this.plants.forEach((plant, i) => {
+        const p = this.homePlantPos[i];
+        if (p) plant.root.position.set(p.x, 0, p.z);
+        plant.root.setEnabled(true);
+      });
+      this.crate.root.position.set(this.homeCrateX, 0, this.homeCrateZ);
+      this.campfire.root.position.set(this.homeCampX, 0, this.homeCampZ);
+      return;
+    }
+
+    const rng = createSeededRng(hashString(locationId) ^ 0xC0FFEE);
+    const placeAway = () => {
+      const p = rngAwayFromOrigin(rng, 5.5, 22);
+      return p;
+    };
+
+    this.trees.forEach((tree, index) => {
+      const visible = index / Math.max(1, this.trees.length) < theme.treeVisibility;
+      tree.root.setEnabled(visible);
+      if (visible) {
+        const p = placeAway();
+        tree.root.position.set(p.x, 0, p.z);
+        tree.root.scaling.setAll(tree.baseScale * this.config.world.treeScale * theme.treeScale * (0.85 + rng() * 0.35));
+        tree.root.rotation.y = rng() * Math.PI * 2;
+      }
+    });
+    this.rocks.forEach((rock, index) => {
+      const visible = index / Math.max(1, this.rocks.length) < theme.rockVisibility;
+      rock.root.setEnabled(visible);
+      if (visible) {
+        const p = placeAway();
+        rock.root.position.set(p.x, 0, p.z);
+        rock.root.scaling.setAll(rock.baseScale * this.config.world.rockScale * theme.rockScale * (0.8 + rng() * 0.5));
+        rock.root.rotation.y = rng() * Math.PI * 2;
+      }
+    });
+    this.plants.forEach((plant, index) => {
+      const visible = index / Math.max(1, this.plants.length) < theme.plantVisibility;
+      plant.root.setEnabled(visible);
+      if (visible) {
+        const p = placeAway();
+        plant.root.position.set(p.x, 0, p.z);
+        plant.root.rotation.y = rng() * Math.PI * 2;
+      }
+    });
+
+    if (theme.showCampfire) {
+      const p = placeAway();
+      this.campfire.root.position.set(p.x, 0, p.z);
+    }
   }
 
   get clutterCount(): number { return this.clutter.count; }
@@ -61,46 +210,62 @@ export class TestLocation {
   collectMinimapMarkers(): readonly MinimapMarker[] {
     const markers: MinimapMarker[] = [];
     const cell = this.config.world.gridCellSize;
-    const houseHalf = cell * 1.5;
-    markers.push(Object.freeze({
-      kind: "house-floor",
-      x: this.houseOrigin.x,
-      z: this.houseOrigin.z,
-      halfX: houseHalf,
-      halfZ: houseHalf,
-    }));
-    for (const wall of this.walls) {
-      const cx = this.houseOrigin.x + wall.gridX * cell;
-      const cz = this.houseOrigin.z + wall.gridZ * cell;
-      const halfLen = cell * wall.lengthCells / 2;
-      if (wall.horizontal) {
-        markers.push(Object.freeze({ kind: "wall", x0: cx - halfLen, z0: cz, x1: cx + halfLen, z1: cz }));
-      } else {
-        markers.push(Object.freeze({ kind: "wall", x0: cx, z0: cz - halfLen, x1: cx, z1: cz + halfLen }));
+    if (this.currentTheme.showHouse) {
+      const houseHalf = cell * 1.5;
+      markers.push(Object.freeze({
+        kind: "house-floor",
+        x: this.houseOrigin.x,
+        z: this.houseOrigin.z,
+        halfX: houseHalf,
+        halfZ: houseHalf,
+      }));
+      for (const wall of this.walls) {
+        const cx = this.houseOrigin.x + wall.gridX * cell;
+        const cz = this.houseOrigin.z + wall.gridZ * cell;
+        const halfLen = cell * wall.lengthCells / 2;
+        if (wall.horizontal) {
+          markers.push(Object.freeze({ kind: "wall", x0: cx - halfLen, z0: cz, x1: cx + halfLen, z1: cz }));
+        } else {
+          markers.push(Object.freeze({ kind: "wall", x0: cx, z0: cz - halfLen, x1: cx, z1: cz + halfLen }));
+        }
       }
     }
     for (let index = 0; index < this.trees.length; index += 1) {
       const resource = this.harvestables[index];
       if (resource?.isDepleted) continue;
       const tree = this.trees[index];
+      if (!tree.root.isEnabled()) continue;
       markers.push(Object.freeze({ kind: "tree", x: tree.root.position.x, z: tree.root.position.z }));
     }
     for (let index = 0; index < this.rocks.length; index += 1) {
       const resource = this.harvestables[this.trees.length + index];
       if (resource?.isDepleted) continue;
       const rock = this.rocks[index];
+      if (!rock.root.isEnabled()) continue;
       markers.push(Object.freeze({ kind: "rock", x: rock.root.position.x, z: rock.root.position.z }));
     }
-    markers.push(Object.freeze({ kind: "crate", x: this.crate.root.position.x, z: this.crate.root.position.z }));
-    markers.push(Object.freeze({ kind: "campfire", x: this.campfire.root.position.x, z: this.campfire.root.position.z }));
+    if (this.crate.root.isEnabled()) {
+      markers.push(Object.freeze({ kind: "crate", x: this.crate.root.position.x, z: this.crate.root.position.z }));
+    }
+    if (this.campfire.root.isEnabled()) {
+      markers.push(Object.freeze({ kind: "campfire", x: this.campfire.root.position.x, z: this.campfire.root.position.z }));
+    }
     return Object.freeze(markers);
   }
 
   removeResourceCollision(resourceId: string): void { this.collision.remove(resourceId); }
 
   applyCalibration(): void {
-    for (const tree of this.trees) tree.root.scaling.setAll(tree.baseScale * this.config.world.treeScale);
-    for (const rock of this.rocks) rock.root.scaling.setAll(rock.baseScale * this.config.world.rockScale);
+    const treeMul = this.currentTheme.treeScale;
+    const rockMul = this.currentTheme.rockScale;
+    for (const tree of this.trees) {
+      if (!tree.root.isEnabled()) continue;
+      tree.root.scaling.setAll(tree.baseScale * this.config.world.treeScale * treeMul);
+    }
+    for (const rock of this.rocks) {
+      if (!rock.root.isEnabled()) continue;
+      rock.root.scaling.setAll(rock.baseScale * this.config.world.rockScale * rockMul);
+    }
     this.ground.applyCalibration(this.textures);
     this.clutter.applyCalibration();
     this.materials.contactShadow.alpha = this.config.visual.contactShadowIntensity;
@@ -131,9 +296,15 @@ export class TestLocation {
   }
 
   private createForest(): void {
+    // Dense Home rim + forest edge + stone edge micro-regions.
     const positions = [
       [-9,1],[-8,4],[-7,8],[-7,11],[-4,13],[-1,12],[5,12],[8,10],[10,5],[11,2],
       [5,-4],[1,-6],[-3,-5],[-6,-3],[-15,-9],[-14,10],[14,-11],[17,4],[-3,19],[18,16],
+      // Outer forest wall
+      [-20,8],[-19,-6],[-17,16],[-16,-14],[16,18],[19,-8],[20,10],[-12,20],[12,20],[-8,-18],
+      [6,-17],[-21,2],[21,-2],[15,-16],[-15,5],[8,18],[-18,-11],[18,14],[-10,-16],[10,-19],
+      // Young / inner edge trees
+      [-11,9],[-9,-6],[12,7],[13,-4],[-5,15],[2,14],[-14,0],[0,-12],
     ];
     positions.forEach(([x, z], index) => {
       const tree = createTree(this.scene, this.materials, x, z, index);
@@ -159,7 +330,10 @@ export class TestLocation {
       this.harvestables.push(resource);
       this.interactables.push(resource);
     });
-    const rocks = [[-5,0],[-5,8],[3,10],[7,5],[3,-2],[-12,-7],[13,-7],[-13,14],[6,17],[17,11]];
+    const rocks = [
+      [-5,0],[-5,8],[3,10],[7,5],[3,-2],[-12,-7],[13,-7],[-13,14],[6,17],[17,11],
+      [-18,4],[18,6],[-16,-16],[16,-14],[0,18],[4,-15],[-8,16],[14,12],[-20,-3],[9,15],
+    ];
     rocks.forEach(([x, z], index) => {
       const rock = createRock(this.scene, this.materials, x, z, index);
       this.rocks.push(rock);
@@ -179,6 +353,54 @@ export class TestLocation {
             this.harvestEffects.spawn("limestone-rock", rock.root.position, particleIntensity, true);
           },
           update: (delta) => { rock.updateHarvest(delta); },
+        },
+      });
+      this.harvestables.push(resource);
+      this.interactables.push(resource);
+    });
+    this.createPlantResources();
+  }
+
+  private createPlantResources(): void {
+    const fibers: Array<[number, number]> = [
+      [-6.5, 5.5], [-3.2, 7.8], [4.5, 8.2], [6.8, 3.4], [-8.2, -1.5], [2.2, -4.5],
+      [-10, 3], [7.5, -1.5], [-2, 11], [9, 4.5], [-4.5, -3.5], [1, 7],
+    ];
+    fibers.forEach(([x, z], index) => {
+      const plant = createPlantNode(this.scene, "fiber", x, z, index + 3);
+      this.plants.push(plant);
+      const resource = new HarvestableResource({
+        id: `fiber-${String(index + 1).padStart(2, "0")}`,
+        kind: "fiber-plant",
+        position: () => plant.root.position,
+        radius: () => plant.radius,
+        visualEnabled: () => !plant.root.isDisposed() && plant.root.isEnabled(),
+        visual: {
+          impact: () => { /* soft plant sway omitted */ },
+          deplete: () => { plant.deplete(); },
+          update: () => { /* static */ },
+        },
+      });
+      this.harvestables.push(resource);
+      this.interactables.push(resource);
+    });
+    const berries: Array<[number, number]> = [
+      [-1.8, 8.5], [1.4, 9.1], [5.2, -3.2], [-5.5, 2.1],
+      [8.5, 1], [-7, 10], [3.5, 6.5], [-0.5, -3],
+    ];
+    berries.forEach(([x, z], index) => {
+      const plant = createPlantNode(this.scene, "berry", x, z, index + 11);
+      this.plants.push(plant);
+      const resource = new HarvestableResource({
+        id: `berry-${String(index + 1).padStart(2, "0")}`,
+        kind: "berry-bush",
+        position: () => plant.root.position,
+        radius: () => plant.radius,
+        visualEnabled: () => !plant.root.isDisposed() && plant.root.isEnabled(),
+        visual: {
+          impact: () => { /* soft */ },
+          deplete: () => { plant.deplete(); },
+          update: () => { /* static */ },
         },
       });
       this.harvestables.push(resource);
@@ -207,7 +429,12 @@ export class TestLocation {
   }
 
   private createProps(): void {
-    this.crate = createCrate(this.scene, this.materials, 2.2, 1.2);
+    // Center of the 3×3 house floor grid (houseOrigin is the middle cell).
+    const crateX = this.houseOrigin.x;
+    const crateZ = this.houseOrigin.z;
+    this.crate = createCrate(this.scene, this.materials, crateX, crateZ);
+    this.homeCrateX = crateX;
+    this.homeCrateZ = crateZ;
     this.interactables.push(createInteractable({
       id: "crate-01",
       type: "container",
@@ -235,20 +462,35 @@ export class TestLocation {
     for (let index = 0; index < this.trees.length; index += 1) {
       const resource = this.harvestables[index];
       const tree = this.trees[index];
-      if (!resource?.isDepleted) this.collision.addCircle(tree.root.position.x, tree.root.position.z, tree.radius * tree.baseScale * this.config.world.treeScale, resource?.resourceId ?? `tree-${index + 1}`);
+      if (!tree.root.isEnabled()) continue;
+      if (!resource?.isDepleted) this.collision.addCircle(tree.root.position.x, tree.root.position.z, tree.radius * tree.baseScale * this.config.world.treeScale * this.currentTheme.treeScale, resource?.resourceId ?? `tree-${index + 1}`);
     }
     for (let index = 0; index < this.rocks.length; index += 1) {
       const resource = this.harvestables[this.trees.length + index];
       const rock = this.rocks[index];
-      if (!resource?.isDepleted) this.collision.addCircle(rock.root.position.x, rock.root.position.z, rock.radius * rock.baseScale * this.config.world.rockScale, resource?.resourceId ?? `rock-${index + 1}`);
+      if (!rock.root.isEnabled()) continue;
+      if (!resource?.isDepleted) this.collision.addCircle(rock.root.position.x, rock.root.position.z, rock.radius * rock.baseScale * this.config.world.rockScale * this.currentTheme.rockScale, resource?.resourceId ?? `rock-${index + 1}`);
     }
     const cell = this.config.world.gridCellSize;
-    for (const wall of this.walls) {
-      const x = this.houseOrigin.x + wall.gridX * cell;
-      const z = this.houseOrigin.z + wall.gridZ * cell;
-      this.collision.addBox(x, z, wall.horizontal ? cell * wall.lengthCells / 2 : 0.13, wall.horizontal ? 0.13 : cell * wall.lengthCells / 2, "wall");
+    if (this.currentTheme.showHouse) {
+      for (const wall of this.walls) {
+        const x = this.houseOrigin.x + wall.gridX * cell;
+        const z = this.houseOrigin.z + wall.gridZ * cell;
+        this.collision.addBox(x, z, wall.horizontal ? cell * wall.lengthCells / 2 : 0.13, wall.horizontal ? 0.13 : cell * wall.lengthCells / 2, "wall");
+      }
     }
-    this.collision.addBox(2.2, 1.2, 0.6, 0.6, "crate");
-    this.collision.addCircle(-4, 4, 0.72, "campfire");
+    if (this.crate.root.isEnabled()) {
+      this.collision.addBox(this.crate.root.position.x, this.crate.root.position.z, 0.6, 0.6, "crate");
+    }
+    if (this.campfire.root.isEnabled()) {
+      this.collision.addCircle(this.campfire.root.position.x, this.campfire.root.position.z, 0.72, "campfire");
+    }
+    // Landmark soft collision offset unique per location
+    if (this.currentTheme.biome !== "home") {
+      const seed = hashString(this.currentLocationId);
+      const lx = ((seed % 17) - 8) * 1.4 + 8;
+      const lz = ((((seed >>> 8) % 17) - 8) * 1.4) - 6;
+      this.collision.addBox(lx, lz, 1.8, 1.8, "landmark");
+    }
   }
 }

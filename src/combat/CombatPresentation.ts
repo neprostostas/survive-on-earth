@@ -8,6 +8,7 @@ import type { Engine } from "@babylonjs/core/Engines/engine";
 import type { Scene } from "@babylonjs/core/scene";
 import type { CombatDummy } from "./CombatDummy";
 import type { CombatPoint, CombatTarget } from "./CombatTarget";
+import { I18N } from "../i18n/I18n";
 import { COMBAT_CONFIG } from "./combatConfig";
 
 interface DummyVisual {
@@ -58,7 +59,7 @@ export class CombatPresentation {
     this.status = document.createElement("section");
     this.status.className = "combat-target-status";
     this.status.setAttribute("aria-live", "polite");
-    this.status.innerHTML = `<div><b class="combat-target-name"></b><span class="combat-target-value"></span></div><div class="combat-health-track"><i></i></div>`;
+    this.status.innerHTML = `<div class="combat-target-row"><b class="combat-target-name"></b><span class="combat-target-value"></span></div><div class="combat-health-track"><i></i></div>`;
     uiRoot.append(this.status);
     const statusName = this.status.querySelector<HTMLElement>(".combat-target-name");
     const statusValue = this.status.querySelector<HTMLElement>(".combat-target-value");
@@ -106,6 +107,13 @@ export class CombatPresentation {
     return Object.freeze(meshes);
   }
 
+  /** Hide training dummies entirely outside Home. */
+  setDummiesVisible(visible: boolean): void {
+    for (const visual of this.visuals.values()) {
+      visual.root.setEnabled(visible);
+    }
+  }
+
   showImpact(target: CombatTarget, appliedDamage: number): void {
     const visual = this.visuals.get(target.combatId);
     if (visual) visual.recoil = 0.12;
@@ -113,6 +121,7 @@ export class CombatPresentation {
   }
 
   showDamage(position: CombatPoint, appliedDamage: number, height = 1.75): void {
+    if (!I18N.gameSettings.damageNumbers) return;
     const entry = this.damageEntries.find((candidate) => !candidate.active) ?? this.damageEntries.reduce((oldest, candidate) => candidate.elapsed > oldest.elapsed ? candidate : oldest);
     entry.active = true;
     entry.elapsed = 0;
@@ -156,7 +165,7 @@ export class CombatPresentation {
     this.indicator.position.set(position.x, position.y + 0.055, position.z);
     const health = target.health.getSnapshot();
     this.statusName.textContent = target.displayName.toUpperCase();
-    this.statusValue.textContent = `${health.currentHealth} / ${health.maxHealth}`;
+    this.statusValue.textContent = String(health.currentHealth);
     this.statusFill.style.width = `${health.currentHealth / health.maxHealth * 100}%`;
   }
 

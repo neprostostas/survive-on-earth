@@ -5,6 +5,8 @@ import { TestLocation } from "./TestLocation";
 import type { Interactable } from "../interaction/Interactable";
 import type { HarvestableResource } from "../harvesting/HarvestableResource";
 import type { MinimapMarker } from "../ui/minimapTypes";
+import type { LocationId } from "../locations/LocationRegistry";
+import type { LocationVisualTheme } from "../locations/LocationVisualTheme";
 
 export class World {
   private readonly location: TestLocation;
@@ -23,4 +25,9 @@ export class World {
   update(delta: number): void { this.location.update(delta); }
   applyCalibration(): void { this.location.applyCalibration(); }
   removeResourceCollision(resourceId: string): void { this.location.removeResourceCollision(resourceId); }
+
+  /** Load location-specific visual theme into the shared plane. */
+  applyLocationVisual(locationId: LocationId): LocationVisualTheme {
+    return this.location.applyLocationVisual(locationId);
+  }
 }

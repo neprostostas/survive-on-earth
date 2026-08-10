@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-pipeclub" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a1c0c"/>
+      <stop offset="100%" stop-color="#0a0c0a"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="72" fill="url(#g-pipeclub)" stroke="#c4893a" stroke-width="18"/>
+  <circle cx="400" cy="112" r="28" fill="#e8b86a" opacity="0.55"/>
+  <g transform="translate(56,56) scale(0.78)"><path fill="#f4f0e6" d="M198 140.2a32.94 32.94 0 0 1-64.1 11.7c0 21.5 1.9 35.9 22.1 46.9H99.87c20.13-11 21.93-25.4 21.93-46.9a32.91 32.91 0 1 1-21.93-43 32.94 32.94 0 1 1 54.03 0 32.94 32.94 0 0 1 44.1 31.3z"/></g>
+</svg>

@@ -78,10 +78,18 @@ Current project behavior:
 - Equipping into an occupied slot swaps the previous armor into the same Inventory source slot, even when no other slot is empty.
 - Unequipping uses the M06 deterministic insertion rules; a full Inventory rejects the action without changing equipment.
 - Four deterministic armor Ground Loot fixtures near the test spawn provide a calibration-only pickup path.
-- Equipped armor projects onto the existing procedural player hierarchy and follows locomotion/harvesting animation without changing collision, speed, camera, capacity, or world generation.
-- Armor values are displayed and derived but do not reduce damage yet. Weapons, backpack equipment, durability, drag/drop, and persistence remain later milestones.
+- Equipped armor projects onto the existing procedural player hierarchy (world + Inventory character preview via shared apparel visuals) and follows locomotion/harvesting animation without changing collision, speed, camera, capacity, or world generation.
+- Armor reduces Player incoming damage via LDOE-style mitigation (M11).
+- M17 Inventory is a full-screen LDOE-style character screen: POCKETS presentation of the 10 real base slots, 3D character preview with live clothing/weapon, armor slots around the model, and production stats. Backpack equip + future backpack row are presentation shells only (no capacity).
 
-## Starter blueprints from Milestone 08
+## Inventory screen from Milestone 17
+
+- Full-screen Inventory / equipment UI; world simulation continues while open.
+- POCKETS = the existing 10 `PlayerInventory` slots (5×2), presentation naming only.
+- Right stage: active Weapon slot, disabled Backpack equip shell, disabled Utility shell, Head/Torso/Legs/Feet armor, full-body Babylon preview of the same procedural character visuals.
+- Stats strip: Damage and Attack Speed from `resolvePlayerMeleeProfile`, Armor from `PlayerEquipment.totalArmor`, Speed from calibration movement speed.
+- HP bar reads the Player `HealthPool` live.
+- USE / SPLIT / DELETE buttons are disabled shells; equip/unequip remains production-backed.
 
 Reference-backed starter recipes used by the current project:
 
@@ -123,15 +131,16 @@ Current project M13+ behavior (shared with M14 combat):
 - Matching equipped tool is preferred; otherwise lowest Inventory slot. No same-impact cascade.
 - Partial resource progress survives tool break.
 
-## Active weapon slot + tool melee from Milestone 14
+## Active weapon slot + tool melee from Milestone 14–16
 
 ```text
 PlayerEquipment = armor source of truth (head / torso / legs / feet)
 PlayerWeaponSlot = active weapon source of truth (capacity 1)
 
-Fists:    6 damage @ 1.8/sec  (empty Weapon Slot)
-Hatchet:  7 damage @ 0.9/sec
-Pickaxe:  7 damage @ 1.1/sec
+Fists:    6 damage @ 1.8/sec · hitRange 1.15  (empty Weapon Slot)
+Hatchet:  7 damage @ 0.9/sec · hitRange 1.15 · durability 50
+Pickaxe:  7 damage @ 1.1/sec · hitRange 1.15 · durability 50
+Spear:   10 damage @ 1.0/sec · hitRange 1.35 · durability 100
 
 successful weapon combat impact → durability -1 (shared stack)
 miss / cancel → durability cost 0
@@ -139,8 +148,11 @@ weapon 1 → 0 → final hit counts → slot empty → next attack fists
 no quick slots · no sneak damage · no AUTO combat · no auto-equip
 ```
 
-- Explicit `ItemDefinition.meleeCombat` on Hatchet/Pickaxe only.
-- Equip moves the real stack; unequip/swaps are atomic; Weapon Slot free of Inventory capacity.
+- Weapon Slot compatibility: any item with `meleeCombat` metadata (`isWeaponCapableItemId`).
+- `MeleeCombatProfile.hitRange` is snapshotted per swing (Spear 1.35; others default 1.15).
+- Spear is **not** a harvest tool; Tree/Rock still require Hatchet/Pickaxe via `HarvestToolResolver`.
+- Recipe: `3 Pine Log → Spear ×1` (recipes total 3; item definitions 9).
+- Equip moves the real stack; unequip/swaps are atomic.
 - Full armor metadata remains 8; armor has no durability; Zombie stats unchanged.
 
 ## Starter ground resources + direct harvest from Milestone 15

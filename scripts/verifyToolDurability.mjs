@@ -289,8 +289,8 @@ assert.deepEqual(createItemStack("pickaxe", 1), { itemId: "pickaxe", quantity: 1
 }
 
 // Counts / boundaries
-assert.equal(ITEM_REGISTRY.getAll().length, 8);
-assert.equal(CRAFTING_RECIPES.getAll().length, 2);
+assert.equal(ITEM_REGISTRY.getAll().length, 10);
+assert.equal(CRAFTING_RECIPES.getAll().length, 3);
 assert.equal(INVENTORY_CONFIG.baseSlotCount, 10);
 assert.deepEqual([...EQUIPMENT_SLOT_IDS], ["head", "torso", "legs", "feet"]);
 assert.equal(FISTS_COMBAT_PROFILE.damage, 6);

@@ -1,57 +1,105 @@
 import type { MinimapFrame, MinimapMarker } from "./minimapTypes";
 
+export interface MinimapOptions {
+  /** Visible radius around the player in world units. */
+  readonly worldRadius?: number;
+  /** Clip to circle (HUD) or draw full square/rect canvas (expanded map). */
+  readonly square?: boolean;
+  /**
+   * `camera` — align to gameplay camera yaw (HUD minimap; world bounds look diamond at ~45°).
+   * `world` — north-up / axis-aligned (expanded location map).
+   */
+  readonly orientation?: "camera" | "world";
+}
+
 export class Minimap {
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
   /** Visible radius around the player in world units. */
-  private readonly worldRadius = 18;
-  /** Logical (CSS) drawing size — buffer uses CSS size × devicePixelRatio. */
-  private size = 180;
+  private worldRadius: number;
+  private readonly square: boolean;
+  private readonly orientation: "camera" | "world";
+  /** Logical (CSS) drawing size. */
+  private width = 180;
+  private height = 180;
 
-  constructor(canvas: HTMLCanvasElement) {
+  private bufferScaleX = 1;
+  private bufferScaleY = 1;
+  private bufferDirty = true;
+  private resizeObserver: ResizeObserver | null = null;
+
+  constructor(canvas: HTMLCanvasElement, options: MinimapOptions = {}) {
     const context = canvas.getContext("2d", { alpha: true, desynchronized: true });
     if (!context) throw new Error("Minimap canvas context is unavailable");
     this.canvas = canvas;
     this.context = context;
+    this.worldRadius = options.worldRadius ?? 18;
+    this.square = options.square ?? false;
+    this.orientation = options.orientation ?? "camera";
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver(() => { this.bufferDirty = true; });
+      this.resizeObserver.observe(canvas);
+    }
     this.syncBuffer();
+  }
+
+  setWorldRadius(radius: number): void {
+    this.worldRadius = Math.max(8, radius);
   }
 
   update(frame: MinimapFrame): void {
     this.syncBuffer();
     const c = this.context;
-    const size = this.size;
-    const center = size / 2;
-    const pad = Math.max(10, size * 0.055);
-    const worldScale = (center - pad) / this.worldRadius;
-    const { cameraYawRad } = frame;
-    const sux = -Math.sin(cameraYawRad);
-    const suz = -Math.cos(cameraYawRad);
-    const srx = suz;
-    const srz = -sux;
+    const w = this.width;
+    const h = this.height;
+    const centerX = w / 2;
+    const centerY = h / 2;
+    const pad = Math.max(10, Math.min(w, h) * 0.04);
+    const worldScale = (Math.min(w, h) / 2 - pad) / this.worldRadius;
+
+    let srx: number;
+    let srz: number;
+    let sux: number;
+    let suz: number;
+    if (this.orientation === "world") {
+      // +X → right, +Z → up on map (axis-aligned / "straight")
+      srx = 1;
+      srz = 0;
+      sux = 0;
+      suz = 1;
+    } else {
+      const { cameraYawRad } = frame;
+      sux = -Math.sin(cameraYawRad);
+      suz = -Math.cos(cameraYawRad);
+      srx = suz;
+      srz = -sux;
+    }
 
     const project = (wx: number, wz: number): { x: number; y: number } => {
       const dx = wx - frame.playerX;
       const dz = wz - frame.playerZ;
       const right = dx * srx + dz * srz;
       const up = dx * sux + dz * suz;
-      return { x: center + right * worldScale, y: center - up * worldScale };
+      return { x: centerX + right * worldScale, y: centerY - up * worldScale };
     };
 
-    // Transform is already set to DPR; clear in logical space.
-    c.setTransform(this.bufferScale, 0, 0, this.bufferScale, 0, 0);
-    c.clearRect(0, 0, size, size);
+    c.setTransform(this.bufferScaleX, 0, 0, this.bufferScaleY, 0, 0);
+    c.clearRect(0, 0, w, h);
     c.imageSmoothingEnabled = true;
     c.imageSmoothingQuality = "high";
 
     c.save();
-    c.beginPath();
-    c.arc(center, center, center, 0, Math.PI * 2);
-    c.clip();
+    if (!this.square) {
+      c.beginPath();
+      c.arc(centerX, centerY, Math.min(centerX, centerY), 0, Math.PI * 2);
+      c.clip();
+      // Circular HUD minimap keeps a solid disc so it reads on the game chrome.
+      c.fillStyle = "rgba(38, 48, 36, 0.95)";
+      c.fillRect(0, 0, w, h);
+    }
+    // Expanded square map: no full-canvas wash — only the playable area / markers.
 
-    c.fillStyle = "rgba(38, 48, 36, 0.95)";
-    c.fillRect(0, 0, size, size);
-
-    // World playable bounds (camera-aligned square)
+    // Playable bounds
     const half = frame.worldHalfExtent;
     const corners = [
       project(-half, -half),
@@ -68,7 +116,8 @@ export class Minimap {
     c.setLineDash([4, 3]);
     c.stroke();
     c.setLineDash([]);
-    c.fillStyle = "rgba(18, 24, 16, 0.22)";
+    // Soft fill only inside playable bounds (not the whole canvas).
+    c.fillStyle = this.square ? "rgba(18, 24, 16, 0.42)" : "rgba(18, 24, 16, 0.22)";
     c.fill();
 
     for (const marker of frame.markers) {
@@ -76,11 +125,11 @@ export class Minimap {
       else if (marker.kind === "wall") this.drawWall(c, project, marker);
     }
 
-    const iconScale = Math.max(0.9, size / 180);
+    const iconScale = Math.max(0.9, Math.min(w, h) / 180);
     for (const marker of frame.markers) {
       if (marker.kind === "house-floor" || marker.kind === "wall") continue;
       const p = project(marker.x, marker.z);
-      if (!this.inView(p.x, p.y, center)) continue;
+      if (!this.inView(p.x, p.y, centerX, centerY)) continue;
       this.drawPointMarker(c, p.x, p.y, marker.kind, marker.yaw, srx, srz, sux, suz, iconScale);
     }
 
@@ -90,7 +139,7 @@ export class Minimap {
     const faceUp = faceDirX * sux + faceDirZ * suz;
     const faceAngle = Math.atan2(faceRight, faceUp);
 
-    c.translate(center, center);
+    c.translate(centerX, centerY);
     c.rotate(faceAngle);
     c.scale(iconScale, iconScale);
     c.fillStyle = "#f5f2e2";
@@ -107,26 +156,35 @@ export class Minimap {
     c.restore();
   }
 
-  private bufferScale = 1;
-
-  /** Match backing store to CSS size × device pixel ratio (Retina-sharp). */
+  /** Match backing store to CSS size × device pixel ratio. Measure only when dirty. */
   private syncBuffer(): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const css = Math.max(1, Math.round(rect.width || rect.height || 180));
+    if (!this.bufferDirty && this.width > 1 && this.height > 1) return;
+    this.bufferDirty = false;
+    // Prefer non-forcing box size when available
+    const cssW = Math.max(1, Math.round(this.canvas.clientWidth || this.width || 180));
+    const cssH = Math.max(1, Math.round(this.canvas.clientHeight || this.height || cssW));
     const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
-    const buffer = Math.max(1, Math.round(css * dpr));
-    if (this.canvas.width !== buffer || this.canvas.height !== buffer) {
-      this.canvas.width = buffer;
-      this.canvas.height = buffer;
+    const bufferW = Math.max(1, Math.round(cssW * dpr));
+    const bufferH = Math.max(1, Math.round(cssH * dpr));
+    if (this.canvas.width !== bufferW || this.canvas.height !== bufferH) {
+      this.canvas.width = bufferW;
+      this.canvas.height = bufferH;
     }
-    this.size = css;
-    this.bufferScale = dpr;
+    this.width = cssW;
+    this.height = cssH;
+    this.bufferScaleX = dpr;
+    this.bufferScaleY = dpr;
   }
 
-  private inView(x: number, y: number, center: number): boolean {
-    const dx = x - center;
-    const dy = y - center;
-    return dx * dx + dy * dy <= (center - 4) * (center - 4);
+  private inView(x: number, y: number, centerX: number, centerY: number): boolean {
+    if (this.square) {
+      const pad = 4;
+      return x >= pad && y >= pad && x <= this.width - pad && y <= this.height - pad;
+    }
+    const dx = x - centerX;
+    const dy = y - centerY;
+    const r = Math.min(centerX, centerY) - 4;
+    return dx * dx + dy * dy <= r * r;
   }
 
   private drawHouseFloor(

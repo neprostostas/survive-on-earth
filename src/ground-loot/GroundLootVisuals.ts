@@ -4,6 +4,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import type { InteractionPoint } from "../interaction/InteractionTypes";
+import { BackpackVisuals } from "../equipment/BackpackVisuals";
 import type { GroundLoot } from "./GroundLoot";
 import type { GroundLootPresentation } from "./GroundLootSystem";
 import { GROUND_LOOT_CONFIG } from "./groundLootConfig";
@@ -25,6 +26,7 @@ export class GroundLootVisuals implements GroundLootPresentation {
   private readonly fabricBlue: StandardMaterial;
   private readonly fabricOlive: StandardMaterial;
   private readonly sneaker: StandardMaterial;
+  private readonly backpackFactory: BackpackVisuals;
 
   constructor(private readonly scene: Scene) {
     this.bark = this.createMaterial("GroundLootBark", new Color3(0.31, 0.22, 0.14));
@@ -34,6 +36,7 @@ export class GroundLootVisuals implements GroundLootPresentation {
     this.fabricBlue = this.createMaterial("GroundLootShirt", new Color3(0.25, 0.38, 0.42));
     this.fabricOlive = this.createMaterial("GroundLootPants", new Color3(0.33, 0.36, 0.23));
     this.sneaker = this.createMaterial("GroundLootSneaker", new Color3(0.57, 0.55, 0.48));
+    this.backpackFactory = new BackpackVisuals(scene, "GroundLootPack");
   }
 
   spawn(entity: GroundLoot): void {
@@ -48,6 +51,8 @@ export class GroundLootVisuals implements GroundLootPresentation {
       case "shirt": this.createShirt(root); break;
       case "cargo-pants": this.createPants(root); break;
       case "sneakers": this.createSneakers(root); break;
+      case "basic-backpack": this.backpackFactory.createBasicBackpack(root, "ground", "GroundBasicPack"); break;
+      default: this.createGenericDrop(root); break;
     }
     this.visuals.set(entity.interactionId, {
       root,
@@ -179,6 +184,14 @@ export class GroundLootVisuals implements GroundLootPresentation {
       shoe.material = this.sneaker;
       shoe.isPickable = false;
     }
+  }
+
+  private createGenericDrop(root: TransformNode): void {
+    const box = MeshBuilder.CreateBox("GroundGenericLoot", { width: 0.28, height: 0.18, depth: 0.28 }, this.scene);
+    box.parent = root;
+    box.position.y = 0.1;
+    box.material = this.fabricOlive;
+    box.isPickable = false;
   }
 
   private createMaterial(name: string, color: Color3): StandardMaterial {

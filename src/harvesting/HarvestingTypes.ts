@@ -1,5 +1,5 @@
-export type HarvestTool = "hatchet" | "pickaxe";
-export type HarvestResourceKind = "pine-tree" | "limestone-rock";
+export type HarvestTool = "hatchet" | "pickaxe" | "hand";
+export type HarvestResourceKind = "pine-tree" | "limestone-rock" | "fiber-plant" | "berry-bush";
 export type HarvestPhase = "idle" | "aligning" | "wind-up" | "recovery";
 
 export interface PrimaryActionState {

@@ -9,9 +9,16 @@ import {
 import { HarvestableResource } from "../src/harvesting/HarvestableResource.ts";
 
 const definitions = ITEM_REGISTRY.getAll();
-assert.equal(definitions.length, 8, "M08 registry must contain exactly eight item definitions");
+assert.equal(definitions.length, 10, "M18 registry must contain exactly ten item definitions");
 assert.equal(ITEM_REGISTRY.has("pine-log"), true, "pine-log definition must exist");
 assert.equal(ITEM_REGISTRY.has("limestone"), true, "limestone definition must exist");
+assert.equal(ITEM_REGISTRY.has("basic-backpack"), true, "basic-backpack definition must exist");
+assert.equal(ITEM_REGISTRY.get("basic-backpack").maxStack, 1);
+assert.equal(ITEM_REGISTRY.get("basic-backpack").category, "gear");
+assert.equal(ITEM_REGISTRY.get("basic-backpack").backpack?.extraSlots, 5);
+assert.equal(ITEM_REGISTRY.get("basic-backpack").equipment, undefined);
+assert.equal(ITEM_REGISTRY.get("basic-backpack").meleeCombat, undefined);
+assert.equal(ITEM_REGISTRY.get("basic-backpack").maxDurability, undefined);
 assert.equal(ITEM_REGISTRY.get("pine-log").maxStack, 20, "Pine Log max stack must be 20");
 assert.equal(ITEM_REGISTRY.get("limestone").maxStack, 20, "Limestone max stack must be 20");
 for (const [id, slot, armor] of [["dad-hat", "head", 2], ["shirt", "torso", 3], ["cargo-pants", "legs", 3], ["sneakers", "feet", 0]]) {
@@ -37,6 +44,14 @@ for (const id of ["hatchet", "pickaxe"]) {
   assert.throws(() => createItemStack(id, 1, { currentDurability: 0 }), RangeError);
   assert.throws(() => createItemStack(id, 1, { currentDurability: 51 }), RangeError);
   assert.throws(() => createItemStack(id, 1, { currentDurability: -1 }), RangeError);
+}
+{
+  const definition = ITEM_REGISTRY.get("spear");
+  assert.equal(definition.category, "tool");
+  assert.equal(definition.maxStack, 1);
+  assert.equal(definition.maxDurability, 100);
+  assert.deepEqual(createItemStack("spear", 1), { itemId: "spear", quantity: 1, currentDurability: 100 });
+  assert.throws(() => createItemStack("spear", 2), RangeError);
 }
 assert.throws(() => createItemStack("pine-log", 1, { currentDurability: 1 }), RangeError, "resources cannot have durability");
 assert.equal(createItemStack("pine-log", 3).currentDurability, undefined);

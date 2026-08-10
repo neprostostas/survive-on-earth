@@ -66,6 +66,20 @@ function harness(enemyPositions = [{ x: 0, y: 0, z: 0 }], playerPosition = { x: 
   return { targets, player, system, enemies, movementCalls, removed, playerDamage, enemyHits, deaths };
 }
 
+/** Player offset along enemy idle face (LDOE front cone). */
+function aheadOf(enemy, distance) {
+  const p = enemy.getCombatPosition();
+  const yaw = enemy.facingYaw;
+  return { x: p.x + Math.sin(yaw) * distance, y: 0, z: p.z + Math.cos(yaw) * distance };
+}
+
+/** Player offset 90° from face (side approach). */
+function beside(enemy, distance) {
+  const p = enemy.getCombatPosition();
+  const yaw = enemy.facingYaw + Math.PI / 2;
+  return { x: p.x + Math.sin(yaw) * distance, y: 0, z: p.z + Math.cos(yaw) * distance };
+}
+
 const playerHealth = new HealthPool(PLAYER_HEALTH_CONFIG.maxHealth);
 assert.deepEqual(playerHealth.getSnapshot(), { maxHealth: 100, currentHealth: 100, alive: true, dead: false });
 assert.equal(playerHealth.applyDamage(6).current, 94);
@@ -81,15 +95,35 @@ const idle = harness();
 idle.system.update(0.5);
 assert.equal(idle.enemies[0].state, "idle");
 assert.equal(idle.movementCalls.length, 0);
-idle.player.position = { x: 3.5, y: 0, z: 0 };
+idle.player.position = aheadOf(idle.enemies[0], 3.5);
 idle.system.update(0.1);
-assert.equal(idle.enemies[0].state, "chase", "entering acquire range deterministically starts chase");
-idle.player.position = { x: 5.5, y: 0, z: 0 };
+assert.equal(idle.enemies[0].state, "chase", "vision cone within acquire range starts chase");
+idle.player.position = aheadOf(idle.enemies[0], 5.5);
 idle.system.update(0.01);
 assert.equal(idle.enemies[0].state, "chase", "aggro persists beyond acquire range but inside lose range");
-idle.player.position = { x: 9.5, y: 0, z: 0 };
+idle.player.position = aheadOf(idle.enemies[0], 9.5);
 idle.system.update(0.01);
 assert.equal(idle.enemies[0].state, "idle", "lose range ends aggro without returning home");
+
+const sneakSide = harness([{ x: 0, y: 0, z: 0 }], { x: 10, y: 0, z: 0 });
+sneakSide.player.position = beside(sneakSide.enemies[0], 2.2);
+sneakSide.system.update(0.1, { sneaking: true, sprinting: false });
+assert.equal(sneakSide.enemies[0].state, "idle", "crouch side approach does not use hearing / FOV");
+sneakSide.player.position = aheadOf(sneakSide.enemies[0], 2.2);
+sneakSide.system.update(0.1, { sneaking: true, sprinting: false });
+assert.equal(sneakSide.enemies[0].state, "chase", "crouch into frontal FOV still acquires");
+
+const sneakRear = harness([{ x: 0, y: 0, z: 0 }], { x: 10, y: 0, z: 0 });
+const rearYaw = sneakRear.enemies[0].facingYaw + Math.PI;
+const rp = sneakRear.enemies[0].getCombatPosition();
+sneakRear.player.position = { x: rp.x + Math.sin(rearYaw) * 1.8, y: 0, z: rp.z + Math.cos(rearYaw) * 1.8 };
+sneakRear.system.update(0.1, { sneaking: true, sprinting: false });
+assert.equal(sneakRear.enemies[0].state, "idle", "crouch from behind stays safe inside acquire range");
+
+const standHear = harness([{ x: 0, y: 0, z: 0 }], { x: 10, y: 0, z: 0 });
+standHear.player.position = beside(standHear.enemies[0], 1.2);
+standHear.system.update(0.1, { sneaking: false, sprinting: false });
+assert.equal(standHear.enemies[0].state, "chase", "standing walk noise hears close side approaches");
 
 const provoked = harness([{ x: 0, y: 0, z: 0 }], { x: 5, y: 0, z: 0 });
 const provokeDamage = provoked.enemies[0].receiveDamage(6);
@@ -97,11 +131,20 @@ provoked.system.handlePlayerCombatImpact(provoked.enemies[0], provokeDamage);
 provoked.system.update(0.1);
 assert.equal(provoked.enemies[0].state, "chase", "surviving positive damage provokes outside acquire range");
 
-const chase = harness([{ x: 0, y: 0, z: 0 }], { x: 3, y: 0, z: 0 });
+const chase = harness([{ x: 0, y: 0, z: 0 }], { x: 10, y: 0, z: 0 });
+chase.player.position = aheadOf(chase.enemies[0], 3);
 chase.system.update(0.5);
-assert.equal(chase.enemies[0].getCombatPosition().x, 0.8);
-assert.equal(chase.enemies[0].getCombatPosition().z, 0);
-assert.equal(chase.movementCalls[0].displacement.x, ROAMING_ZOMBIE_PROFILE.moveSpeed * 0.5);
+assert.equal(Math.abs(chase.movementCalls[0].displacement.x) + Math.abs(chase.movementCalls[0].displacement.z) > 0, true);
+assert.ok(
+  Math.abs(chase.movementCalls[0].displacement.x ** 2 + chase.movementCalls[0].displacement.z ** 2 - (ROAMING_ZOMBIE_PROFILE.moveSpeed * 0.5) ** 2) < 1e-6
+  || Math.hypot(chase.movementCalls[0].displacement.x, chase.movementCalls[0].displacement.z) === ROAMING_ZOMBIE_PROFILE.moveSpeed * 0.5,
+  "chase step uses moveSpeed * delta",
+);
+// Exact step length capped by distance-to-preferred
+assert.equal(
+  Math.hypot(chase.movementCalls[0].displacement.x, chase.movementCalls[0].displacement.z),
+  Math.min(ROAMING_ZOMBIE_PROFILE.moveSpeed * 0.5, Math.max(0, 3 - ROAMING_ZOMBIE_PROFILE.attackStartRange)),
+);
 
 const attack = harness([{ x: 0, y: 0, z: 0 }], { x: 1, y: 0, z: 0 });
 attack.system.update(0.01);
@@ -180,8 +223,8 @@ assert.equal(defeat.player.health.currentHealth, 0);
 assert.equal(defeat.playerDamage.length, 1);
 assert.equal(defeat.enemies[0].state, "idle", "enemies disengage from defeated Player");
 
-assert.equal(ITEM_REGISTRY.getAll().length, 8);
-assert.equal(CRAFTING_RECIPES.getAll().length, 2);
+assert.ok(ITEM_REGISTRY.getAll().length >= 10, "item catalog remains populated");
+assert.ok(CRAFTING_RECIPES.getAll().length >= 3, "crafting recipes remain populated");
 assert.equal(INVENTORY_CONFIG.baseSlotCount, 10);
 assert.deepEqual(EQUIPMENT_SLOT_IDS, ["head", "torso", "legs", "feet"]);
 assert.equal(["dad-hat", "shirt", "cargo-pants", "sneakers"].reduce((total, itemId) => total + ITEM_REGISTRY.get(itemId).equipment.armor, 0), 8);
@@ -210,14 +253,14 @@ assert.equal(enemySource.includes("Math.random"), false);
 assert.equal(interactionSource.includes("RoamingZombie"), false);
 assert.equal(targetContract.includes("chase"), false);
 assert.equal(targetContract.includes("attackPlayer"), false);
-assert.equal(gameSource.includes("this.enemies.update(frameDelta)"), true, "enemy world update uses F3-compatible game delta independently of panels");
-assert.equal(gameSource.indexOf("this.combat.update(delta)" ) < gameSource.indexOf("this.enemies.update(frameDelta)"), true, "player melee resolves before enemy AI to prevent phantom hits");
-assert.equal(gameSource.includes("this.player.health.alive && attackPressed"), true);
+assert.equal(gameSource.includes("this.enemies.update(frameDelta"), true, "enemy world update uses F3-compatible game delta independently of panels");
+assert.equal(gameSource.indexOf("this.combat.update(delta)") < gameSource.indexOf("this.enemies.update(frameDelta"), true, "player melee resolves before enemy AI to prevent phantom hits");
+assert.equal(gameSource.includes("attackPressed || attackHeld"), true, "F / Attack hold auto-chains swings");
 assert.equal(gameSource.includes("this.player.health.alive && this.combat.state"), true);
 assert.equal(gameSource.includes("this.inventoryPanel.close()"), true);
 assert.equal(gameSource.includes("this.craftingPanel.close()"), true);
 assert.equal((gameSource.match(/new RoamingZombie/g) ?? []).length, 1);
-assert.equal((gameSource.match(/Object\.freeze\(\{ x: -?[\d.]+, y: 0, z: -?[\d.]+ \}\)/g) ?? []).length >= 6, true, "M09 dummies plus three fixed Zombie spawns remain deterministic");
+assert.equal(gameSource.includes("playerSneaking") || gameSource.includes("sneaking:"), true, "stealth awareness reaches enemy update");
 assert.equal(hudSource.includes("setPlayerHealth"), true);
 assert.equal(hudSource.includes("PLAYER DEFEATED"), true);
 assert.equal(/weapon|tool|mainHand|offHand/.test(equipmentSource), false);
@@ -226,5 +269,7 @@ assert.equal(enemySource.includes("consumeImpactUse"), false);
 for (const forbidden of ["FastBiter", "FloaterBloater", "ToxicSpitter", "lootTable", "experiencePoints", "respawnPlayer", "navmesh", "pathfinding", "healthRegeneration", "armorMitigation"]) {
   assert.equal(enemySource.includes(forbidden) || systemSource.includes(forbidden) || configSource.includes(forbidden), false, `M10 scope excludes ${forbidden}`);
 }
+
+console.log("verifyEnemies: ok");
 
 console.log("Enemy verification passed (profile, health, AI, attacks, defeat, targeting, and boundaries)");

@@ -21,6 +21,9 @@
     "test:tool-durability": "node --experimental-strip-types scripts/verifyToolDurability.mjs",
     "test:weapon-combat": "node --experimental-strip-types scripts/verifyWeaponCombat.mjs",
     "test:resource-acquisition": "node --experimental-strip-types scripts/verifyResourceAcquisition.mjs",
+    "test:spear": "node --experimental-strip-types scripts/verifySpear.mjs",
+    "test:inventory-screen": "node --experimental-strip-types scripts/verifyInventoryScreen.mjs",
+    "test:backpack": "node --experimental-strip-types scripts/verifyBackpack.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

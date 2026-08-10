@@ -22,6 +22,7 @@ import { GroundLoot } from "../ground-loot/GroundLoot";
 import type { PlayerInventory } from "../inventory/PlayerInventory";
 import type { PlayerEquipment } from "../equipment/PlayerEquipment";
 import type { PlayerWeaponSlot } from "../equipment/PlayerWeaponSlot";
+import type { PlayerBackpackSlot } from "../equipment/PlayerBackpackSlot";
 import type { EquipmentSystem } from "../equipment/EquipmentSystem";
 import type { CraftingSystem } from "../crafting/CraftingSystem";
 import type { CombatTargetSystem } from "../combat/CombatTargetSystem";
@@ -85,6 +86,7 @@ export class DebugOverlay {
     private readonly equipment: PlayerEquipment,
     private readonly equipmentSystem: EquipmentSystem,
     private readonly weaponSlot: PlayerWeaponSlot,
+    private readonly backpackSlot: PlayerBackpackSlot,
     private readonly crafting: CraftingSystem,
     private readonly combatTargets: CombatTargetSystem,
     private readonly combat: MeleeCombatSystem,
@@ -225,7 +227,7 @@ export class DebugOverlay {
     this.combatAcquireRing.position.set(position.x, 0.07, position.z);
     this.combatAcquireRing.scaling.set(COMBAT_CONFIG.targetAcquisitionRange, 1, COMBAT_CONFIG.targetAcquisitionRange);
     this.combatHitRing.position.set(position.x, 0.075, position.z);
-    this.combatHitRing.scaling.set(COMBAT_CONFIG.meleeHitRange, 1, COMBAT_CONFIG.meleeHitRange);
+    this.combatHitRing.scaling.set(activeProfile.hitRange, 1, activeProfile.hitRange);
     if (nearestEnemy) {
       const ep = nearestEnemy.getCombatPosition();
       this.enemyAcquireRing.position.set(ep.x, 0.08, ep.z);
@@ -312,10 +314,18 @@ export class DebugOverlay {
       this.weaponSlot.isEmpty ? "attack source: Fists" : `durability: ${weaponDesc.durability}`,
       `damage: ${activeProfile.damage}`,
       `attack speed: ${activeProfile.attacksPerSecond}/sec`,
+      `hit range: ${activeProfile.hitRange.toFixed(2)}`,
       `active profile: ${activeProfile.source}`,
       "",
+      "BACKPACK",
+      `equipped: ${this.backpackSlot.isEmpty ? "none" : ITEM_REGISTRY.get(this.backpackSlot.current!.itemId).displayName}`,
+      `bonus slots: ${this.backpackSlot.extraSlots}`,
+      `active inventory capacity: ${this.inventory.slotCount}`,
+      `backpack occupied: ${this.backpackOccupiedCount()} / ${this.backpackSlot.extraSlots}`,
+      "",
       "INVENTORY",
-      `SLOTS ${this.inventory.occupiedSlotCount}/${this.inventory.slotCount}  empty ${this.inventory.emptySlotCount}`,
+      `SCREEN ${this.sources.isInventoryOpen() ? "open" : "closed"}`,
+      `SLOTS ${this.inventory.occupiedSlotCount}/${this.inventory.slotCount}  empty ${this.inventory.emptySlotCount}  ·  base pockets ${this.inventory.baseSlotCount}`,
       `PINE LOG ${this.inventory.totalQuantity("pine-log")}  ·  LIMESTONE ${this.inventory.totalQuantity("limestone")}`,
       `LAST INSERT ${this.inventory.lastInsertAccepted === null ? "none" : this.inventory.lastInsertAccepted ? "accepted" : "rejected"}`,
       `MAP ${invMap}`,
@@ -328,6 +338,7 @@ export class DebugOverlay {
       }),
       `TOTAL ARMOR ${armor}`,
       `LAST ${this.equipmentSystem.lastResult ? `${this.equipmentSystem.lastResult.operation} ${this.equipmentSystem.lastResult.accepted ? "ok" : this.equipmentSystem.lastResult.reason}` : "none"}`,
+      `WEAPON ${this.weaponSlot.isEmpty ? "empty" : weaponDesc.name}`,
       "",
       "CRAFTING",
       ...this.crafting.recipeRegistry.getAll().map((recipe) => {
@@ -339,7 +350,7 @@ export class DebugOverlay {
       "COMBAT",
       "(melee · separate from interaction)",
       `TARGET ${this.combatTargets.state.targetId ?? "none"}`,
-      `DIST ${Number.isFinite(this.combatTargets.state.distance) ? this.combatTargets.state.distance.toFixed(2) : "-"}  ·  hit ${COMBAT_CONFIG.meleeHitRange}  ·  acq ${COMBAT_CONFIG.targetAcquisitionRange}`,
+      `DIST ${Number.isFinite(this.combatTargets.state.distance) ? this.combatTargets.state.distance.toFixed(2) : "-"}  ·  hit ${activeProfile.hitRange.toFixed(2)}  ·  acq ${COMBAT_CONFIG.targetAcquisitionRange}`,
       `HP ${combatTarget ? `${combatTarget.health.currentHealth}/${combatTarget.health.maxHealth}` : "-"}  ·  ${combatTarget?.displayName ?? "-"}`,
       `STATE ${this.combat.state.toUpperCase()}  ·  LAST ${this.combat.lastAttackStatus ?? "none"}`,
       `SOURCE ${activeProfile.source}  ·  ${activeProfile.damage} dmg  ·  ${activeProfile.attacksPerSecond.toFixed(1)}/s`,
@@ -362,6 +373,14 @@ export class DebugOverlay {
       `QUALITY ${this.config.visual.qualityPreset.toUpperCase()}  ·  POST ${this.postProcessing.enabled ? "on" : "off"}`,
       `SHADOW PCF ${this.config.lighting.shadowSoftness.toFixed(0)}  ·  CONTACT ${this.config.visual.contactShadowIntensity.toFixed(2)}  ·  CLUTTER ${this.world.clutterCount}`,
     ].join("\n");
+  }
+
+  private backpackOccupiedCount(): number {
+    let count = 0;
+    for (let i = this.inventory.baseSlotCount; i < this.inventory.slotCount; i += 1) {
+      if (this.inventory.getSlot(i).stack) count += 1;
+    }
+    return count;
   }
 
   private makeWireMaterial(name: string, color: Color3): StandardMaterial {

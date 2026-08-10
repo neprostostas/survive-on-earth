@@ -8,9 +8,9 @@ import { ITEM_REGISTRY, createItemStack } from "../src/items/ItemSystem.ts";
 const stackAt = (inventory, index) => inventory.getSlot(index).stack;
 const count = (inventory, itemId) => inventory.totalQuantity(itemId);
 
-assert.equal(ITEM_REGISTRY.getAll().length, 8, "M08 item catalog must contain exactly eight definitions");
+assert.equal(ITEM_REGISTRY.getAll().length, 10, "M08 item catalog must contain exactly ten definitions");
 assert.deepEqual(ITEM_REGISTRY.getAll().map((definition) => definition.id), [
-  "pine-log", "limestone", "dad-hat", "shirt", "cargo-pants", "sneakers", "hatchet", "pickaxe",
+  "pine-log", "limestone", "dad-hat", "shirt", "cargo-pants", "sneakers", "hatchet", "pickaxe", "spear",
 ]);
 for (const [id, name] of [["hatchet", "Hatchet"], ["pickaxe", "Pickaxe"]]) {
   const definition = ITEM_REGISTRY.get(id);
@@ -24,9 +24,9 @@ for (const [id, name] of [["hatchet", "Hatchet"], ["pickaxe", "Pickaxe"]]) {
 }
 
 const recipes = CRAFTING_RECIPES.getAll();
-assert.equal(recipes.length, 2, "starter recipe registry must contain exactly two recipes");
+assert.equal(recipes.length, 3, "starter recipe registry must contain exactly three recipes");
 assert.equal(Object.isFrozen(recipes), true);
-assert.deepEqual(recipes.map((recipe) => recipe.id), ["hatchet", "pickaxe"]);
+assert.deepEqual(recipes.map((recipe) => recipe.id), ["hatchet", "pickaxe", "spear"]);
 for (const id of ["hatchet", "pickaxe"]) {
   const recipe = CRAFTING_RECIPES.get(id);
   assert.equal(recipe.id, id);
@@ -39,6 +39,11 @@ for (const id of ["hatchet", "pickaxe"]) {
   assert.equal(Object.isFrozen(recipe.output), true);
   assert.equal(Object.isFrozen(recipe.ingredients), true);
   assert.equal(Object.isFrozen(recipe.ingredients[0]), true);
+}
+{
+  const recipe = CRAFTING_RECIPES.get("spear");
+  assert.deepEqual(recipe.output, { itemId: "spear", quantity: 1, currentDurability: 100 });
+  assert.deepEqual(recipe.ingredients, [{ itemId: "pine-log", quantity: 3 }]);
 }
 assert.equal(CRAFTING_RECIPES.find("unknown"), null);
 
@@ -195,8 +200,13 @@ for (const forbidden of ["CraftingRecipe", "CraftingSystem", "CraftingPanel"]) {
   assert.equal(inventorySource.includes(forbidden), false, `PlayerInventory must not depend on ${forbidden}`);
 }
 assert.equal(panelSource.includes("ITEM_ICONS"), true, "Crafting UI must reuse shared icons");
-assert.equal(panelSource.includes("recipe.ingredients"), true, "Crafting UI must derive ingredient rows from production recipes");
 assert.equal(panelSource.includes("getRecipeState"), true, "Craft button state must come from CraftingSystem");
+assert.equal(
+  panelSource.includes("state.ingredients") || panelSource.includes("recipe.ingredients"),
+  true,
+  "Crafting UI must derive ingredient rows from production recipes",
+);
+assert.equal(panelSource.includes("crafting-cell") || panelSource.includes("crafting-grid"), true, "LDOE-style blueprint grid cells");
 assert.equal(panelSource.includes("Pine Log"), false, "ingredient names must not be hardcoded in UI");
 assert.equal(iconSource.includes("hatchet"), true);
 assert.equal(iconSource.includes("pickaxe"), true);

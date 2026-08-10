@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-extendedmagmod" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#141810"/>
+      <stop offset="100%" stop-color="#0a0c0a"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="72" fill="url(#g-extendedmagmod)" stroke="#6a7060" stroke-width="18"/>
+  <circle cx="400" cy="112" r="28" fill="#b0b8a0" opacity="0.55"/>
+  <g transform="translate(56,56) scale(0.78)"><path fill="#f4f0e6" d="M185.424 52.607L30.404 130.04l55.375 55.317 155.017-77.43-55.373-55.32zm141.152 0l-55.373 55.32 155.018 77.43 55.376-55.316-155.02-77.433zM256 120.45l-9 4.497v142.715l9 4.496 9-4.496V124.947l-9-4.496zM86.482 207.605l-57.59 71.917 139.545 77.45 72.358-72.286-154.313-77.08zm339.036 0l-154.313 77.08 72.358 72.287 139.544-77.45-57.59-71.916zM247 303.93l-75.436 75.36-78.562-43.6v44.058L247 456.67V303.93zm18 0v152.74l153.998-76.922v-44.06l-78.562 43.603L265 303.93z"/></g>
+</svg>

@@ -15,8 +15,8 @@ import { CRAFTING_RECIPES } from "../src/crafting/CraftingRecipeRegistry.ts";
 import { INVENTORY_CONFIG } from "../src/inventory/inventoryConfig.ts";
 import { RoamingZombie } from "../src/enemies/RoamingZombie.ts";
 
-assert.equal(ITEM_REGISTRY.getAll().length, 8);
-assert.equal(CRAFTING_RECIPES.getAll().length, 2);
+assert.equal(ITEM_REGISTRY.getAll().length, 10);
+assert.equal(CRAFTING_RECIPES.getAll().length, 3);
 assert.equal(INVENTORY_CONFIG.baseSlotCount, 10);
 assert.equal(EQUIPMENT_SLOT_IDS.length, 4);
 assert.deepEqual([...EQUIPMENT_SLOT_IDS], ["head", "torso", "legs", "feet"]);
@@ -50,7 +50,7 @@ function makeCombat(weaponSlot, targetPosition = { x: 0.8, y: 0, z: 0 }) {
     () => {},
     (impact) => {
       impacts.push(impact);
-      if (impact.profile.consumesDurability && (impact.profile.source === "hatchet" || impact.profile.source === "pickaxe")) {
+      if (impact.profile.consumesDurability) {
         weaponSlot.tryConsumeDurability(impact.profile.source, 1);
       }
     },

@@ -45,6 +45,18 @@ export class InputController {
     return this.keyboard.consumeAttack() || this.attackAction.consumePressed();
   }
 
+  /** Keyboard F and HUD Attack held — combat auto-chains when ready (game cadence, not OS repeat). */
+  get isAttackHeld(): boolean {
+    if (this.suppressed) return false;
+    return this.keyboard.isAttackHeld || this.attackAction.isHeld;
+  }
+
+  /** Hold Shift — 2× run while upright (blocked while input suppressed). */
+  get isSprintHeld(): boolean {
+    if (this.suppressed) return false;
+    return this.keyboard.isSprintHeld;
+  }
+
   setSuppressed(suppressed: boolean): void {
     if (this.suppressed === suppressed) return;
     this.suppressed = suppressed;

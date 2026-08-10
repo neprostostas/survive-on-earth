@@ -1,6 +1,6 @@
 import type { ItemId } from "../items/ItemId";
 import { ITEM_REGISTRY, cloneItemStack, createItemStack, mergeItemStacks, type ItemStack } from "../items/ItemSystem.ts";
-import { INVENTORY_CONFIG } from "./inventoryConfig.ts";
+import { INVENTORY_CONFIG, inventoryStorageLength } from "./inventoryConfig.ts";
 
 export interface InventorySlot {
   readonly index: number;
@@ -36,14 +36,21 @@ export interface DurabilityConsumeResult {
 }
 
 export type InventoryChangeListener = (result: InventoryInsertResult) => void;
+export type InventoryCapacityListener = (activeSlotCount: number) => void;
 
 const REJECTED_INSERT: InventoryInsertResult = Object.freeze({ accepted: false, changedSlotIndexes: Object.freeze([]) });
+
+function assertPlanLength(current: readonly (ItemStack | null)[]): void {
+  if (current.length < INVENTORY_CONFIG.baseSlotCount || current.length > inventoryStorageLength()) {
+    throw new RangeError(`Inventory plan length ${current.length} out of allowed range`);
+  }
+}
 
 export function planInventoryInsertion(
   current: readonly (ItemStack | null)[],
   incoming: ItemStack,
 ): readonly (ItemStack | null)[] | null {
-  if (current.length !== INVENTORY_CONFIG.baseSlotCount) throw new RangeError(`Inventory plan requires ${INVENTORY_CONFIG.baseSlotCount} slots`);
+  assertPlanLength(current);
   cloneItemStack(incoming);
   const planned = [...current];
   let remainder: ItemStack | null = cloneItemStack(incoming);
@@ -81,7 +88,7 @@ export function planInventoryInsertionPartial(
   current: readonly (ItemStack | null)[],
   incoming: ItemStack,
 ): PartialInventoryInsertPlan {
-  if (current.length !== INVENTORY_CONFIG.baseSlotCount) throw new RangeError(`Inventory plan requires ${INVENTORY_CONFIG.baseSlotCount} slots`);
+  assertPlanLength(current);
   cloneItemStack(incoming);
   const planned = [...current];
   let remaining = incoming.quantity;
@@ -131,7 +138,7 @@ export function planConsumeAndInsert(
   requirements: readonly InventoryItemRequirement[],
   output: ItemStack,
 ): InventoryTransactionPlan {
-  if (current.length !== INVENTORY_CONFIG.baseSlotCount) throw new RangeError(`Inventory plan requires ${INVENTORY_CONFIG.baseSlotCount} slots`);
+  assertPlanLength(current);
   cloneItemStack(output);
   const totals = new Map<ItemId, number>();
   for (const requirement of requirements) {
@@ -176,37 +183,153 @@ export interface InventoryPartialInsertResult {
   readonly changedSlotIndexes: readonly number[];
 }
 
+/**
+ * Single carried inventory: permanent POCKETS (0..base-1) + optional backpack extra slots.
+ * Active capacity is derived externally (BackpackEquipSystem) via setExtraSlotCount.
+ */
 export class PlayerInventory {
-  private readonly stacks: Array<ItemStack | null> = Array.from({ length: INVENTORY_CONFIG.baseSlotCount }, () => null);
+  private readonly stacks: Array<ItemStack | null> = Array.from({ length: inventoryStorageLength() }, () => null);
+  private extraSlotCount = 0;
   private readonly listeners = new Set<InventoryChangeListener>();
+  private readonly capacityListeners = new Set<InventoryCapacityListener>();
   private lastAccepted: boolean | null = null;
 
-  get slotCount(): number { return INVENTORY_CONFIG.baseSlotCount; }
-  get occupiedSlotCount(): number { return this.stacks.reduce((count, stack) => count + Number(stack !== null), 0); }
+  get baseSlotCount(): number { return INVENTORY_CONFIG.baseSlotCount; }
+  get extraSlots(): number { return this.extraSlotCount; }
+  /** Active inventory capacity: base pockets + backpack bonus. */
+  get slotCount(): number { return INVENTORY_CONFIG.baseSlotCount + this.extraSlotCount; }
+  get occupiedSlotCount(): number {
+    let count = 0;
+    for (let i = 0; i < this.slotCount; i += 1) {
+      if (this.stacks[i] !== null) count += 1;
+    }
+    return count;
+  }
   get emptySlotCount(): number { return this.slotCount - this.occupiedSlotCount; }
   get lastInsertAccepted(): boolean | null { return this.lastAccepted; }
 
+  isBasePocketIndex(index: number): boolean {
+    return Number.isInteger(index) && index >= 0 && index < INVENTORY_CONFIG.baseSlotCount;
+  }
+
+  isBackpackStorageIndex(index: number): boolean {
+    return Number.isInteger(index) && index >= INVENTORY_CONFIG.baseSlotCount && index < this.slotCount;
+  }
+
+  /** True when every active backpack-storage slot (base..slotCount-1) is empty. */
+  areBackpackStorageSlotsEmpty(): boolean {
+    for (let i = INVENTORY_CONFIG.baseSlotCount; i < this.slotCount; i += 1) {
+      if (this.stacks[i] !== null) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Expand / shrink active capacity. Shrink requires empty backpack-storage slots.
+   * Does not read backpack domain — caller supplies extra from metadata.
+   */
+  setExtraSlotCount(extra: number): boolean {
+    if (!Number.isInteger(extra) || extra < 0 || extra > INVENTORY_CONFIG.reservedExtraSlotCapacity) {
+      return false;
+    }
+    const nextActive = INVENTORY_CONFIG.baseSlotCount + extra;
+    if (extra < this.extraSlotCount) {
+      for (let i = nextActive; i < this.slotCount; i += 1) {
+        if (this.stacks[i] !== null) return false;
+      }
+    }
+    if (this.extraSlotCount === extra) return true;
+    this.extraSlotCount = extra;
+    for (const listener of this.capacityListeners) listener(this.slotCount);
+    return true;
+  }
+
+  /** Wipe every reserved storage cell and reset backpack extra capacity (save load / new game). */
+  clearAllStorage(): void {
+    for (let i = 0; i < this.stacks.length; i += 1) this.stacks[i] = null;
+    if (this.extraSlotCount !== 0) {
+      this.extraSlotCount = 0;
+      for (const listener of this.capacityListeners) listener(this.slotCount);
+    }
+    this.lastAccepted = null;
+    const result = Object.freeze({ accepted: true, changedSlotIndexes: Object.freeze([]) as readonly number[] });
+    for (const listener of this.listeners) listener(result);
+  }
+
+  /**
+   * Deterministic save restore: place stacks at exact indices after capacity is set.
+   * Overflows that no longer fit try-insert into remaining free cells.
+   */
+  restoreSlots(slots: readonly { readonly index: number; readonly stack: ItemStack }[], extra: number): void {
+    this.clearAllStorage();
+    this.setExtraSlotCount(extra);
+    const overflow: ItemStack[] = [];
+    for (const entry of slots) {
+      const { index, stack } = entry;
+      if (!Number.isInteger(index) || index < 0 || index >= this.slotCount || this.stacks[index] !== null) {
+        overflow.push(stack);
+        continue;
+      }
+      this.stacks[index] = stack;
+    }
+    for (const stack of overflow) this.tryInsert(stack);
+    const result = Object.freeze({ accepted: true, changedSlotIndexes: Object.freeze([]) as readonly number[] });
+    for (const listener of this.listeners) listener(result);
+  }
+
   getSlots(): readonly InventorySlot[] {
-    return Object.freeze(this.stacks.map((stack, index) => Object.freeze({ index, stack })));
+    const slots: InventorySlot[] = [];
+    for (let index = 0; index < this.slotCount; index += 1) {
+      slots.push(Object.freeze({ index, stack: this.stacks[index] ?? null }));
+    }
+    return Object.freeze(slots);
   }
 
   getSlot(index: number): InventorySlot {
-    if (!Number.isInteger(index) || index < 0 || index >= this.slotCount) throw new RangeError(`Invalid inventory slot index: ${index}`);
+    if (!Number.isInteger(index) || index < 0 || index >= this.slotCount) {
+      throw new RangeError(`Invalid inventory slot index: ${index}`);
+    }
     return Object.freeze({ index, stack: this.stacks[index] ?? null });
   }
 
-  canInsert(incoming: ItemStack): boolean { return planInventoryInsertion(this.stacks, incoming) !== null; }
+  private activeView(): (ItemStack | null)[] {
+    return this.stacks.slice(0, this.slotCount);
+  }
+
+  canInsert(incoming: ItemStack): boolean { return planInventoryInsertion(this.activeView(), incoming) !== null; }
 
   tryInsert(incoming: ItemStack): InventoryInsertResult {
-    const plan = planInventoryInsertion(this.stacks, incoming);
+    const plan = planInventoryInsertion(this.activeView(), incoming);
+    if (!plan) {
+      this.lastAccepted = false;
+      return REJECTED_INSERT;
+    }
+    return this.applyPlan(plan, true);
+  }
+
+  /**
+   * Unequip destination: insert only into permanent POCKETS (0..base-1).
+   * Prevents placing the bag into backpack-storage that will shut down next.
+   * Preserves stack identity when placing into an empty pocket as the whole stack.
+   */
+  tryInsertIntoBasePockets(incoming: ItemStack): InventoryInsertResult {
+    const baseView = this.stacks.slice(0, INVENTORY_CONFIG.baseSlotCount);
+    const plan = planInventoryInsertion(baseView, incoming);
     if (!plan) {
       this.lastAccepted = false;
       return REJECTED_INSERT;
     }
     const changedSlotIndexes: number[] = [];
-    for (let index = 0; index < this.slotCount; index += 1) {
+    for (let index = 0; index < INVENTORY_CONFIG.baseSlotCount; index += 1) {
       if (plan[index] === this.stacks[index]) continue;
-      this.stacks[index] = plan[index] ?? null;
+      // Prefer original reference when slot was empty and plan is a full matching stack.
+      if (this.stacks[index] === null && plan[index] && plan[index]!.itemId === incoming.itemId
+        && plan[index]!.quantity === incoming.quantity
+        && plan[index]!.currentDurability === incoming.currentDurability) {
+        this.stacks[index] = incoming;
+      } else {
+        this.stacks[index] = plan[index] ?? null;
+      }
       changedSlotIndexes.push(index);
     }
     this.lastAccepted = true;
@@ -220,7 +343,7 @@ export class PlayerInventory {
    * Manual ground pickup must keep using tryInsert (full stack or nothing).
    */
   tryInsertAvailable(incoming: ItemStack): InventoryPartialInsertResult {
-    const plan = planInventoryInsertionPartial(this.stacks, incoming);
+    const plan = planInventoryInsertionPartial(this.activeView(), incoming);
     if (plan.insertedQuantity === 0) {
       this.lastAccepted = false;
       return Object.freeze({ insertedQuantity: 0, overflowQuantity: plan.overflowQuantity, changedSlotIndexes: Object.freeze([]) });
@@ -242,24 +365,16 @@ export class PlayerInventory {
   }
 
   previewConsumeAndInsert(requirements: readonly InventoryItemRequirement[], output: ItemStack): InventoryTransactionPlan {
-    return planConsumeAndInsert(this.stacks, requirements, output);
+    return planConsumeAndInsert(this.activeView(), requirements, output);
   }
 
   tryConsumeAndInsert(requirements: readonly InventoryItemRequirement[], output: ItemStack): InventoryTransactionPlan {
-    const plan = planConsumeAndInsert(this.stacks, requirements, output);
+    const plan = planConsumeAndInsert(this.activeView(), requirements, output);
     if (!plan.accepted || !plan.slots) {
       this.lastAccepted = false;
       return plan;
     }
-    const changedSlotIndexes: number[] = [];
-    for (let index = 0; index < this.slotCount; index += 1) {
-      if (plan.slots[index] === this.stacks[index]) continue;
-      this.stacks[index] = plan.slots[index] ?? null;
-      changedSlotIndexes.push(index);
-    }
-    this.lastAccepted = true;
-    const change = Object.freeze({ accepted: true, changedSlotIndexes: Object.freeze(changedSlotIndexes) });
-    for (const listener of this.listeners) listener(change);
+    this.applyPlan(plan.slots, true);
     return plan;
   }
 
@@ -316,14 +431,102 @@ export class PlayerInventory {
     return true;
   }
 
+  /** Place whole stack into an empty slot (unequip / rearrange target). Preserves identity. */
+  placeIntoEmptySlot(index: number, stack: ItemStack): boolean {
+    if (!Number.isInteger(index) || index < 0 || index >= this.slotCount) {
+      throw new RangeError(`Invalid inventory slot index: ${index}`);
+    }
+    if (this.stacks[index] !== null) return false;
+    cloneItemStack(stack);
+    this.stacks[index] = stack;
+    const result = Object.freeze({ accepted: true, changedSlotIndexes: Object.freeze([index]) });
+    for (const listener of this.listeners) listener(result);
+    return true;
+  }
+
+  /**
+   * Reorder: swap two inventory slots. Same-type non-durable stacks merge into the target.
+   */
+  rearrangeSlots(fromIndex: number, toIndex: number): InventoryInsertResult {
+    if (!Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex >= this.slotCount) {
+      throw new RangeError(`Invalid inventory slot index: ${fromIndex}`);
+    }
+    if (!Number.isInteger(toIndex) || toIndex < 0 || toIndex >= this.slotCount) {
+      throw new RangeError(`Invalid inventory slot index: ${toIndex}`);
+    }
+    if (fromIndex === toIndex) return REJECTED_INSERT;
+    const from = this.stacks[fromIndex];
+    if (!from) return REJECTED_INSERT;
+    const to = this.stacks[toIndex];
+    if (!to) {
+      this.stacks[toIndex] = from;
+      this.stacks[fromIndex] = null;
+    } else if (
+      from.itemId === to.itemId
+      && from.currentDurability === undefined
+      && to.currentDurability === undefined
+    ) {
+      const merged = mergeItemStacks(to, from);
+      this.stacks[toIndex] = merged.stack;
+      this.stacks[fromIndex] = merged.remainder;
+    } else {
+      this.stacks[fromIndex] = to;
+      this.stacks[toIndex] = from;
+    }
+    this.lastAccepted = true;
+    const result = Object.freeze({
+      accepted: true,
+      changedSlotIndexes: Object.freeze([fromIndex, toIndex]),
+    });
+    for (const listener of this.listeners) listener(result);
+    return result;
+  }
+
   totalQuantity(itemId: ItemId): number {
-    return this.stacks.reduce((total, stack) => total + (stack?.itemId === itemId ? stack.quantity : 0), 0);
+    let total = 0;
+    for (let i = 0; i < this.slotCount; i += 1) {
+      const stack = this.stacks[i];
+      if (stack?.itemId === itemId) total += stack.quantity;
+    }
+    return total;
+  }
+
+  /** Split non-durable stack: leave remainder, insert new stack with take quantity. */
+  trySplitStack(index: number, takeQuantity: number): boolean {
+    const stack = this.getSlot(index).stack;
+    if (!stack || stack.currentDurability !== undefined) return false;
+    if (!Number.isInteger(takeQuantity) || takeQuantity < 1 || takeQuantity >= stack.quantity) return false;
+    const leave = stack.quantity - takeQuantity;
+    const moved = createItemStack(stack.itemId, takeQuantity);
+    if (!this.canInsert(moved)) return false;
+    this.stacks[index] = createItemStack(stack.itemId, leave);
+    const insert = this.tryInsert(moved);
+    if (!insert.accepted) {
+      this.stacks[index] = stack;
+      return false;
+    }
+    const change = Object.freeze({
+      accepted: true,
+      changedSlotIndexes: Object.freeze([index, ...insert.changedSlotIndexes]),
+    });
+    for (const listener of this.listeners) listener(change);
+    return true;
+  }
+
+  tryDeleteStack(index: number, expected?: ItemStack): boolean {
+    const stack = this.getSlot(index).stack;
+    if (!stack) return false;
+    if (expected && stack !== expected) return false;
+    this.stacks[index] = null;
+    const change = Object.freeze({ accepted: true, changedSlotIndexes: Object.freeze([index]) });
+    for (const listener of this.listeners) listener(change);
+    return true;
   }
 
   /** Lowest occupied slot index holding the item, or null. Deterministic ascending scan. */
   findFirstSlotByItemId(itemId: ItemId): number | null {
     ITEM_REGISTRY.get(itemId);
-    for (let index = 0; index < this.stacks.length; index += 1) {
+    for (let index = 0; index < this.slotCount; index += 1) {
       if (this.stacks[index]?.itemId === itemId) return index;
     }
     return null;
@@ -332,5 +535,23 @@ export class PlayerInventory {
   subscribe(listener: InventoryChangeListener): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
+  }
+
+  subscribeCapacity(listener: InventoryCapacityListener): () => void {
+    this.capacityListeners.add(listener);
+    return () => { this.capacityListeners.delete(listener); };
+  }
+
+  private applyPlan(plan: readonly (ItemStack | null)[], accepted: boolean): InventoryInsertResult {
+    const changedSlotIndexes: number[] = [];
+    for (let index = 0; index < this.slotCount; index += 1) {
+      if (plan[index] === this.stacks[index]) continue;
+      this.stacks[index] = plan[index] ?? null;
+      changedSlotIndexes.push(index);
+    }
+    this.lastAccepted = accepted;
+    const result = Object.freeze({ accepted, changedSlotIndexes: Object.freeze(changedSlotIndexes) });
+    for (const listener of this.listeners) listener(result);
+    return result;
   }
 }

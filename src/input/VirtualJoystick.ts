@@ -6,6 +6,11 @@ export class VirtualJoystick {
   private readonly keyboardVisual = Vector2.Zero();
   private readonly knob: HTMLElement;
   private enabled = true;
+  private cachedRadius = 28;
+  private boundsLeft = 0;
+  private boundsTop = 0;
+  private boundsW = 1;
+  private boundsH = 1;
 
   constructor(private readonly element: HTMLElement, private readonly deadZone: number) {
     const knob = element.querySelector<HTMLElement>(".joystick-knob");
@@ -15,6 +20,8 @@ export class VirtualJoystick {
     window.addEventListener("pointermove", this.onPointerMove);
     window.addEventListener("pointerup", this.onPointerUp);
     window.addEventListener("pointercancel", this.onPointerUp);
+    window.addEventListener("resize", this.refreshMetrics);
+    this.refreshMetrics();
   }
 
   getVector(): Vector2 { return this.value.clone(); }
@@ -42,6 +49,26 @@ export class VirtualJoystick {
     window.removeEventListener("pointermove", this.onPointerMove);
     window.removeEventListener("pointerup", this.onPointerUp);
     window.removeEventListener("pointercancel", this.onPointerUp);
+    window.removeEventListener("resize", this.refreshMetrics);
+  }
+
+  private readonly refreshMetrics = (): void => {
+    const w = this.element.clientWidth;
+    const h = this.element.clientHeight;
+    if (w > 0) {
+      this.boundsW = w;
+      this.boundsH = h > 0 ? h : w;
+      this.cachedRadius = w * 0.28;
+    }
+  };
+
+  private captureBounds(): void {
+    const bounds = this.element.getBoundingClientRect();
+    this.boundsLeft = bounds.left;
+    this.boundsTop = bounds.top;
+    this.boundsW = bounds.width;
+    this.boundsH = bounds.height;
+    this.cachedRadius = bounds.width * 0.28;
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
@@ -50,6 +77,7 @@ export class VirtualJoystick {
     this.pointerId = event.pointerId;
     this.element.classList.add("pointer-active");
     this.element.setPointerCapture(event.pointerId);
+    this.captureBounds();
     this.update(event);
   };
 
@@ -68,10 +96,9 @@ export class VirtualJoystick {
 
   private update(event: PointerEvent): void {
     event.preventDefault();
-    const bounds = this.element.getBoundingClientRect();
-    const radius = bounds.width * 0.34;
-    const dx = event.clientX - (bounds.left + bounds.width / 2);
-    const dy = event.clientY - (bounds.top + bounds.height / 2);
+    const radius = this.cachedRadius || 28;
+    const dx = event.clientX - (this.boundsLeft + this.boundsW / 2);
+    const dy = event.clientY - (this.boundsTop + this.boundsH / 2);
     const raw = new Vector2(dx / radius, -dy / radius);
     const length = raw.length();
     if (length > 1) raw.scaleInPlace(1 / length);
@@ -80,7 +107,8 @@ export class VirtualJoystick {
     if (this.keyboardVisual.lengthSquared() < 0.001) this.renderKnob(raw, radius);
   }
 
-  private renderKnob(vector: Vector2, radius = this.element.getBoundingClientRect().width * 0.34): void {
-    this.knob.style.transform = `translate3d(${vector.x * radius}px, ${-vector.y * radius}px, 0)`;
+  private renderKnob(vector: Vector2, radius = this.cachedRadius): void {
+    // Knob anchors at center; offset in CSS pixels (positive y = up in input, negative screen Y).
+    this.knob.style.transform = `translate(calc(-50% + ${vector.x * radius}px), calc(-50% + ${-vector.y * radius}px))`;
   }
 }

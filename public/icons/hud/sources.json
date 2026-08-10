@@ -1,0 +1,17 @@
+{
+  "sneak": "delapouite/person",
+  "blueprints": "lorc/scroll-unfurled",
+  "inventory": "delapouite/backpack",
+  "interact": "lorc/palm",
+  "hatchet": "lorc/wood-axe",
+  "pickaxe": "lorc/mining",
+  "build": "delapouite/brick-wall",
+  "quick1": "lorc/potion-ball",
+  "quick2": "lorc/potion-ball",
+  "map": "delapouite/open-folder",
+  "attack": "lorc/crossed-swords",
+  "hunger": "lorc/knife-fork",
+  "thirst": "lorc/water-drop",
+  "energy": "lorc/lightning-trio",
+  "profile": "delapouite/person"
+}

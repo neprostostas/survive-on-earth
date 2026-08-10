@@ -63,6 +63,24 @@ export class WeaponEquipSystem {
     return this.result(accepted, "unequip", null, accepted ? null : "inventory-full");
   }
 
+  /** Drop weapon onto a specific inventory cell (empty place or swap with another weapon). */
+  unequipToInventorySlot(inventorySlot: number, expected?: ItemStack): WeaponTransferResult {
+    const current = this.weaponSlot.current;
+    if (!current) return this.result(false, "unequip", null, "empty-source");
+    if (expected && current !== expected) return this.result(false, "unequip", inventorySlot, "stale-source");
+    const dest = this.inventory.getSlot(inventorySlot).stack;
+    if (!dest) {
+      this.beforeTransfer();
+      const accepted = this.weaponSlot.unequipIfAccepted(current, (stack) => this.inventory.placeIntoEmptySlot(inventorySlot, stack));
+      return this.result(accepted, "unequip", inventorySlot, accepted ? null : "inventory-full");
+    }
+    // Occupied: only swap when destination is also a weapon (equip path handles exchange).
+    if (isWeaponCapableItemId(dest.itemId) && ITEM_REGISTRY.get(dest.itemId).meleeCombat) {
+      return this.equipFromInventory(inventorySlot, dest);
+    }
+    return this.result(false, "unequip", inventorySlot, "not-weapon");
+  }
+
   private result(
     accepted: boolean,
     operation: WeaponOperation,

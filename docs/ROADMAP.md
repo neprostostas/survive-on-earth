@@ -17,19 +17,21 @@ F1. LDOE Fidelity Audit & Alignment — implemented; F3 manual reference alignme
 13. Harvesting Tool Durability & Breakage — complete
 14. Active Weapon Slot + Hatchet / Pickaxe Melee Combat — complete
 15. Starter Ground Resources + Direct Harvest-to-Inventory — complete
-16. Expanded Enemy AI
-17. Player Death
-18. Base Building
-19. Containers
-20. Workbenches
-21. Home Base
-22. World Map
-23. Resource Locations
-24. Location Reset / Generation
-25. Save System
-26. Audio
-27. VFX / Game Feel
-28. UI Polish
-29. Balancing
+16. Spear / First Dedicated Melee Weapon — complete
+17. LDOE-style Inventory / Character Equipment Screen — complete
+18. Expanded Enemy AI
+19. Player Death
+20. Base Building
+21. Containers
+22. Workbenches
+23. Home Base
+24. World Map
+25. Resource Locations
+26. Location Reset / Generation
+27. Save System
+28. Audio
+29. VFX / Game Feel
+30. UI Polish
+31. Balancing
 
-Milestone 15 is complete. The next existing roadmap entry is Milestone 16 — Expanded Enemy AI; it has not been started.
+Milestone 17 is complete for the production path; browser visual review must accompany any full acceptance of the LDOE inventory presentation. The next roadmap entry is Expanded Enemy AI; it has not been started.

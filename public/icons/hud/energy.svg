@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="hud-energy" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#121808"/>
+      <stop offset="100%" stop-color="#0a0c0a"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="236" fill="url(#hud-energy)" stroke="#c0d060" stroke-width="20"/>
+  <circle cx="360" cy="148" r="26" fill="#e0f080" opacity="0.5"/>
+  <g transform="translate(56,56) scale(0.78)"><path fill="#f4f0e6" d="m292.53 20.5l19 40.594L66.314 28.75L362.03 158.125l-18.967-40.594l149.218 15.282zm-252 23.375L318.314 413.97L312.906 348l184.97 146.5L294 186.656l5.406 65.97zM20.907 76.22l36.5 316.405L83.03 351.75l68.095 139.344l-9.594-241.125l-25.624 40.843l-95-214.594z"/></g>
+</svg>

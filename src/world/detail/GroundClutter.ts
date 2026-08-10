@@ -16,6 +16,7 @@ export class GroundClutter {
   private readonly batches: ClutterBatch[] = [];
   private lastDensity = Number.NaN;
   private lastPreset = "";
+  private themeDensityMul = 1;
   count = 0;
 
   constructor(scene: Scene, materials: WorldMaterials, private readonly config: CalibrationConfig) {
@@ -31,11 +32,20 @@ export class GroundClutter {
     const twig = MeshBuilder.CreateBox("TwigSource", { width: 0.34, height: 0.035, depth: 0.045 }, scene);
     twig.material = materials.trunk;
 
+    const weed = MeshBuilder.CreateCylinder("WeedSource", { height: 0.16, diameterTop: 0.02, diameterBottom: 0.14, tessellation: 4 }, scene);
+    weed.material = materials.bush;
+    const flower = MeshBuilder.CreateSphere("FlowerSource", { diameter: 0.1, segments: 5 }, scene);
+    flower.material = materials.foliage[0] ?? materials.bush;
+    const leafLitter = MeshBuilder.CreateBox("LeafLitterSource", { width: 0.22, height: 0.02, depth: 0.14 }, scene);
+    leafLitter.material = materials.pineNeedles;
     this.batches.push(
-      this.batch(grass, 180, 401, 0.7, 1.35, 0.12),
-      this.batch(dryGrass, 72, 773, 0.7, 1.25, 0.095),
-      this.batch(pebble, 74, 991, 0.65, 1.55, 0.055),
-      this.batch(twig, 42, 1337, 0.75, 1.35, 0.035),
+      this.batch(grass, 280, 401, 0.7, 1.45, 0.12),
+      this.batch(dryGrass, 140, 773, 0.65, 1.35, 0.095),
+      this.batch(pebble, 120, 991, 0.55, 1.65, 0.055),
+      this.batch(twig, 70, 1337, 0.7, 1.4, 0.035),
+      this.batch(weed, 90, 1601, 0.7, 1.3, 0.08),
+      this.batch(flower, 48, 1889, 0.8, 1.2, 0.06),
+      this.batch(leafLitter, 60, 2113, 0.7, 1.5, 0.02),
     );
     for (const batch of this.batches) {
       batch.mesh.isPickable = false;
@@ -48,14 +58,24 @@ export class GroundClutter {
     this.applyCalibration();
   }
 
+  setThemeDensity(mul: number): void {
+    this.themeDensityMul = Math.max(0.05, Math.min(2, mul));
+    this.lastDensity = Number.NaN;
+    this.applyCalibration();
+  }
+
   applyCalibration(): void {
-    const density = this.config.visual.clutterDensity;
+    const density = this.config.visual.clutterDensity * this.themeDensityMul;
     const preset = this.config.visual.qualityPreset;
     if (Math.abs(density - this.lastDensity) < 0.001 && preset === this.lastPreset) return;
     const multiplier = getVisualQualitySettings(preset).detailMultiplier;
     this.count = 0;
     for (const batch of this.batches) {
-      const count = Math.max(1, Math.min(batch.maxCount, Math.round(batch.maxCount * density * multiplier)));
+      const count = Math.max(0, Math.min(batch.maxCount, Math.round(batch.maxCount * density * multiplier)));
+      if (count < 1) {
+        batch.mesh.thinInstanceSetBuffer("matrix", new Float32Array(0), 16, true);
+        continue;
+      }
       batch.mesh.thinInstanceSetBuffer("matrix", batch.matrices.slice(0, count * 16), 16, true);
       this.count += count;
     }

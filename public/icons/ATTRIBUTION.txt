@@ -1,0 +1,4 @@
+Item icons based on Game Icons (https://game-icons.net), CC BY 3.0.
+Authors: badges, caro-asercion, darkzaitzev, delapouite, faithtoken, john-colburn, lorc, lucasms, quoting, sbed, skoll.
+Recolored into a unified Survive on Earth tile style.
+Original: https://github.com/game-icons/icons

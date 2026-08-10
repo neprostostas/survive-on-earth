@@ -1,4 +1,3 @@
-import { COMBAT_CONFIG } from "./combatConfig.ts";
 import { combatDistanceSquared, type CombatPoint, type CombatTarget } from "./CombatTarget.ts";
 import type { DamageResult } from "./HealthPool.ts";
 import type { CombatTargetSystem } from "./CombatTargetSystem.ts";
@@ -53,7 +52,7 @@ export class MeleeCombatSystem {
   }
 
   get state(): AttackState { return !this.locked ? "ready" : this.impacted ? "recovery" : "attacking"; }
-  get movementCommitted(): boolean { return this.locked !== null && !this.impacted; }
+  get movementCommitted(): boolean { return this.locked !== null; }
   get lockedTarget(): CombatTarget | null { return this.locked; }
   get lastAttackStatus(): AttackRequestStatus | null { return this.lastStatus; }
   get impactCount(): number { return this.impacts; }
@@ -75,9 +74,10 @@ export class MeleeCombatSystem {
     if (this.locked) return this.setStatus("cooldown");
     const target = this.targets.current;
     if (!target || !target.isCombatAlive() || !this.targets.isRegistered(target)) return this.setStatus("no-target");
-    if (!this.inHitRange(target)) return this.setStatus("out-of-range");
+    const profile = this.resolveProfile();
+    if (!this.inHitRange(target, profile.hitRange)) return this.setStatus("out-of-range");
     this.beforeAttack();
-    this.swingProfile = this.resolveProfile();
+    this.swingProfile = profile;
     this.locked = target;
     this.elapsed = 0;
     this.impacted = false;
@@ -91,13 +91,17 @@ export class MeleeCombatSystem {
   update(delta: number): void {
     if (!this.locked || delta <= 0) return;
     const profile = this.swingProfile;
+    // Keep facing the locked target every frame (enemies move; one-shot face can lag).
+    if (this.locked.isCombatAlive() && this.targets.isRegistered(this.locked)) {
+      this.player.faceCombatTarget(this.locked.getCombatPosition());
+    }
     this.elapsed = Math.min(profile.cycleDuration, this.elapsed + delta);
     const progress = this.elapsed / profile.cycleDuration;
     this.player.applyMeleeAttackPose(progress, profile, this.fist);
     if (!this.impacted && progress >= profile.impactNormalizedTime) {
       this.impacted = true;
       const target = this.locked;
-      if (target.isCombatAlive() && this.targets.isRegistered(target) && this.inHitRange(target)) {
+      if (target.isCombatAlive() && this.targets.isRegistered(target) && this.inHitRange(target, profile.hitRange)) {
         const damage = target.receiveDamage(profile.damage);
         if (damage.applied > 0) {
           this.impacts += 1;
@@ -108,8 +112,8 @@ export class MeleeCombatSystem {
     if (this.elapsed >= profile.cycleDuration) this.finishAttack();
   }
 
-  private inHitRange(target: CombatTarget): boolean {
-    return combatDistanceSquared(this.player.getCombatPosition(), target.getCombatPosition()) <= COMBAT_CONFIG.meleeHitRange ** 2;
+  private inHitRange(target: CombatTarget, hitRange: number): boolean {
+    return combatDistanceSquared(this.player.getCombatPosition(), target.getCombatPosition()) <= hitRange ** 2;
   }
 
   private finishAttack(): void {

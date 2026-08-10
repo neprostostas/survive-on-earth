@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-rootvegetable" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="hsl(218 30% 12%)"/>
+      <stop offset="100%" stop-color="#0a0c0a"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="72" fill="url(#g-rootvegetable)" stroke="hsl(218 48% 52%)" stroke-width="18"/>
+  <circle cx="400" cy="112" r="28" fill="hsl(218 55% 70%)" opacity="0.55"/>
+  <g transform="translate(56,56) scale(0.78)"><path fill="#f4f0e6" d="M41 265v30h430v-30H41zm39 48v158.066h32V313H80zm320 0v158.066h32V313h-32z"/></g>
+</svg>

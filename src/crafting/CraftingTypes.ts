@@ -1,7 +1,10 @@
 import type { ItemId } from "../items/ItemId";
 import type { ItemStack } from "../items/ItemSystem";
 
-export type CraftingRecipeId = "hatchet" | "pickaxe";
+/** Recipe ids expand freely; keep as string union of known + legacy recipes. */
+export type CraftingRecipeId = string;
+
+export type CraftingCategory = "all" | "weapons" | "tools" | "armor" | "survival" | "building" | "materials";
 
 export interface CraftingIngredient {
   readonly itemId: ItemId;
@@ -12,6 +15,7 @@ export interface CraftingRecipeDefinition {
   readonly id: CraftingRecipeId;
   readonly output: ItemStack;
   readonly ingredients: readonly CraftingIngredient[];
+  readonly category?: CraftingCategory;
 }
 
 export type CraftStatus = "crafted" | "not-enough-resources" | "inventory-full" | "invalid-recipe";

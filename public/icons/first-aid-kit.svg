@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-firstaidkit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#241010"/>
+      <stop offset="100%" stop-color="#0a0c0a"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="72" fill="url(#g-firstaidkit)" stroke="#e07070" stroke-width="18"/>
+  <circle cx="400" cy="112" r="28" fill="#f0a0a0" opacity="0.55"/>
+  <g transform="translate(56,56) scale(0.78)"><path fill="#f4f0e6" d="M76 46c-33.24 0-60 26.76-60 60v300c0 33.24 26.76 60 60 60h360c33.24 0 60-26.76 60-60V106c0-33.24-26.76-60-60-60zm120 60h120v90h90v120h-90v90H196v-90h-90V196h90z"/></g>
+</svg>

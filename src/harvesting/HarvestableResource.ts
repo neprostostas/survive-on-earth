@@ -8,6 +8,8 @@ export interface ResourceYield { readonly itemId: ItemId; readonly quantity: num
 export const HARVESTING_RESOURCES: Record<HarvestResourceKind, { requiredTool: HarvestTool; totalHits: number; yield: ResourceYield }> = {
   "pine-tree": { requiredTool: "hatchet", totalHits: 4, yield: Object.freeze({ itemId: "pine-log", quantity: 3 }) },
   "limestone-rock": { requiredTool: "pickaxe", totalHits: 5, yield: Object.freeze({ itemId: "limestone", quantity: 3 }) },
+  "fiber-plant": { requiredTool: "hand", totalHits: 2, yield: Object.freeze({ itemId: "plant-fiber", quantity: 2 }) },
+  "berry-bush": { requiredTool: "hand", totalHits: 1, yield: Object.freeze({ itemId: "berries", quantity: 3 }) },
 };
 
 export interface HarvestableVisual {

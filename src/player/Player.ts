@@ -5,7 +5,9 @@ import type { CollisionWorld } from "../collision/CollisionWorld";
 import { PlayerAnimator } from "./PlayerAnimator";
 import { PlayerMovement } from "./PlayerMovement";
 import { PlayerVisual } from "./PlayerVisual";
+import { CHARACTER_PROFILE } from "./CharacterProfile";
 import type { HarvestPhase, HarvestTool } from "../harvesting/HarvestingTypes";
+import type { HeldWeaponVisualId } from "../equipment/WeaponTypes";
 import type { InteractionPoint } from "../interaction/InteractionTypes";
 import type { CombatPoint } from "../combat/CombatTarget";
 import type { FistSide } from "../combat/MeleeCombatSystem";
@@ -21,7 +23,8 @@ export class Player {
   constructor(scene: Scene, collisionWorld: CollisionWorld, private readonly config: CalibrationConfig) {
     this.visual = new PlayerVisual(scene);
     this.visual.root.position.set(0, 0, 5);
-    this.visual.setHeight(config.player.visualHeight);
+    this.visual.applyGender(CHARACTER_PROFILE.gender);
+    this.visual.setHeight(CHARACTER_PROFILE.presentationHeight(config.player.visualHeight));
     this.movement = new PlayerMovement(
       this.visual.root.position,
       collisionWorld,
@@ -35,13 +38,20 @@ export class Player {
   get position(): Vector3 { return this.visual.root.position; }
   get facingYaw(): number { return this.visual.root.rotation.y; }
 
-  update(delta: number, input: Vector2, screenRight: Vector3, screenUp: Vector3): void {
-    this.movement.update(delta, input, screenRight, screenUp);
-    const speedRatio = this.movement.velocity.length() / Math.max(this.config.player.movementSpeed, 0.001);
-    this.animator.update(delta, speedRatio);
+  update(delta: number, input: Vector2, screenRight: Vector3, screenUp: Vector3, sneaking = false, speedMultiplier = 1): void {
+    this.movement.update(delta, input, screenRight, screenUp, speedMultiplier);
+    const walkCap = Math.max(this.config.player.movementSpeed, 0.001);
+    const speedRatio = this.movement.velocity.length() / walkCap;
+    this.animator.update(delta, speedRatio, sneaking);
   }
 
-  applyCalibration(): void { this.visual.setHeight(this.config.player.visualHeight); }
+  /** Visual crouch blend 0..1 (for nameplates / other systems). */
+  get crouchAmount(): number { return this.animator.crouchAmount; }
+
+  applyCalibration(): void {
+    this.visual.applyGender(CHARACTER_PROFILE.gender);
+    this.visual.setHeight(CHARACTER_PROFILE.presentationHeight(this.config.player.visualHeight));
+  }
   requestFacing(targetPosition: InteractionPoint): void { this.movement.requestFacing(targetPosition); }
   stopMovement(): void { this.movement.stop(); }
 
@@ -60,7 +70,7 @@ export class Player {
 
   clearHarvestPose(): void { this.animator.clearHarvestPose(); }
   getCombatPosition(): CombatPoint { return this.position; }
-  faceCombatTarget(position: CombatPoint): void { this.requestFacing(position); }
+  faceCombatTarget(position: CombatPoint): void { this.movement.snapFacing(position); }
 
   applyMeleeAttackPose(progress: number, profile: import("../combat/MeleeCombatProfile").MeleeCombatProfile, fist: FistSide): void {
     this.animator.applyMeleeAttackPose(progress, profile, fist);
@@ -68,7 +78,7 @@ export class Player {
 
   clearMeleeAttackPose(): void { this.animator.clearMeleeAttackPose(); }
 
-  setHeldWeapon(tool: HarvestTool | null): void {
+  setHeldWeapon(tool: HeldWeaponVisualId | null): void {
     this.visual.setHeldWeapon(tool);
   }
 }

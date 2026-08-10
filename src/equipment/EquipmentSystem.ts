@@ -44,8 +44,31 @@ export class EquipmentSystem {
     const current = this.equipment.getSlot(slot).stack;
     if (!current) return this.result(false, "unequip", slot, null, "empty-source");
     if (expected && current !== expected) return this.result(false, "unequip", slot, null, "stale-source");
-    const accepted = this.equipment.unequipIfAccepted(slot, current, (stack) => this.inventory.tryInsert(stack).accepted);
-    return this.result(accepted, "unequip", slot, null, accepted ? null : "inventory-full");
+    // Prefer identity-preserving place into first empty cell (avoids plan-clone edge cases).
+    for (let index = 0; index < this.inventory.slotCount; index += 1) {
+      if (this.inventory.getSlot(index).stack !== null) continue;
+      const accepted = this.equipment.unequipIfAccepted(slot, current, (stack) =>
+        this.inventory.placeIntoEmptySlot(index, stack));
+      return this.result(accepted, "unequip", slot, index, accepted ? null : "inventory-full");
+    }
+    return this.result(false, "unequip", slot, null, "inventory-full");
+  }
+
+  /** Drop armor onto a specific inventory cell (empty place or swap compatible armor). */
+  unequipToInventorySlot(slot: EquipmentSlotId, inventorySlot: number, expected?: ItemStack): EquipmentTransferResult {
+    const current = this.equipment.getSlot(slot).stack;
+    if (!current) return this.result(false, "unequip", slot, inventorySlot, "empty-source");
+    if (expected && current !== expected) return this.result(false, "unequip", slot, inventorySlot, "stale-source");
+    const dest = this.inventory.getSlot(inventorySlot).stack;
+    if (!dest) {
+      const accepted = this.equipment.unequipIfAccepted(slot, current, (stack) => this.inventory.placeIntoEmptySlot(inventorySlot, stack));
+      return this.result(accepted, "unequip", slot, inventorySlot, accepted ? null : "inventory-full");
+    }
+    const destSlot = ITEM_REGISTRY.get(dest.itemId).equipment?.slot;
+    if (destSlot === slot) {
+      return this.equipFromInventory(inventorySlot, dest);
+    }
+    return this.result(false, "unequip", slot, inventorySlot, "not-equipment");
   }
 
   private result(

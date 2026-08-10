@@ -5,6 +5,7 @@ export const FISTS_COMBAT_PROFILE = UNARMED_MELEE_PROFILE;
 
 export const COMBAT_CONFIG = Object.freeze({
   targetAcquisitionRange: 2.2,
+  /** Default short-melee successful hit range (fists / hatchet / pickaxe). Profile may override. */
   meleeHitRange: 1.15,
   targetSwitchBias: 0.16,
   dummyMaxHealth: 40,

@@ -47,6 +47,31 @@ export class HealthPool {
     return result;
   }
 
+  /** Restore HP. Does not revive from dead state unless explicitly allowed. */
+  heal(amount: number, options?: { readonly allowFromDead?: boolean }): { applied: number; current: number } {
+    if (!Number.isFinite(amount) || amount < 0) throw new RangeError(`Invalid heal: ${amount}`);
+    if (this.dead && !options?.allowFromDead) return { applied: 0, current: this.current };
+    const before = this.current;
+    const next = Math.min(this.maxHealth, before + amount);
+    const applied = next - before;
+    if (applied <= 0) return { applied: 0, current: before };
+    this.current = next;
+    const result = Object.freeze({ requested: amount, applied, before, current: next, becameDead: false });
+    for (const listener of this.listeners) listener(this.getSnapshot(), result);
+    return { applied, current: next };
+  }
+
+  /** Respawn / revive: set hp and restore alive. */
+  restoreFull(): void {
+    this.current = this.maxHealth;
+    const result = Object.freeze({ requested: this.maxHealth, applied: this.maxHealth, before: 0, current: this.maxHealth, becameDead: false });
+    for (const listener of this.listeners) listener(this.getSnapshot(), result);
+  }
+
+  setCurrent(value: number): void {
+    this.current = Math.max(0, Math.min(this.maxHealth, value));
+  }
+
   subscribe(listener: HealthListener): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };

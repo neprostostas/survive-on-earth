@@ -1,0 +1,8 @@
+Fonts used in Survive on Earth
+
+- Manrope (SIL Open Font License 1.1) — all UI / menus / HUD (`SoE UI`)
+
+Source: Mikhail Sharanda (Manrope) via Google Fonts
+License: SIL Open Font License 1.1 — https://scripts.sil.org/OFL
+
+Unused local files (not loaded): Fraunces-Variable.ttf, RobotoCondensed-Variable.ttf

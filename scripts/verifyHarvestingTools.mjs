@@ -196,12 +196,12 @@ assert.equal(HARVESTING_RESOURCES["limestone-rock"].yield.quantity, 3);
 }
 
 // Catalog / combat / counts regressions
-assert.equal(ITEM_REGISTRY.getAll().length, 8);
+assert.equal(ITEM_REGISTRY.getAll().length, 10);
 assert.equal(ITEM_REGISTRY.get("hatchet").category, "tool");
 assert.equal(ITEM_REGISTRY.get("pickaxe").category, "tool");
 assert.equal(ITEM_REGISTRY.get("hatchet").maxStack, 1);
 assert.equal(ITEM_REGISTRY.get("pickaxe").maxStack, 1);
-assert.equal(CRAFTING_RECIPES.getAll().length, 2);
+assert.equal(CRAFTING_RECIPES.getAll().length, 3);
 assert.equal(INVENTORY_CONFIG.baseSlotCount, 10);
 assert.deepEqual([...EQUIPMENT_SLOT_IDS], ["head", "torso", "legs", "feet"]);
 assert.equal(FISTS_COMBAT_PROFILE.damage, 6);

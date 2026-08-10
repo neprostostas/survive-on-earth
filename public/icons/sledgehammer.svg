@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-sledgehammer" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#161c22"/>
+      <stop offset="100%" stop-color="#0a0c0a"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="72" fill="url(#g-sledgehammer)" stroke="#8a96a4" stroke-width="18"/>
+  <circle cx="400" cy="112" r="28" fill="#c8d2dc" opacity="0.55"/>
+  <g transform="translate(56,56) scale(0.78)"><path fill="#f4f0e6" d="M129.75 24.47L21.625 211.655l55.78 32.188L185.532 56.656 129.75 24.47zm55.97 69.25l-75.626 130.874L326.47 349.47l75.592-130.876L185.72 93.72zm83.468.686l-11.22 19.438 84.97 49.03 11.25-19.468-85-49zM434.25 200.22L326.156 387.405l55.78 32.188 108.095-187.188-55.78-32.187zm-270.53 76.905l-11.282 19.53 84.968 49 11.25-19.5-84.937-49.03zm-3.095 45.844L61.312 494.81h67.157l82.28-142.968-50.125-28.875z"/></g>
+</svg>

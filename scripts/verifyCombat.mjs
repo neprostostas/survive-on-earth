@@ -139,11 +139,12 @@ assert.equal(basic.target.health.currentHealth, 34);
 assert.equal(basic.impacts.length, 1);
 assert.equal(basic.combat.impactCount, 1);
 assert.equal(basic.combat.state, "recovery");
-assert.equal(basic.combat.movementCommitted, false, "locomotion commitment ends at impact");
+assert.equal(basic.combat.movementCommitted, true, "locomotion stays locked through recovery to avoid reverse facing");
 basic.combat.update(0.1);
 assert.equal(basic.target.health.currentHealth, 34, "later frames cannot repeat the same impact");
 basic.combat.update(FISTS_COMBAT_PROFILE.cycleDuration);
 assert.equal(basic.combat.state, "ready");
+assert.equal(basic.combat.movementCommitted, false);
 assert.equal(basic.player.clears, 1);
 
 const largeDelta = combatHarness();
@@ -220,14 +221,14 @@ assert.equal(kill.targets.current, null);
 assert.equal(kill.target.receiveDamage(6).applied, 0);
 
 assert.equal(isIntentionalAttackKey("KeyF", false, true), true);
-assert.equal(isIntentionalAttackKey("KeyF", true, true), false, "OS key repeat cannot generate attacks");
+assert.equal(isIntentionalAttackKey("KeyF", true, true), false, "OS key repeat cannot generate press-edge attacks");
 assert.equal(isIntentionalAttackKey("KeyF", false, false), false, "suppressed UI input cannot generate attacks");
 assert.equal(isIntentionalAttackKey("Space", false, true), false);
 
-assert.equal(ITEM_REGISTRY.getAll().length, 8);
+assert.equal(ITEM_REGISTRY.getAll().length, 10);
 assert.equal(ITEM_REGISTRY.has("fists"), false, "Fists are an implicit combat profile, not an ItemDefinition");
 assert.deepEqual(EQUIPMENT_SLOT_IDS, ["head", "torso", "legs", "feet"]);
-assert.equal(CRAFTING_RECIPES.getAll().length, 2);
+assert.equal(CRAFTING_RECIPES.getAll().length, 3);
 assert.deepEqual(CRAFTING_RECIPES.get("hatchet").ingredients, [{ itemId: "pine-log", quantity: 3 }, { itemId: "limestone", quantity: 3 }]);
 assert.deepEqual(CRAFTING_RECIPES.get("pickaxe").ingredients, [{ itemId: "pine-log", quantity: 3 }, { itemId: "limestone", quantity: 3 }]);
 
@@ -261,9 +262,12 @@ assert.equal(gameSource.includes("this.combatTargets.unregister(target)"), true,
 assert.equal(hudSource.includes('class="action attack-action"'), true, "existing Attack shell must become active");
 assert.equal(hudSource.includes("setAttackState"), true);
 assert.equal(inputSource.includes("consumeAttackPressed"), true);
+assert.equal(inputSource.includes("isAttackHeld"), true, "hold state must be exposed for continuous combat");
 assert.equal(keyboardSource.includes("isIntentionalAttackKey"), true);
-assert.equal(pointerSource.includes("setInterval"), false, "holding HUD Attack cannot auto-generate requests");
-assert.equal(pointerSource.includes("this.pointerId !== null"), true, "one pointer hold queues at most one press");
+assert.equal(keyboardSource.includes("isAttackHeld"), true);
+assert.equal(gameSource.includes("attackPressed || attackHeld"), true, "hold F / Attack continues combat at game cadence");
+assert.equal(pointerSource.includes("setInterval"), false, "holding HUD Attack cannot use timers; game loop polls isHeld");
+assert.equal(pointerSource.includes("this.pointerId !== null"), true, "one pointer hold queues at most one press edge");
 assert.equal(debugSource.includes('"COMBAT"'), true);
 assert.equal(/weapon|tool|mainHand|offHand/.test(equipmentSource), false, "equipment slots remain armor-only");
 assert.equal(harvestToolsSource.includes("consumeImpactUse"), true, "harvest tools spend inventory durability on impact");

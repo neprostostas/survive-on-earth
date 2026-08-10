@@ -184,7 +184,7 @@ assert.equal(retryInventory.totalQuantity("pine-log"), 3, "same still-active loo
 
 assert.equal(ITEM_REGISTRY.get("pine-log").maxStack, 20);
 assert.equal(ITEM_REGISTRY.get("limestone").maxStack, 20);
-assert.deepEqual(ITEM_REGISTRY.getAll().map((definition) => definition.id).sort(), ["cargo-pants", "dad-hat", "hatchet", "limestone", "pickaxe", "pine-log", "shirt", "sneakers"], "catalog must contain resources, armor, and M08 tools");
+assert.deepEqual(ITEM_REGISTRY.getAll().map((definition) => definition.id).sort(), ["cargo-pants", "dad-hat", "hatchet", "limestone", "pickaxe", "pine-log", "shirt", "sneakers", "spear"], "catalog must contain resources, armor, tools, and spear");
 const inventorySource = await readFile(new URL("../src/inventory/PlayerInventory.ts", import.meta.url), "utf8");
 for (const forbidden of ["@babylonjs", "document", "window", "HTMLElement", "GroundLoot", "worldPosition", "InventoryItemDefinition"]) {
   assert.equal(inventorySource.includes(forbidden), false, `Inventory domain must not contain ${forbidden}`);
@@ -202,6 +202,10 @@ assert.equal(gameSource.includes('event.code === "KeyI"'), true, "desktop I togg
 assert.equal(gameSource.includes('event.code === "Escape"'), true, "Escape close must exist");
 assert.equal(gameSource.includes("this.harvesting.cancel()"), true, "opening Inventory must use existing harvesting cancellation");
 assert.equal(inputSource.includes("setSuppressed"), true, "Inventory modal must suppress normalized gameplay input");
-assert.equal(/backpack slot|drag|drop item/i.test(panelSource), false, "Inventory UI must not add future storage or drag/drop features");
+assert.equal(panelSource.includes("beginDrag"), true, "Inventory UI must support pointer drag-and-drop rearrange / equip");
+assert.equal(panelSource.includes("applyDrop"), true, "Inventory UI must apply drop targets for storage, armor, and weapon");
+assert.equal(inventorySource.includes("rearrangeSlots"), true, "Inventory domain must support slot rearrange for drag reorder");
+assert.equal(cssSource.includes("inventory-slot::after"), false, "Inventory slots must not show numeric indices");
+assert.equal(cssSource.includes("inventory-drag-ghost"), true, "Drag ghost styles must exist");
 
-console.log("Player Inventory verification passed (46 acceptance groups)");
+console.log("Player Inventory verification passed (drag, equip slots, acceptance groups)");

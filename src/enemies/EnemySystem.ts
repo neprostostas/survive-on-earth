@@ -58,6 +58,15 @@ export class EnemySystem {
     this.targets.register(enemy);
   }
 
+  /** Hard-clear all agents (location travel / new game). Does not call onEnemyDeath loot. */
+  clearAll(): void {
+    for (const enemy of [...this.enemies.values()]) {
+      this.enemies.delete(enemy.combatId);
+      this.targets.unregister(enemy);
+      this.movement.remove(enemy);
+    }
+  }
+
   handles(target: CombatTarget): target is RoamingZombie {
     return this.enemies.get(target.combatId) === target;
   }
@@ -69,13 +78,15 @@ export class EnemySystem {
     return true;
   }
 
-  update(delta: number): void {
+  update(delta: number, awareness: { sneaking: boolean; sprinting: boolean } = { sneaking: false, sprinting: false }): void {
     const playerPosition = this.player.getPosition();
     for (const enemy of [...this.enemies.values()]) {
       if (!enemy.isCombatAlive()) { this.finalizeDeath(enemy); continue; }
       enemy.update(delta, {
         playerPosition,
         playerAlive: this.player.health.alive,
+        playerSneaking: awareness.sneaking,
+        playerSprinting: awareness.sprinting,
         move: (position, displacement) => this.movement.move(enemy, position, displacement),
         damagePlayer: (amount) => { this.applyPlayerDamage(enemy, amount); },
       });

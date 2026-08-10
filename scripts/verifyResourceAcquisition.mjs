@@ -20,8 +20,8 @@ import { INVENTORY_CONFIG } from "../src/inventory/inventoryConfig.ts";
 import { FISTS_COMBAT_PROFILE } from "../src/combat/combatConfig.ts";
 import { readFile } from "node:fs/promises";
 
-assert.equal(ITEM_REGISTRY.getAll().length, 8);
-assert.equal(CRAFTING_RECIPES.getAll().length, 2);
+assert.equal(ITEM_REGISTRY.getAll().length, 10);
+assert.equal(CRAFTING_RECIPES.getAll().length, 3);
 assert.equal(INVENTORY_CONFIG.baseSlotCount, 10);
 assert.equal(EQUIPMENT_SLOT_IDS.length, 4);
 assert.equal(FISTS_COMBAT_PROFILE.damage, 6);
