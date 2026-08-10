@@ -62,4 +62,22 @@ export class LockSystem {
     if (!lock) return;
     lock.powered = powered;
   }
+
+  serialize(): readonly { id: string; locked: boolean; powered?: boolean }[] {
+    return Object.freeze([...this.locks.values()].map((l) => Object.freeze({
+      id: l.id,
+      locked: l.locked,
+      powered: l.powered,
+    })));
+  }
+
+  load(rows: readonly { id: string; locked: boolean; powered?: boolean }[] | undefined): void {
+    if (!rows) return;
+    for (const row of rows) {
+      const lock = this.locks.get(row.id);
+      if (!lock) continue;
+      lock.locked = !!row.locked;
+      if (row.powered !== undefined) lock.powered = row.powered;
+    }
+  }
 }

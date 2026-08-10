@@ -1,3 +1,4 @@
+import { I18N } from "../i18n/I18n";
 import type { MinimapFrame } from "./minimapTypes";
 import { Minimap } from "./Minimap";
 import { uiIcon } from "./uiIcons";
@@ -60,13 +61,26 @@ export class LocalMapPanel {
     }
     window.addEventListener("keydown", this.onKey, true);
     window.addEventListener("resize", this.onResize);
+    this.applyLocalMapLocale();
+    I18N.onChange(() => this.applyLocalMapLocale());
+  }
+
+  private applyLocalMapLocale(): void {
+    this.titleEl.textContent = this.locationTitle;
+    const kicker = this.overlay.querySelector(".local-map-kicker");
+    if (kicker) kicker.textContent = I18N.t("map.localTitle");
+    this.overlay.setAttribute("aria-label", I18N.t("map.localTitle"));
+    const closeText = this.overlay.querySelector(".menu-btn-text");
+    if (closeText) closeText.textContent = I18N.t("map.close");
+    const hint = this.overlay.querySelector(".local-map-hint");
+    if (hint) hint.textContent = I18N.t("map.localHint");
   }
 
   get isOpen(): boolean { return this.openState; }
 
   setLocationTitle(title: string): void {
     this.locationTitle = title;
-    this.titleEl.textContent = title;
+    this.applyLocalMapLocale();
   }
 
   update(frame: MinimapFrame): void {

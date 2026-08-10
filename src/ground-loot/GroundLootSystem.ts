@@ -17,6 +17,16 @@ export interface GroundLootPresentation {
   remove(entity: GroundLoot): void;
 }
 
+export interface SerializedGroundLoot {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly itemId: ItemStack["itemId"];
+  readonly quantity: number;
+  readonly currentDurability?: number;
+}
+
 export function groundLootPosition(source: ResultWorldPoint, index: number, count: number): InteractionPoint {
   const safeCount = Math.max(1, count);
   const angle = safeCount === 1 ? Math.PI * 0.25 : -Math.PI * 0.5 + index * Math.PI * 2 / safeCount;
@@ -80,20 +90,48 @@ export class GroundLootSystem implements ResourceResultSink {
   placeAuthoredStack(stack: ItemStack, position: ResultWorldPoint, sourceLabel: string): GroundLoot {
     void sourceLabel;
     const id = `ground-loot-${String(this.nextId++).padStart(4, "0")}`;
-    const entity = new GroundLoot(
-      id,
-      stack,
-      Object.freeze({
-        x: position.x,
-        y: position.y + GROUND_LOOT_CONFIG.spawnHeight,
-        z: position.z,
-      }),
-      GROUND_LOOT_CONFIG.interactionRadius,
-    );
-    this.entities.set(id, entity);
-    this.registry.addInteractable(entity);
-    this.presentation?.spawn(entity);
-    return entity;
+    return this.spawnAt(id, stack, Object.freeze({
+      x: position.x,
+      y: position.y + GROUND_LOOT_CONFIG.spawnHeight,
+      z: position.z,
+    }));
+  }
+
+  /** Restore a pile with an exact interaction id (save load). */
+  restoreEntity(id: string, stack: ItemStack, position: InteractionPoint): GroundLoot {
+    const match = /^ground-loot-(\d+)$/.exec(id);
+    if (match) this.nextId = Math.max(this.nextId, Number(match[1]) + 1);
+    return this.spawnAt(id, stack, Object.freeze({
+      x: position.x,
+      y: position.y,
+      z: position.z,
+    }));
+  }
+
+  /** Remove every active/collecting entity (new game / load). */
+  clearAll(): void {
+    for (const entity of [...this.entities.values()]) {
+      this.registry.removeInteractable(entity);
+      this.presentation?.remove(entity);
+      this.entities.delete(entity.interactionId);
+    }
+    this.nextId = 1;
+  }
+
+  serialize(): readonly SerializedGroundLoot[] {
+    return Object.freeze(this.active.map((entity) => {
+      const p = entity.getInteractionPosition();
+      const stack = entity.stack;
+      return Object.freeze({
+        id: entity.interactionId,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        itemId: stack.itemId,
+        quantity: stack.quantity,
+        currentDurability: stack.currentDurability,
+      });
+    }));
   }
 
   claim(
@@ -113,6 +151,14 @@ export class GroundLootSystem implements ResourceResultSink {
   update(delta: number): void {
     if (!this.presentation) return;
     for (const id of this.presentation.update(delta)) this.finishRemoval(id);
+  }
+
+  private spawnAt(id: string, stack: ItemStack, position: InteractionPoint): GroundLoot {
+    const entity = new GroundLoot(id, stack, position, GROUND_LOOT_CONFIG.interactionRadius);
+    this.entities.set(id, entity);
+    this.registry.addInteractable(entity);
+    this.presentation?.spawn(entity);
+    return entity;
   }
 
   private finishRemoval(id: string): void {

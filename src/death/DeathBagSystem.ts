@@ -100,4 +100,62 @@ export class DeathBagSystem {
     }
     return { inserted, remaining: remainingStacks.length };
   }
+
+  clear(): void {
+    this.bags = [];
+    this.nextId = 1;
+  }
+
+  serialize(): readonly {
+    id: string;
+    x: number;
+    z: number;
+    createdAt: number;
+    stacks: readonly { itemId: ItemId; quantity: number; currentDurability?: number }[];
+  }[] {
+    return Object.freeze(this.bags.map((bag) => Object.freeze({
+      id: bag.id,
+      x: bag.x,
+      z: bag.z,
+      createdAt: bag.createdAt,
+      stacks: Object.freeze(bag.stacks.map((s) => Object.freeze({
+        itemId: s.itemId,
+        quantity: s.quantity,
+        currentDurability: s.currentDurability,
+      }))),
+    })));
+  }
+
+  load(rows: readonly {
+    id: string;
+    x: number;
+    z: number;
+    createdAt?: number;
+    stacks: readonly { itemId: ItemId; quantity: number; currentDurability?: number }[];
+  }[] | undefined): void {
+    this.bags = [];
+    this.nextId = 1;
+    if (!rows) return;
+    for (const row of rows) {
+      const stacks: ItemStack[] = [];
+      for (const s of row.stacks ?? []) {
+        try {
+          stacks.push(createItemStack(
+            s.itemId,
+            s.quantity,
+            s.currentDurability !== undefined ? { currentDurability: s.currentDurability } : undefined,
+          ));
+        } catch { /* skip invalid */ }
+      }
+      const match = /^death-bag-(\d+)$/.exec(row.id);
+      if (match) this.nextId = Math.max(this.nextId, Number(match[1]) + 1);
+      this.bags.push(Object.freeze({
+        id: row.id,
+        x: row.x,
+        z: row.z,
+        createdAt: row.createdAt ?? Date.now(),
+        stacks: Object.freeze(stacks),
+      }));
+    }
+  }
 }

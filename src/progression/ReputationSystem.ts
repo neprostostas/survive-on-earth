@@ -84,7 +84,9 @@ export class ReputationSystem {
     return Object.fromEntries([...this.factions.entries()].map(([id, s]) => [id, s.points]));
   }
 
-  load(data: Record<string, number>): void {
+  load(data: Record<string, number> | undefined): void {
+    for (const state of this.factions.values()) state.points = 0;
+    if (!data) return;
     for (const [id, points] of Object.entries(data)) {
       const state = this.factions.get(id as FactionId);
       if (state) state.points = Math.max(0, points);

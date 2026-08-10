@@ -7,6 +7,9 @@ import type { ItemId } from "../items/ItemId";
 import { ITEM_ICONS } from "./itemIcons";
 import { ITEM_REGISTRY } from "../items/ItemSystem";
 import { hudIconImg } from "./hudIcons";
+import { I18N } from "../i18n/I18n";
+import { itemName } from "../i18n/contentApi";
+import { CHARACTER_PROFILE } from "../player/CharacterProfile";
 
 export type PrimaryActionContext = "none" | "generic" | "pickup" | HarvestTool;
 
@@ -234,6 +237,59 @@ export class HUD {
     this.sneakButton = sneakButton;
     this.buildButton = buildButton;
     this.mapButton = mapButton;
+    this.applyLocaleChrome();
+    I18N.onChange(() => this.applyLocaleChrome());
+    CHARACTER_PROFILE.onChange(() => {
+      this.setPlayerName(CHARACTER_PROFILE.name || I18N.t("hud.playerDefault"));
+    });
+    this.setPlayerName(CHARACTER_PROFILE.name || I18N.t("hud.playerDefault"));
+  }
+
+  private applyLocaleChrome(): void {
+    const t = (k: Parameters<typeof I18N.t>[0]) => I18N.t(k);
+    this.root.setAttribute("aria-label", t("hud.aria"));
+    this.healthTrack.setAttribute("aria-label", t("hud.health"));
+    this.root.querySelector(".need-row")?.setAttribute("aria-label", t("hud.needs"));
+    for (const el of this.root.querySelectorAll<HTMLElement>("[title=Hunger], .hunger-track, .need-line:nth-child(1) .need-icon")) {
+      el.title = t("hud.hunger");
+    }
+    for (const el of this.root.querySelectorAll<HTMLElement>("[title=Thirst], .thirst-track, .need-line:nth-child(2) .need-icon")) {
+      el.title = t("hud.thirst");
+    }
+    for (const el of this.root.querySelectorAll<HTMLElement>("[title=Energy], .energy-track, .need-line:nth-child(3) .need-icon")) {
+      el.title = t("hud.energy");
+    }
+    // Fix needs tools specifically
+    const needIcons = this.root.querySelectorAll<HTMLElement>(".need-icon, .need-track");
+    if (needIcons[0]) needIcons[0].title = t("hud.hunger");
+    if (needIcons[1]) needIcons[1].title = t("hud.hunger");
+    if (needIcons[2]) needIcons[2].title = t("hud.thirst");
+    if (needIcons[3]) needIcons[3].title = t("hud.thirst");
+    if (needIcons[4]) needIcons[4].title = t("hud.energy");
+    if (needIcons[5]) needIcons[5].title = t("hud.energy");
+
+    this.quickSlotButton.title = t("hud.quick1");
+    this.quickSlotButton.setAttribute("aria-label", t("hud.quick1"));
+    this.quickSlot2Button.title = t("hud.quick2");
+    this.quickSlot2Button.setAttribute("aria-label", t("hud.quick2"));
+    this.mapButton.title = `${t("hud.map")} (M)`;
+    this.mapButton.setAttribute("aria-label", t("hud.map"));
+    this.attackAction.title = `${t("hud.attack")} (F / E / Space)`;
+    this.attackAction.setAttribute("aria-label", t("hud.attack"));
+    this.primaryAction.title = `${t("hud.interact")} (E / Space)`;
+    this.sneakButton.title = `${t("hud.sneak")} (C)`;
+    this.sneakButton.setAttribute("aria-label", t("hud.sneak"));
+    this.buildButton.title = `${t("hud.build")} (G)`;
+    this.buildButton.setAttribute("aria-label", t("hud.build"));
+    this.craftingToggle.title = `${t("hud.blueprints")} (B)`;
+    this.craftingToggle.setAttribute("aria-label", `${t("hud.blueprints")} (B)`);
+    this.inventoryToggle.title = `${t("hud.inventory")} (I)`;
+    this.inventoryToggle.setAttribute("aria-label", `${t("hud.inventory")} (I)`);
+    this.minimapShell.setAttribute("aria-label", t("hud.localMap"));
+    this.root.querySelector(".settings-shell")?.setAttribute("aria-label", t("hud.pause"));
+    this.root.querySelector(".auto-label")!.textContent = t("hud.auto");
+    this.defeatedFeedback.textContent = t("hud.defeated");
+    if (this.attackWeaponKey === "fists") this.attackWeaponDisplayName = t("hud.fists");
   }
 
   get minimapElement(): HTMLElement { return this.minimapShell; }
@@ -276,7 +332,7 @@ export class HUD {
   }
 
   setLevel(level: number, xpRatio: number): void {
-    this.levelLabel.textContent = `lvl. ${level}`;
+    this.levelLabel.textContent = I18N.t("hud.level", { level });
     this.levelFill.style.width = `${clamp01(xpRatio) * 100}%`;
   }
 
@@ -331,13 +387,13 @@ export class HUD {
     if (key === this.attackWeaponKey) return;
     this.attackWeaponKey = key;
     if (key === "fists") {
-      this.attackWeaponDisplayName = "Fists";
+      this.attackWeaponDisplayName = I18N.t("hud.fists");
       this.attackAction.innerHTML = withKeys(ATTACK_ICON, ["F", "E", "SPC"]);
       this.attackAction.classList.remove("has-weapon");
       return;
     }
     const definition = ITEM_REGISTRY.get(key);
-    this.attackWeaponDisplayName = definition.displayName;
+    this.attackWeaponDisplayName = itemName(definition);
     this.attackAction.innerHTML = withKeys(`<span class="attack-weapon-icon">${ITEM_ICONS[definition.iconId]}</span>`, ["F", "E", "SPC"]);
     this.attackAction.classList.add("has-weapon");
   }
@@ -365,13 +421,13 @@ export class HUD {
       this.primaryContext = "pickup";
       this.pickupContextKey = contextKey;
       this.primaryAction.innerHTML = withKeys(
-        `<span class="pickup-action-icon">${ITEM_ICONS[definition.iconId]}</span><span class="pickup-action-copy"><b>${definition.displayName}</b><small>×${quantity}</small></span>`,
+        `<span class="pickup-action-icon">${ITEM_ICONS[definition.iconId]}</span><span class="pickup-action-copy"><b>${itemName(definition)}</b><small>×${quantity}</small></span>`,
         ["E", "SPC"],
       );
     }
     this.primaryAction.classList.remove("missing-tool", "unavailable-flash");
     this.primaryAction.dataset.hint = "";
-    this.primaryAction.setAttribute("aria-label", `Pick up ${definition.displayName}, quantity ${quantity}`);
+    this.primaryAction.setAttribute("aria-label", I18N.t("hud.pickup", { name: itemName(definition), qty: quantity }));
   }
 }
 

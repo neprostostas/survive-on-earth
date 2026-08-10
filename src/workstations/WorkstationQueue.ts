@@ -64,6 +64,28 @@ export class WorkstationQueue {
     }
     return Object.freeze(finished);
   }
+
+  serialize(): { kind: WorkstationKind; nextId: number; entries: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[] } {
+    return {
+      kind: this.kind,
+      nextId: this.nextId,
+      entries: this.entries.map((e) => ({ id: e.id, recipeKey: e.recipeKey, totalTime: e.totalTime, progress: e.progress })),
+    };
+  }
+
+  load(data: { nextId?: number; entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[] } | undefined): void {
+    this.entries = [];
+    this.nextId = data?.nextId ?? 1;
+    if (!data?.entries) return;
+    for (const e of data.entries) {
+      this.entries.push({
+        id: e.id,
+        recipeKey: e.recipeKey,
+        totalTime: e.totalTime,
+        progress: e.progress,
+      });
+    }
+  }
 }
 
 /** Simple campfire cooking map: raw → cooked output item id. */

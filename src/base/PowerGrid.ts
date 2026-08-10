@@ -104,9 +104,16 @@ export class PowerGrid {
     };
   }
 
-  load(data: { storage?: number; devices?: PowerDevice[] }): void {
+  load(data: { storage?: number; devices?: PowerDevice[] } | undefined): void {
     this.devices.clear();
-    this.storedEnergy = data.storage ?? 0;
-    for (const d of data.devices ?? []) this.devices.set(d.id, { ...d });
+    this.storedEnergy = data?.storage ?? 0;
+    for (const d of data?.devices ?? []) this.devices.set(d.id, { ...d });
+    if (this.devices.size === 0) this.ensureHomeDefaults();
+  }
+
+  resetToDefaults(): void {
+    this.devices.clear();
+    this.storedEnergy = 0;
+    this.ensureHomeDefaults();
   }
 }

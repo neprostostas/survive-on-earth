@@ -67,7 +67,7 @@ export class LanguageSelectScreen {
           </button>` : ""}
         <div class="lang-select-mark" aria-hidden="true">${uiIcon("globe", "ui-icon-img lang-mark-img")}</div>
         <h1>${title}</h1>
-        <p class="lang-select-hint">${isChange ? title : "Pick a language to begin your story."}</p>
+        ${isChange ? "" : `<p class="lang-select-hint">${I18N.t("lang.hint")}</p>`}
         <ul class="lang-select-list" role="listbox" aria-label="${title}">
           ${I18N.locales.map((id) => `
             <li>

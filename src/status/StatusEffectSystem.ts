@@ -64,6 +64,27 @@ export class StatusEffectSystem {
 
   ids(): readonly StatusEffectId[] { return Object.freeze([...this.active.keys()]); }
 
+  serialize(): readonly { id: StatusEffectId; remaining: number; tickAccum: number }[] {
+    return Object.freeze([...this.active.values()].map((s) => Object.freeze({
+      id: s.id,
+      remaining: s.remaining,
+      tickAccum: s.tickAccum,
+    })));
+  }
+
+  load(rows: readonly { id: StatusEffectId; remaining: number; tickAccum?: number }[] | undefined): void {
+    this.active.clear();
+    if (!rows) return;
+    for (const row of rows) {
+      if (!(row.id in STATUS_EFFECT_DEFS)) continue;
+      this.active.set(row.id, {
+        id: row.id,
+        remaining: Math.max(0, Number(row.remaining) || 0),
+        tickAccum: Math.max(0, Number(row.tickAccum) || 0),
+      });
+    }
+  }
+
   tick(delta: number): StatusTickResult {
     let healthDelta = 0;
     let moveSpeedMul = 1;

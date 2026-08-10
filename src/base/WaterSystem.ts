@@ -68,10 +68,10 @@ export class WaterSystem {
   }
 
   load(data: { dirty?: number; clean?: number; pump?: boolean; purifier?: boolean } | undefined): void {
-    if (!data) return;
-    this.dirty = data.dirty ?? 0;
-    this.clean = data.clean ?? 20;
-    this.pumpEnabled = !!data.pump;
-    this.purifierEnabled = !!data.purifier;
+    this.dirty = data?.dirty ?? 0;
+    this.clean = data?.clean ?? 20;
+    this.pumpEnabled = !!data?.pump;
+    this.purifierEnabled = !!data?.purifier;
+    this.purifyProgress = 0;
   }
 }

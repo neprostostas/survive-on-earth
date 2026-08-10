@@ -143,7 +143,7 @@ export class SettingsPanel {
     const s = I18N.gameSettings;
     const t = (k: Parameters<typeof I18N.t>[0]) => I18N.t(k);
     const identity = CHARACTER_PROFILE.snapshot;
-    const genderLabel = identity.gender === "male" ? "Male" : identity.gender === "female" ? "Female" : "Other";
+    const genderLabel = identity.gender === "male" ? t("settings.gender.male") : identity.gender === "female" ? t("settings.gender.female") : t("settings.gender.other");
     this.overlay.innerHTML = `
       <div class="settings-panel settings-screen">
         <header class="settings-header">
@@ -157,14 +157,14 @@ export class SettingsPanel {
         </header>
         <div class="settings-body">
           <section class="settings-section${this.focusCharacter ? " highlight" : ""}" data-section="character">
-            <h3>${uiIcon("survivor", "ui-icon-img settings-section-icon")}<span>Character</span></h3>
+            <h3>${uiIcon("survivor", "ui-icon-img settings-section-icon")}<span>${t("settings.character")}</span></h3>
             <div class="character-summary">
               <div class="character-summary-meta">
                 <span class="save-chip">${uiIcon("survivor", "ui-icon-img save-chip-icon")}${escapeHtml(identity.name)}</span>
                 <span class="save-chip">${escapeHtml(genderLabel)}</span>
               </div>
               <button type="button" class="menu-btn secondary" data-role="edit-character">
-                ${menuBtnLabel("survivor", "Edit name & look")}
+                ${menuBtnLabel("survivor", t("inv.editCharacter"))}
               </button>
             </div>
           </section>
@@ -181,21 +181,21 @@ export class SettingsPanel {
             ${toggleRow(uiIcon("contrast"), t("settings.highContrast"), "highContrast", s.highContrast)}
             ${toggleRow(uiIcon("motion"), t("settings.reducedMotion"), "reducedMotion", s.reducedMotion)}
             ${toggleRow(uiIcon("shake"), t("settings.screenShake"), "screenShake", s.screenShake)}
-            ${toggleRow(uiIcon("a11y"), "Color assist", "colorAssist", s.colorAssist)}
+            ${toggleRow(uiIcon("a11y"), t("settings.colorAssist"), "colorAssist", s.colorAssist)}
           </section>
           <section class="settings-section" data-section="graphics">
             <h3>${uiIcon("graphics", "ui-icon-img settings-section-icon")}<span>${t("settings.graphics")}</span></h3>
-            ${choiceRow(uiIcon("quality"), "Quality", "qualityPreset", [
-              { value: "low", label: "Low" },
-              { value: "medium", label: "Med" },
-              { value: "high", label: "High" },
-              { value: "ultra", label: "Ultra" },
+            ${choiceRow(uiIcon("quality"), t("settings.quality"), "qualityPreset", [
+              { value: "low", label: t("settings.quality.low") },
+              { value: "medium", label: t("settings.quality.medium") },
+              { value: "high", label: t("settings.quality.high") },
+              { value: "ultra", label: t("settings.quality.ultra") },
             ], s.qualityPreset)}
-            ${toggleRow(uiIcon("damage"), "Damage numbers", "damageNumbers", s.damageNumbers)}
+            ${toggleRow(uiIcon("damage"), t("settings.damageNumbers"), "damageNumbers", s.damageNumbers)}
           </section>
           <section class="settings-section" data-section="audio">
             <h3>${uiIcon("volume", "ui-icon-img settings-section-icon")}<span>${t("settings.audio")}</span></h3>
-            ${volumeRow(uiIcon("volume"), "Master", s.masterVolume)}
+            ${volumeRow(uiIcon("volume"), t("settings.masterVolume"), s.masterVolume)}
           </section>
         </div>
       </div>`;

@@ -1,5 +1,11 @@
+import {
+  applyBodyFlagClasses,
+  clearInlineRuntimeStyles,
+  setRuntimeCssVars,
+} from "../theme/runtimeTheme";
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, mapBrowserLanguage, type LocaleId } from "./locales";
-import { resolveString, type StringKey } from "./strings";
+import { resolveAny, resolveString, type StringKey } from "./strings";
+import { resolveContent } from "./content/resolveContent";
 
 const STORAGE_KEY = "survive-on-earth.locale";
 const SETTINGS_KEY = "survive-on-earth.settings.v1";
@@ -60,6 +66,16 @@ export class I18n {
     return resolveString(this.locale, key, vars);
   }
 
+  /** Free-form key resolver (shell + content + fallback). Prefer typed `t` when possible. */
+  tx(key: string, fallback?: string, vars?: Record<string, string | number>): string {
+    return resolveAny(this.locale, key, vars, fallback);
+  }
+
+  hasContentKey(key: string): boolean {
+    const hit = resolveContent(this.locale, key, "");
+    return hit.length > 0 && hit !== key;
+  }
+
   setLocale(locale: LocaleId): void {
     if (!(SUPPORTED_LOCALES as readonly string[]).includes(locale)) return;
     this.locale = locale;
@@ -81,6 +97,15 @@ export class I18n {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings)); } catch { /* ignore */ }
     this.applyDocumentAttributes();
     this.emit();
+  }
+
+  /** Replace settings (e.g. from save blob) and persist. */
+  replaceSettings(settings: Partial<GameSettings>): void {
+    this.patchSettings({ ...DEFAULT_SETTINGS, ...settings });
+  }
+
+  serializeSettings(): GameSettings {
+    return { ...this.settings };
   }
 
   onChange(listener: () => void): () => void {
@@ -122,19 +147,25 @@ export class I18n {
 
   private applyDocumentAttributes(): void {
     const root = document.documentElement;
+    // Only legitimate attribute on <html>
     root.lang = this.locale;
+
     const textScale = TEXT_SCALE[this.settings.textSize] ?? 1;
-    root.style.setProperty("--ui-scale", String(this.settings.uiScale));
-    root.style.setProperty("--text-scale", String(textScale));
-    root.dataset.textSize = this.settings.textSize;
-    root.dataset.highContrast = this.settings.highContrast ? "1" : "0";
-    root.dataset.colorAssist = this.settings.colorAssist ? "1" : "0";
-    root.dataset.screenShake = this.settings.screenShake ? "1" : "0";
-    root.dataset.damageNumbers = this.settings.damageNumbers ? "1" : "0";
-    root.dataset.quality = this.settings.qualityPreset;
+    setRuntimeCssVars({
+      "--ui-scale": String(this.settings.uiScale),
+      "--text-scale": String(textScale),
+    });
+    clearInlineRuntimeStyles(root);
+
     const reduced = this.settings.reducedMotion
       || (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-    root.dataset.reducedMotion = reduced ? "1" : "0";
+
+    applyBodyFlagClasses({
+      highContrast: this.settings.highContrast,
+      reducedMotion: reduced,
+      colorAssist: this.settings.colorAssist,
+      hideDamageNumbers: !this.settings.damageNumbers,
+    });
   }
 }
 

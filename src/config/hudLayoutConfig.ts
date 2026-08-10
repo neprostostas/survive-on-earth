@@ -1,3 +1,5 @@
+import { clearInlineRuntimeStyles, fmtUnit, setRuntimeCssVars } from "../theme/runtimeTheme";
+
 /** Pixel-measured LDOE HUD anchors. sizes = fraction of viewport height; x/y = 0–1 centers. */
 export interface HudMetric {
   centerX: number;
@@ -77,20 +79,19 @@ export const HUD_LAYOUT: HudLayoutState = {
   joystick: { centerX: 0.149, centerY: 0.686, sizeH: 0.226 },
   auto: { centerX: 0.072, centerY: 0.875, sizeH: 0.072 },
 
-  minimap: { centerX: 0.885, centerY: 0.18, sizeH: 0.24 },
-  settings: { centerX: 0.72, centerY: 0.055, sizeH: 0.052 },
+  minimap: { centerX: 0.885, centerY: 0.180, sizeH: 0.240 },
+  settings: { centerX: 0.789, centerY: 0.059, sizeH: 0.052 },
 
-  // Map sits fully on-screen above quick slots (was missing layout → clipped at 0,0)
-  map: { centerX: 0.905, centerY: 0.40, sizeH: 0.062 },
-  quickSlot: { centerX: 0.905, centerY: 0.48, sizeH: 0.058 },
-  quickSlot2: { centerX: 0.905, centerY: 0.545, sizeH: 0.055 },
-  attack: { centerX: 0.905, centerY: 0.721, sizeH: 0.155 },
-  build: { centerX: 0.82, centerY: 0.73, sizeH: 0.08 },
-  interact: { centerX: 0.841, centerY: 0.86, sizeH: 0.14 },
-  sneak: { centerX: 0.94, centerY: 0.905, sizeH: 0.09 },
+  map: { centerX: 0.876, centerY: 0.419, sizeH: 0.062 },
+  quickSlot: { centerX: 0.861, centerY: 0.538, sizeH: 0.058 },
+  quickSlot2: { centerX: 0.827, centerY: 0.648, sizeH: 0.055 },
+  attack: { centerX: 0.914, centerY: 0.682, sizeH: 0.155 },
+  build: { centerX: 0.937, centerY: 0.410, sizeH: 0.080 },
+  interact: { centerX: 0.822, centerY: 0.837, sizeH: 0.140 },
+  sneak: { centerX: 0.930, centerY: 0.866, sizeH: 0.090 },
 
-  utilityB: { centerX: 0.74, centerY: 0.905, sizeH: 0.058 },
-  utilityI: { centerX: 0.795, centerY: 0.905, sizeH: 0.058 },
+  utilityB: { centerX: 0.682, centerY: 0.887, sizeH: 0.058 },
+  utilityI: { centerX: 0.737, centerY: 0.886, sizeH: 0.058 },
 
   levelStrip: { left: 0.232, right: 0.831, bottomH: 0.027 },
 };
@@ -132,37 +133,41 @@ export function clampHudLayout(layout: HudLayoutState, viewportWidth: number, vi
   return next;
 }
 
+/**
+ * Publish HUD layout as CSS vars in the shared runtime stylesheet.
+ * Does not write inline styles onto <html> or .hud (DOM stays clean).
+ */
 export function applyHudLayoutTokens(element: HTMLElement, layout: HudLayoutState = HUD_LAYOUT): void {
-  const apply = (target: HTMLElement): void => {
-    const set = (name: string, value: string): void => { target.style.setProperty(name, value); };
-    set("--hud-status-left", `${layout.playerStatus.leftH * 100}vh`);
-    set("--hud-status-top", `${layout.playerStatus.topH * 100}vh`);
-    set("--hud-status-width", `${layout.playerStatus.widthH * 100}vh`);
-    for (const [name, metric] of Object.entries({
-      joystick: layout.joystick,
-      auto: layout.auto,
-      minimap: layout.minimap,
-      settings: layout.settings,
-      map: layout.map,
-      build: layout.build,
-      quick: layout.quickSlot,
-      quick2: layout.quickSlot2,
-      attack: layout.attack,
-      interact: layout.interact,
-      sneak: layout.sneak,
-      utilB: layout.utilityB,
-      utilI: layout.utilityI,
-    })) {
-      set(`--hud-${name}-x`, `${metric.centerX * 100}%`);
-      set(`--hud-${name}-y`, `${metric.centerY * 100}%`);
-      set(`--hud-${name}-size`, `${metric.sizeH * 100}vh`);
-    }
-    set("--hud-level-left", `${layout.levelStrip.left * 100}%`);
-    set("--hud-level-right", `${(1 - layout.levelStrip.right) * 100}%`);
-    set("--hud-level-bottom", `${layout.levelStrip.bottomH * 100}vh`);
+  const next: Record<string, string> = {
+    "--hud-status-left": fmtUnit(layout.playerStatus.leftH * 100, "vh"),
+    "--hud-status-top": fmtUnit(layout.playerStatus.topH * 100, "vh"),
+    "--hud-status-width": fmtUnit(layout.playerStatus.widthH * 100, "vh"),
+    "--hud-level-left": fmtUnit(layout.levelStrip.left * 100, "%"),
+    "--hud-level-right": fmtUnit((1 - layout.levelStrip.right) * 100, "%"),
+    "--hud-level-bottom": fmtUnit(layout.levelStrip.bottomH * 100, "vh"),
   };
-  apply(element);
-  if (element !== document.documentElement) apply(document.documentElement);
+  for (const [name, metric] of Object.entries({
+    joystick: layout.joystick,
+    auto: layout.auto,
+    minimap: layout.minimap,
+    settings: layout.settings,
+    map: layout.map,
+    build: layout.build,
+    quick: layout.quickSlot,
+    quick2: layout.quickSlot2,
+    attack: layout.attack,
+    interact: layout.interact,
+    sneak: layout.sneak,
+    utilB: layout.utilityB,
+    utilI: layout.utilityI,
+  })) {
+    next[`--hud-${name}-x`] = fmtUnit(metric.centerX * 100, "%");
+    next[`--hud-${name}-y`] = fmtUnit(metric.centerY * 100, "%");
+    next[`--hud-${name}-size`] = fmtUnit(metric.sizeH * 100, "vh");
+  }
+  setRuntimeCssVars(next);
+  // Strip any legacy inline pollution from earlier builds.
+  clearInlineRuntimeStyles(element, document.documentElement);
 }
 
 /** Compact snippet for clipboard → paste back to agent / config. */

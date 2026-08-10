@@ -75,9 +75,7 @@ export class PauseMenu {
           <button type="button" data-role="controls" class="menu-btn ghost">${menuBtnLabel("text", t("pause.controls"))}</button>
           <button type="button" data-role="menu" class="menu-btn ghost">${menuBtnLabel("home", t("pause.mainMenu"))}</button>
         </nav>
-        <p class="pause-controls-hint" data-controls hidden>
-          WASD / stick · F Attack · E Interact · C Sneak · G Build · I Inventory · B Craft · M Map · Esc Pause
-        </p>
+        <p class="pause-controls-hint" data-controls hidden>${t("pause.controlsBody")}</p>
       </div>`;
     this.overlay.querySelector("[data-role=resume]")?.addEventListener("click", () => {
       this.close();

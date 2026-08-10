@@ -1,4 +1,5 @@
 import { uiIcon } from "./uiIcons";
+import { I18N } from "../i18n/I18n";
 
 /**
  * Custom loaders — full-screen (boot / travel) and compact local (panels).
@@ -20,15 +21,15 @@ export class FullLoader {
         </div>
         <div class="soi-loader-brand">
           ${uiIcon("fire", "ui-icon-img soi-loader-brand-icon")}
-          <span>Survive on Earth</span>
+          <span>${I18N.t("menu.brand")}</span>
         </div>
-        <div class="soi-loader-label" data-role="label">Loading…</div>
+        <div class="soi-loader-label" data-role="label">${I18N.t("loader.loading")}</div>
         <div class="soi-loader-bar"><i data-role="bar"></i></div>
       </div>`;
     root.append(this.el);
   }
 
-  show(label = "Loading…"): void {
+  show(label = I18N.t("loader.loading")): void {
     const lab = this.el.querySelector("[data-role=label]");
     if (lab) lab.textContent = label;
     this.el.classList.add("open");

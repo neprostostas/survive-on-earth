@@ -104,6 +104,12 @@ export class DungeonResetSystem {
   }
 
   load(data: Record<string, { lastResetWorldDay?: number; bossDefeated?: boolean; lootWave?: number; permanent?: string[] }> | undefined): void {
+    for (const st of this.states.values()) {
+      st.lastResetWorldDay = 0;
+      st.bossDefeated = false;
+      st.lootWave = 0;
+      st.permanent.clear();
+    }
     if (!data) return;
     for (const [id, row] of Object.entries(data)) {
       const st = this.states.get(id as DungeonId);

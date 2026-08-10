@@ -4,6 +4,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { ITEM_REGISTRY } from "../items/ItemSystem";
 import type { ItemResult, ResourceResultSink, ResultWorldPoint } from "../items/ItemResult";
 import { ITEM_ICONS } from "./itemIcons";
+import { itemName } from "../i18n/contentApi";
 
 interface FeedbackEntry {
   readonly element: HTMLElement;
@@ -41,7 +42,7 @@ export class ResourceResultFeedback implements ResourceResultSink {
     entry.lane = this.resultCount % 3 - 1;
     const presentationHeight = result.itemId === "pine-log" ? 1.55 : 0.9;
     entry.position.set(position.x, position.y + presentationHeight, position.z);
-    entry.element.innerHTML = `<span class="result-item-icon">${ITEM_ICONS[definition.iconId]}</span><span class="result-item-copy"><b>+${result.quantity}</b><small>${definition.displayName}</small></span>`;
+    entry.element.innerHTML = `<span class="result-item-icon">${ITEM_ICONS[definition.iconId]}</span><span class="result-item-copy"><b>+${result.quantity}</b><small>${itemName(definition)}</small></span>`;
     entry.element.style.opacity = "0";
     entry.element.style.display = "flex";
     this.lastResult = result;

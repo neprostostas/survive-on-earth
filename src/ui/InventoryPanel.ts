@@ -17,6 +17,8 @@ import { InventoryCharacterPreview } from "./InventoryCharacterPreview";
 import { openCharacterIdentityEditor } from "./CharacterIdentityEditor";
 import { CHARACTER_PROFILE } from "../player/CharacterProfile";
 import { ITEM_ICONS } from "./itemIcons";
+import { I18N } from "../i18n/I18n";
+import { itemName } from "../i18n/contentApi";
 
 type Selection =
   | { readonly source: "inventory"; readonly index: number; readonly stack: ItemStack }
@@ -47,12 +49,9 @@ interface ActiveDrag {
   over: HTMLElement | null;
 }
 
-const SLOT_LABELS: Readonly<Record<EquipmentSlotId, string>> = Object.freeze({
-  head: "Head",
-  torso: "Torso",
-  legs: "Legs",
-  feet: "Feet",
-});
+function slotLabel(id: EquipmentSlotId): string {
+  return ({ head: "Head", torso: "Torso", legs: "Legs", feet: "Feet" } as const)[id];
+}
 
 /** Presentation-only silhouette SVGs (original, not LDOE art). */
 const ARMOR_SILHOUETTES: Readonly<Record<EquipmentSlotId, string>> = Object.freeze({
@@ -89,6 +88,7 @@ export interface InventoryLiveFrame {
  * Presentation only over production Inventory + Equipment + Weapon + Backpack state.
  */
 export class InventoryPanel implements PickupRejectionSink {
+  // I18N chrome applied on open
   private readonly inventory: PlayerInventory;
   private readonly equipment: PlayerEquipment;
   private readonly equipmentSystem: EquipmentSystem;
@@ -227,7 +227,7 @@ export class InventoryPanel implements PickupRejectionSink {
     this.fullFeedback.className = "inventory-full-feedback";
     this.fullFeedback.setAttribute("role", "status");
     this.fullFeedback.setAttribute("aria-live", "polite");
-    this.fullFeedback.textContent = "Inventory full";
+    this.fullFeedback.textContent = I18N.t("inv.full");
     root.append(this.fullFeedback);
     this.itemTooltip = document.createElement("div");
     this.itemTooltip.className = "inv-item-tooltip";
@@ -438,6 +438,16 @@ export class InventoryPanel implements PickupRejectionSink {
       this.syncPreview();
       this.validateSelection();
     });
+    I18N.onChange(() => {
+      this.applyLocaleChrome();
+      this.syncBackpackStorageUi();
+      this.renderSlots(Array.from({ length: this.inventory.slotCount }, (_, index) => index));
+      this.renderEquipment();
+      this.renderWeapon();
+      this.renderBackpackEquip();
+      this.renderSelection();
+      this.renderStats();
+    });
     toggleButton.addEventListener("click", this.toggle);
     closeButton.addEventListener("click", this.close);
     actionButton.addEventListener("click", this.performSelectedAction);
@@ -499,7 +509,7 @@ export class InventoryPanel implements PickupRejectionSink {
   }
 
   handleInventoryFull(): void {
-    this.showStatus("Inventory full");
+    this.showStatus(I18N.t("inv.full"));
   }
 
   showStatus(message: string): void {
@@ -515,6 +525,7 @@ export class InventoryPanel implements PickupRejectionSink {
   private setOpen(open: boolean): void {
     if (this.openState === open) return;
     this.openState = open;
+    this.applyLocaleChrome();
     this.overlay.classList.toggle("open", open);
     this.overlay.setAttribute("aria-hidden", String(!open));
     this.toggleButton.classList.toggle("active", open);
@@ -588,7 +599,7 @@ export class InventoryPanel implements PickupRejectionSink {
     const activeExtra = this.inventory.extraSlots;
     const unlocked = activeExtra > 0;
     const packName = this.backpackSlot.current
-      ? ITEM_REGISTRY.get(this.backpackSlot.current.itemId).displayName
+      ? itemName(ITEM_REGISTRY.get(this.backpackSlot.current.itemId))
       : null;
     this.backpackSectionLabel.classList.toggle("muted", !unlocked);
     this.backpackSectionMeta.textContent = unlocked
@@ -651,10 +662,10 @@ export class InventoryPanel implements PickupRejectionSink {
       element.setAttribute(
         "aria-label",
         durability
-          ? `${definition.displayName}, quantity ${slot.stack.quantity}, durability ${durability.current} of ${durability.max}`
-          : `${definition.displayName}, quantity ${slot.stack.quantity}`,
+          ? `${itemName(definition)}, quantity ${slot.stack.quantity}, durability ${durability.current} of ${durability.max}`
+          : `${itemName(definition)}, quantity ${slot.stack.quantity}`,
       );
-      setItemTooltip(element, definition.displayName);
+      setItemTooltip(element, itemName(definition));
     }
   }
 
@@ -669,16 +680,16 @@ export class InventoryPanel implements PickupRejectionSink {
       if (!slot.stack) {
         content.replaceChildren();
         empty?.classList.remove("hidden");
-        element.setAttribute("aria-label", `${SLOT_LABELS[slot.id]} armor slot, empty`);
+        element.setAttribute("aria-label", `${slotLabel(slot.id)} armor slot, empty`);
         clearItemTooltip(element);
         continue;
       }
       empty?.classList.add("hidden");
       const definition = ITEM_REGISTRY.get(slot.stack.itemId);
       content.innerHTML = `<span class="inventory-item-icon">${ITEM_ICONS[definition.iconId]}</span>`;
-      element.setAttribute("aria-label", `${SLOT_LABELS[slot.id]}: ${definition.displayName}`);
+      element.setAttribute("aria-label", `${slotLabel(slot.id)}: ${itemName(definition)}`);
       const armor = definition.equipment?.armor ?? 0;
-      setItemTooltip(element, armor > 0 ? `${definition.displayName} · Armor +${armor}` : definition.displayName);
+      setItemTooltip(element, armor > 0 ? `${itemName(definition)} · Armor +${armor}` : itemName(definition));
     }
   }
 
@@ -706,10 +717,10 @@ export class InventoryPanel implements PickupRejectionSink {
     this.weaponSlotButton.setAttribute(
       "aria-label",
       durability
-        ? `Weapon: ${definition.displayName}, durability ${durability.current} of ${durability.max}`
-        : `Weapon: ${definition.displayName}`,
+        ? `Weapon: ${itemName(definition)}, durability ${durability.current} of ${durability.max}`
+        : `Weapon: ${itemName(definition)}`,
     );
-    setItemTooltip(this.weaponSlotButton, definition.displayName);
+    setItemTooltip(this.weaponSlotButton, itemName(definition));
   }
 
   private renderBackpackEquip(): void {
@@ -729,8 +740,8 @@ export class InventoryPanel implements PickupRejectionSink {
     empty?.classList.add("hidden");
     const definition = ITEM_REGISTRY.get(stack.itemId);
     content.innerHTML = `<span class="inventory-item-icon">${ITEM_ICONS[definition.iconId]}</span>`;
-    this.backpackShell.setAttribute("aria-label", `Backpack: ${definition.displayName}`);
-    setItemTooltip(this.backpackShell, definition.displayName);
+    this.backpackShell.setAttribute("aria-label", `Backpack: ${itemName(definition)}`);
+    setItemTooltip(this.backpackShell, itemName(definition));
   }
 
   private beginDrag(event: PointerEvent, origin: DragOrigin): void {
@@ -934,7 +945,7 @@ export class InventoryPanel implements PickupRejectionSink {
     if (origin.kind === "inventory" && target.kind === "equipment") {
       const armorSlot = ITEM_REGISTRY.get(stack.itemId).equipment?.slot;
       if (armorSlot !== target.slot) {
-        this.showStatus(`Needs ${SLOT_LABELS[target.slot]} slot`);
+        this.showStatus(`Needs ${slotLabel(target.slot)} slot`);
         return;
       }
       const result = this.equipmentSystem.equipFromInventory(origin.index, stack);
@@ -1025,18 +1036,19 @@ export class InventoryPanel implements PickupRejectionSink {
     this.weaponSlotButton.classList.toggle("selected", this.selected?.source === "weapon");
     this.backpackShell.classList.toggle("selected", this.selected?.source === "backpack");
     if (!this.selected) {
-      this.selectionName.textContent = "SELECT AN ITEM";
-      this.selectionStats.textContent = "Tap armor or tools · drag to equip";
+      this.selectionName.textContent = I18N.t("inv.select").toUpperCase();
+      this.selectionStats.textContent = I18N.t("inv.selectHint");
       this.actionButton.hidden = true;
       return;
     }
     const definition = ITEM_REGISTRY.get(this.selected.stack.itemId);
-    this.selectionName.textContent = definition.displayName.toUpperCase();
+    this.selectionName.textContent = itemName(definition).toUpperCase();
+    const equipLabel = this.selected.source === "inventory" ? I18N.t("inv.equip") : I18N.t("inv.unequip");
 
     if (this.selected.source === "backpack" || (this.selected.source === "inventory" && isBackpackCapableItemId(this.selected.stack.itemId) && definition.backpack)) {
       const extra = definition.backpack?.extraSlots ?? 0;
-      this.selectionStats.textContent = `BACKPACK · +${extra} slots`;
-      this.actionButton.textContent = this.selected.source === "inventory" ? "EQUIP" : "UNEQUIP";
+      this.selectionStats.textContent = `${I18N.t("inv.backpack").toUpperCase()} · +${extra}`;
+      this.actionButton.textContent = equipLabel;
       this.actionButton.hidden = false;
       return;
     }
@@ -1045,9 +1057,9 @@ export class InventoryPanel implements PickupRejectionSink {
       const durability = stackDurability(this.selected.stack);
       const melee = definition.meleeCombat;
       this.selectionStats.textContent = durability && melee
-        ? `WEAPON · ${durability.current} / ${durability.max} · ${melee.damage} dmg · ${melee.attacksPerSecond}/s`
-        : "WEAPON";
-      this.actionButton.textContent = this.selected.source === "inventory" ? "EQUIP" : "UNEQUIP";
+        ? `${I18N.t("inv.weapon").toUpperCase()} · ${durability.current} / ${durability.max} · ${melee.damage} · ${melee.attacksPerSecond}/s`
+        : I18N.t("inv.weapon").toUpperCase();
+      this.actionButton.textContent = this.selected.source === "inventory" ? I18N.t("inv.equip") : I18N.t("inv.unequip");
       this.actionButton.hidden = false;
       return;
     }
@@ -1056,14 +1068,14 @@ export class InventoryPanel implements PickupRejectionSink {
       const durability = stackDurability(this.selected.stack);
       const consumable = definition.consumable;
       if (this.selected.source === "inventory" && consumable) {
-        this.selectionStats.textContent = `${definition.category.toUpperCase()} · ${this.selected.stack.quantity} · USE`;
-        this.actionButton.textContent = "USE";
+        this.selectionStats.textContent = `${definition.category.toUpperCase()} · ${this.selected.stack.quantity} · ${I18N.t("inv.use")}`;
+        this.actionButton.textContent = I18N.t("inv.use");
         this.actionButton.hidden = false;
         return;
       }
       if (this.selected.source === "inventory" && PlayerQuickSlot.isCompatible(this.selected.stack.itemId)) {
-        this.selectionStats.textContent = `${definition.category.toUpperCase()} · QUICK SLOT`;
-        this.actionButton.textContent = "QUICK";
+        this.selectionStats.textContent = `${definition.category.toUpperCase()} · ${I18N.t("inv.quick").toUpperCase()}`;
+        this.actionButton.textContent = I18N.t("inv.assign");
         this.actionButton.hidden = false;
         return;
       }
@@ -1073,8 +1085,8 @@ export class InventoryPanel implements PickupRejectionSink {
       this.actionButton.hidden = true;
       return;
     }
-    this.selectionStats.textContent = `${SLOT_LABELS[definition.equipment.slot].toUpperCase()} · ARMOR +${definition.equipment.armor}`;
-    this.actionButton.textContent = this.selected.source === "inventory" ? "EQUIP" : "UNEQUIP";
+    this.selectionStats.textContent = `${slotLabel(definition.equipment.slot).toUpperCase()} · ${I18N.t("inv.armor", { n: definition.equipment.armor })}`;
+    this.actionButton.textContent = equipLabel;
     this.actionButton.hidden = false;
   }
 
@@ -1221,6 +1233,23 @@ export class InventoryPanel implements PickupRejectionSink {
     this.itemTooltip.hidden = true;
     this.itemTooltip.classList.remove("visible");
     this.itemTooltip.textContent = "";
+  }
+
+  private applyLocaleChrome(): void {
+    const t = (k: Parameters<typeof I18N.t>[0]) => I18N.t(k);
+    const title = this.overlay.querySelector("#inventory-title");
+    if (title) title.textContent = t("inv.title").toUpperCase();
+    const headers = this.overlay.querySelectorAll(".inv-section-label > span");
+    if (headers[0]) headers[0].textContent = t("inv.pockets").toUpperCase();
+    if (headers[1]) headers[1].textContent = t("inv.backpack").toUpperCase();
+    const strip = this.overlay.querySelectorAll<HTMLButtonElement>(".inv-shell-btn");
+    if (strip[0]) { strip[0].textContent = t("inv.use"); strip[0].title = t("inv.notAvailable"); }
+    if (strip[1]) { strip[1].textContent = t("inv.split"); strip[1].title = t("inv.notAvailable"); }
+    if (strip[2]) { strip[2].textContent = t("inv.delete"); strip[2].title = t("inv.notAvailable"); }
+    const edit = this.overlay.querySelector<HTMLElement>("[data-role=edit-identity]");
+    if (edit) { edit.title = t("inv.editCharacter"); edit.textContent = t("inv.edit"); }
+    this.overlay.querySelector(".inventory-close")?.setAttribute("aria-label", t("inv.close"));
+    this.fullFeedback.textContent = t("inv.full");
   }
 }
 

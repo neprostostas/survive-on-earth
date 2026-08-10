@@ -1,3 +1,5 @@
+import { I18N } from "../i18n/I18n";
+
 /**
  * Custom confirm dialog — never use window.confirm/alert.
  * Always mounts on document.body so #ui-root zoom/pointer-events cannot swallow clicks.
@@ -29,8 +31,8 @@ export function confirmDialog(_root: HTMLElement | null | undefined, options: Co
         <h2 class="soi-confirm-title">${escapeHtml(options.title)}</h2>
         <p class="soi-confirm-body">${escapeHtml(options.body)}</p>
         <div class="soi-confirm-actions">
-          <button type="button" class="menu-btn ghost" data-role="cancel">${escapeHtml(options.cancelLabel ?? "Cancel")}</button>
-          <button type="button" class="menu-btn ${options.danger ? "danger" : "primary"}" data-role="ok">${escapeHtml(options.confirmLabel ?? "OK")}</button>
+          <button type="button" class="menu-btn ghost" data-role="cancel">${escapeHtml(options.cancelLabel ?? I18N.t("confirm.cancel"))}</button>
+          <button type="button" class="menu-btn ${options.danger ? "danger" : "primary"}" data-role="ok">${escapeHtml(options.confirmLabel ?? I18N.t("confirm.ok"))}</button>
         </div>
       </div>`;
     host.append(overlay);

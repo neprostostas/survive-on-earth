@@ -2,11 +2,27 @@ import type { ItemId } from "../items/ItemId.ts";
 import type { ItemStack } from "../items/ItemSystem.ts";
 import { createItemStack, ITEM_REGISTRY } from "../items/ItemSystem.ts";
 import type { LocationId } from "../locations/LocationRegistry.ts";
+import type { SerializedGroundLoot } from "../ground-loot/GroundLootSystem.ts";
+import type { GameSettings } from "../i18n/I18n.ts";
+import type { LocaleId } from "../i18n/locales.ts";
+import type { CharacterIdentity } from "../player/CharacterProfile.ts";
+import type { CalibrationConfig } from "../config/calibrationConfig.ts";
 
-/** Accepted formats: v1 (initial) and v2 (slot-indexed inventory + extended world state). */
-export const SAVE_VERSION = 2 as const;
-export const SAVE_VERSIONS = Object.freeze([1, 2] as const);
+/** Accepted formats: v1–v4 (v4 adds settings prefs snapshot + vehicles/events/locks/etc.). */
+export const SAVE_VERSION = 4 as const;
+export const SAVE_VERSIONS = Object.freeze([1, 2, 3, 4] as const);
 const STORAGE_KEY = "survive-on-earth.save.v1";
+
+export interface SerializedContainer {
+  readonly id: string;
+  readonly title: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly capacity: number;
+  readonly active: boolean;
+  readonly slots: readonly (SerializedStack | null)[];
+}
 
 export interface SaveBlob {
   readonly version: number;
@@ -23,7 +39,7 @@ export interface SaveBlob {
   /**
    * Inventory contents.
    * v1: bare stacks (order only).
-   * v2: slot-indexed entries `{ index, itemId, quantity, ... }`.
+   * v2+: slot-indexed entries `{ index, itemId, quantity, ... }`.
    */
   readonly inventory: readonly (SerializedStack | SerializedInventorySlot)[];
   readonly inventoryExtraSlots: number;
@@ -53,6 +69,45 @@ export interface SaveBlob {
   readonly npcs?: { tokens?: number };
   readonly raids?: readonly unknown[];
   readonly contracts?: Record<string, unknown>;
+  /** Active ground piles (v3+). */
+  readonly groundLoot?: readonly SerializedGroundLoot[];
+  /** Loot containers (v3+). */
+  readonly worldContainers?: readonly SerializedContainer[];
+  /**
+   * Client preferences snapshot (v4+). Live keys remain source of truth at runtime;
+   * blob carries a backup for continuity / export.
+   */
+  readonly settings?: Partial<GameSettings>;
+  readonly locale?: LocaleId;
+  readonly character?: CharacterIdentity;
+  /** Camera / visual calibration (v4+). */
+  readonly calibration?: CalibrationConfig;
+  readonly vehicle?: {
+    active?: string | null;
+    bike?: Record<string, unknown>;
+    atv?: Record<string, unknown>;
+    assembled?: boolean;
+    parts?: string[];
+    fuel?: number;
+    condition?: number;
+  };
+  readonly dungeonResets?: Record<string, unknown>;
+  readonly worldEvents?: readonly unknown[];
+  readonly deathBags?: readonly {
+    id: string;
+    x: number;
+    z: number;
+    createdAt?: number;
+    stacks: readonly SerializedStack[];
+  }[];
+  readonly statusEffects?: readonly { id: string; remaining: number; tickAccum?: number }[];
+  readonly locks?: readonly { id: string; locked: boolean; powered?: boolean }[];
+  readonly greyhavenVisits?: number;
+  readonly campfireQueue?: {
+    nextId?: number;
+    entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
+  };
+  readonly sneakActive?: boolean;
 }
 
 export interface SerializedStack {
@@ -101,7 +156,7 @@ export function deserializeStack(data: SerializedStack): ItemStack | null {
 function isValidBlob(parsed: unknown): parsed is SaveBlob {
   if (!parsed || typeof parsed !== "object") return false;
   const blob = parsed as SaveBlob;
-  if (!SAVE_VERSIONS.includes(blob.version as 1 | 2)) return false;
+  if (!SAVE_VERSIONS.includes(blob.version as 1 | 2 | 3 | 4)) return false;
   if (typeof blob.locationId !== "string") return false;
   if (!blob.xp || typeof blob.xp.level !== "number") return false;
   if (!Array.isArray(blob.inventory)) return false;
@@ -113,7 +168,8 @@ export class SaveSystem {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(blob));
       return true;
-    } catch {
+    } catch (error) {
+      console.error("[SaveSystem] write failed", error);
       return false;
     }
   }
@@ -123,9 +179,13 @@ export class SaveSystem {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return null;
       const parsed: unknown = JSON.parse(raw);
-      if (!isValidBlob(parsed)) return null;
+      if (!isValidBlob(parsed)) {
+        console.warn("[SaveSystem] invalid save blob ignored");
+        return null;
+      }
       return parsed;
-    } catch {
+    } catch (error) {
+      console.error("[SaveSystem] read failed", error);
       return null;
     }
   }

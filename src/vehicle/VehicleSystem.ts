@@ -163,14 +163,23 @@ export class VehicleSystem {
     active?: VehicleId | null;
     bike?: { assembled?: boolean; parts?: VehiclePart[]; fuel?: number; condition?: number };
     atv?: { assembled?: boolean; parts?: VehiclePart[]; fuel?: number; condition?: number };
-  }): void {
-    // Back-compat with bike-only saves
-    if (data.bike || data.atv) {
+  } | undefined): void {
+    // Always clear both vehicles first so New Game / empty blob cannot leak state.
+    this.loadOne("salvaged-bike", {});
+    this.loadOne("trailrunner-atv", {});
+    this.active = null;
+    if (!data) return;
+    // Structured dual-vehicle saves
+    if (data.bike || data.atv || data.active !== undefined) {
       this.loadOne("salvaged-bike", data.bike ?? {});
       this.loadOne("trailrunner-atv", data.atv ?? {});
-      this.active = data.active ?? (this.vehicles["salvaged-bike"].assembled ? "salvaged-bike" : null);
+      const prefer = data.active;
+      if (prefer && this.vehicles[prefer]?.assembled) this.active = prefer;
+      else if (this.vehicles["salvaged-bike"].assembled) this.active = "salvaged-bike";
+      else if (this.vehicles["trailrunner-atv"].assembled) this.active = "trailrunner-atv";
       return;
     }
+    // Back-compat: bike-only flat shape
     this.loadOne("salvaged-bike", data);
     if (data.assembled || (data.parts?.length ?? 0) >= 5) this.active = "salvaged-bike";
   }

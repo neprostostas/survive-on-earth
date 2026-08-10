@@ -1,20 +1,34 @@
 import type { CraftingSystem } from "../crafting/CraftingSystem";
-import type { CraftingCategory, CraftingRecipeId } from "../crafting/CraftingTypes";
+import type { CraftingCategory, CraftingRecipeDefinition, CraftingRecipeId } from "../crafting/CraftingTypes";
 import type { PlayerInventory } from "../inventory/PlayerInventory";
 import { ITEM_REGISTRY } from "../items/ItemSystem";
 import { ITEM_ICONS } from "./itemIcons";
 import { LocalLoader } from "./Loaders";
+import { I18N } from "../i18n/I18n";
+import type { StringKey } from "../i18n/strings";
+import { itemDesc, itemName } from "../i18n/contentApi";
 
-/** LDOE-style category order for the blueprints workbench. */
-const CATEGORY_TABS: readonly { id: CraftingCategory; label: string }[] = Object.freeze([
-  { id: "all", label: "ALL" },
-  { id: "weapons", label: "WEAPONS" },
-  { id: "armor", label: "ARMOR" },
-  { id: "tools", label: "TOOLS" },
-  { id: "survival", label: "FOOD" },
-  { id: "materials", label: "PARTS" },
-  { id: "building", label: "BUILD" },
-]);
+/** Fold text for locale-aware blueprint search (diacritics + case). */
+function foldSearch(text: string): string {
+  try {
+    return text
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
+      .toLocaleLowerCase(I18N.currentLocale);
+  } catch {
+    return text.toLowerCase();
+  }
+}
+
+const TAB_KEYS: Record<Exclude<CraftingCategory, never>, StringKey> = {
+  all: "craft.tab.all",
+  weapons: "craft.tab.weapons",
+  armor: "craft.tab.armor",
+  tools: "craft.tab.tools",
+  survival: "craft.tab.consumable",
+  materials: "craft.tab.material",
+  building: "craft.tab.building",
+};
 
 /**
  * Blueprints UI matches LDOE: dense icon grid + detail pane on select.
@@ -51,7 +65,7 @@ export class CraftingPanel {
       <div class="crafting-panel crafting-screen" role="dialog" aria-modal="true" aria-labelledby="crafting-title">
         <header class="crafting-header">
           <div class="crafting-header-titles">
-            <small>FIELD WORKBENCH</small>
+            <small data-role="craft-subtitle">FIELD WORKBENCH</small>
             <h2 id="crafting-title">BLUEPRINTS</h2>
           </div>
           <label class="crafting-search">
@@ -72,8 +86,8 @@ export class CraftingPanel {
           </div>
           <aside class="crafting-detail" aria-live="polite">
             <div class="crafting-detail-empty">
-              <b>SELECT A BLUEPRINT</b>
-              <span>Tap an item to see materials and craft it.</span>
+              <b data-role="craft-select">SELECT A BLUEPRINT</b>
+              <span data-role="craft-select-hint">Tap an item to see materials and craft it.</span>
             </div>
             <div class="crafting-detail-body" hidden>
               <div class="crafting-detail-head">
@@ -84,7 +98,7 @@ export class CraftingPanel {
                   <span class="crafting-detail-qty"></span>
                 </div>
               </div>
-              <div class="crafting-detail-label">REQUIRED</div>
+              <div class="crafting-detail-label" data-role="craft-required">REQUIRED</div>
               <div class="crafting-ingredients" role="list"></div>
               <button class="craft-button" type="button">CRAFT</button>
             </div>
@@ -110,16 +124,16 @@ export class CraftingPanel {
     this.emptyFilter = emptyFilter;
     this.localLoader.attach(this.overlay.querySelector(".crafting-panel") ?? this.overlay);
 
-    for (const tab of CATEGORY_TABS) {
+    for (const id of Object.keys(TAB_KEYS) as CraftingCategory[]) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "crafting-tab";
-      btn.dataset.category = tab.id;
+      btn.dataset.category = id;
       btn.setAttribute("role", "tab");
-      btn.setAttribute("aria-selected", tab.id === this.category ? "true" : "false");
-      btn.textContent = tab.label;
-      if (tab.id === this.category) btn.classList.add("active");
-      btn.addEventListener("click", () => { this.setCategory(tab.id); });
+      btn.setAttribute("aria-selected", id === this.category ? "true" : "false");
+      btn.textContent = I18N.t(TAB_KEYS[id]);
+      if (id === this.category) btn.classList.add("active");
+      btn.addEventListener("click", () => { this.setCategory(id); });
       this.tabsEl.append(btn);
     }
 
@@ -130,19 +144,8 @@ export class CraftingPanel {
       cell.className = "crafting-cell";
       cell.dataset.recipeId = recipe.id;
       cell.dataset.category = recipe.category ?? "materials";
-      cell.dataset.search = [
-        output.displayName,
-        recipe.id,
-        output.id,
-        output.description ?? "",
-        ...recipe.ingredients.map((ing) => {
-          try { return ITEM_REGISTRY.get(ing.itemId).displayName; } catch { return ing.itemId; }
-        }),
-      ].join(" ").toLowerCase();
       cell.setAttribute("role", "option");
       cell.setAttribute("aria-selected", "false");
-      cell.title = output.displayName;
-      cell.setAttribute("aria-label", output.displayName);
       cell.innerHTML = `
         <span class="crafting-cell-icon">${ITEM_ICONS[output.iconId]}</span>
         <b class="crafting-cell-qty" ${recipe.output.quantity > 1 ? "" : "hidden"}>×${recipe.output.quantity}</b>
@@ -170,8 +173,15 @@ export class CraftingPanel {
       }
     });
 
+    this.rebuildLocalizedSearch();
+    this.applyCraftLocale();
     this.render();
     inventory.subscribe(() => { this.render(); });
+    I18N.onChange(() => {
+      this.rebuildLocalizedSearch();
+      this.applyCraftLocale();
+      this.render();
+    });
     toggleButton.addEventListener("click", this.toggle);
     closeButton.addEventListener("click", this.close);
     this.overlay.addEventListener("pointerdown", this.onBackdropPointerDown);
@@ -192,11 +202,76 @@ export class CraftingPanel {
     this.toggleButton.setAttribute("aria-expanded", String(open));
     this.onVisibilityChange(open);
     if (open) {
+      this.rebuildLocalizedSearch();
+      this.applyCraftLocale();
       this.render();
       this.searchInput.focus({ preventScroll: true });
     } else {
       this.selectedId = null;
       this.toggleButton.focus({ preventScroll: true });
+    }
+  }
+
+  private categoryLabel(category: CraftingCategory): string {
+    return I18N.t(TAB_KEYS[category] ?? "craft.tab.material");
+  }
+
+  private applyCraftLocale(): void {
+    const t = (k: StringKey) => I18N.t(k);
+    const h2 = this.overlay.querySelector("#crafting-title");
+    if (h2) h2.textContent = t("craft.title").toUpperCase();
+    const sub = this.overlay.querySelector("[data-role=craft-subtitle]");
+    if (sub) sub.textContent = t("craft.subtitle").toUpperCase();
+    this.searchInput.placeholder = t("craft.search");
+    this.emptyFilter.textContent = t("craft.empty");
+    const craftBtn = this.detailEl.querySelector(".craft-button");
+    if (craftBtn && !this.selectedId) craftBtn.textContent = t("craft.craft");
+    this.closeButton.setAttribute("aria-label", t("craft.close"));
+    const select = this.overlay.querySelector("[data-role=craft-select]");
+    if (select) select.textContent = t("craft.select").toUpperCase();
+    const hint = this.overlay.querySelector("[data-role=craft-select-hint]");
+    if (hint) hint.textContent = t("craft.selectHint");
+    const req = this.overlay.querySelector("[data-role=craft-required]");
+    if (req) req.textContent = t("craft.required").toUpperCase();
+    this.tabsEl.setAttribute("aria-label", t("craft.title"));
+    this.gridEl.setAttribute("aria-label", t("craft.title"));
+    for (const btn of this.tabsEl.querySelectorAll<HTMLButtonElement>(".crafting-tab")) {
+      const cat = btn.dataset.category as CraftingCategory | undefined;
+      if (cat) btn.textContent = this.categoryLabel(cat);
+    }
+  }
+
+  /** Build search corpus from current locale names + EN authoring names/ids. */
+  private recipeSearchBlob(recipe: CraftingRecipeDefinition): string {
+    const output = ITEM_REGISTRY.get(recipe.output.itemId);
+    const parts: string[] = [
+      itemName(output),
+      output.displayName,
+      recipe.id,
+      output.id,
+      itemDesc(output),
+      output.description ?? "",
+    ];
+    for (const ing of recipe.ingredients) {
+      try {
+        const def = ITEM_REGISTRY.get(ing.itemId);
+        parts.push(itemName(def), def.displayName, def.id);
+      } catch {
+        parts.push(ing.itemId);
+      }
+    }
+    return foldSearch(parts.filter(Boolean).join(" "));
+  }
+
+  private rebuildLocalizedSearch(): void {
+    for (const recipe of this.crafting.recipeRegistry.getAll()) {
+      const cell = this.cells.get(recipe.id);
+      if (!cell) continue;
+      const output = ITEM_REGISTRY.get(recipe.output.itemId);
+      const name = itemName(output);
+      cell.dataset.search = this.recipeSearchBlob(recipe);
+      cell.title = name;
+      cell.setAttribute("aria-label", name);
     }
   }
 
@@ -223,7 +298,8 @@ export class CraftingPanel {
   }
 
   private render(): void {
-    const query = this.searchQuery.trim().toLowerCase();
+    const query = foldSearch(this.searchQuery).trim();
+    const tokens = query ? query.split(/\s+/).filter(Boolean) : [];
     let visibleCount = 0;
     let selectionStillVisible = false;
 
@@ -233,7 +309,8 @@ export class CraftingPanel {
       if (!state || !cell) continue;
       const cat = recipe.category ?? "materials";
       const catOk = this.category === "all" || cat === this.category;
-      const searchOk = !query || (cell.dataset.search ?? "").includes(query);
+      const hay = cell.dataset.search ?? "";
+      const searchOk = tokens.length === 0 || tokens.every((token) => hay.includes(token));
       const visible = catOk && searchOk;
       cell.hidden = !visible;
       if (visible) {
@@ -286,12 +363,12 @@ export class CraftingPanel {
     if (!iconHost || !nameEl || !catEl || !qtyEl || !ingredients || !button) return;
 
     iconHost.innerHTML = `${ITEM_ICONS[output.iconId]}<b>×${state.recipe.output.quantity}</b>`;
-    nameEl.textContent = output.displayName;
+    nameEl.textContent = itemName(output);
     const cat = state.recipe.category ?? "materials";
-    catEl.textContent = CATEGORY_TABS.find((t) => t.id === cat)?.label ?? "BLUEPRINT";
+    catEl.textContent = this.categoryLabel(cat).toUpperCase();
     qtyEl.textContent = state.recipe.output.quantity > 1
-      ? `Creates ×${state.recipe.output.quantity}`
-      : (output.description ?? "");
+      ? I18N.t("craft.creates", { n: state.recipe.output.quantity })
+      : itemDesc(output);
 
     ingredients.replaceChildren();
     for (const row of state.ingredients) {
@@ -304,7 +381,7 @@ export class CraftingPanel {
       el.innerHTML = `
         <span class="crafting-ingredient-icon">${ITEM_ICONS[definition.iconId]}</span>
         <span class="crafting-ingredient-meta">
-          <b>${definition.displayName}</b>
+          <b>${itemName(definition)}</b>
           <small class="crafting-owned">${row.owned} / ${row.ingredient.quantity}</small>
         </span>`;
       ingredients.append(el);
@@ -312,22 +389,22 @@ export class CraftingPanel {
 
     button.disabled = !state.craftable;
     button.textContent = state.craftable
-      ? "CRAFT"
+      ? I18N.t("craft.craft")
       : state.blockedBy === "inventory-full"
-        ? "INVENTORY FULL"
-        : "NEED RESOURCES";
+        ? I18N.t("inv.full")
+        : I18N.t("craft.needMaterials");
   }
 
   private craft(recipeId: CraftingRecipeId): void {
-    this.localLoader.show("Crafting…");
+    this.localLoader.show(I18N.t("craft.working"));
     window.setTimeout(() => {
       const result = this.crafting.craft(recipeId);
       this.localLoader.hide();
       if (result.accepted && result.output) {
-        this.showStatus(`Crafted ${ITEM_REGISTRY.get(result.output.itemId).displayName}`);
+        this.showStatus(I18N.t("craft.crafted", { name: itemName(ITEM_REGISTRY.get(result.output.itemId)) }));
         this.onCrafted?.(recipeId, result.output.itemId);
-      } else if (result.status === "inventory-full") this.showStatus("Inventory full");
-      else if (result.status === "not-enough-resources") this.showStatus("Not enough resources");
+      } else if (result.status === "inventory-full") this.showStatus(I18N.t("notify.inventoryFull"));
+      else if (result.status === "not-enough-resources") this.showStatus(I18N.t("craft.needMaterials"));
       this.render();
     }, 160);
   }

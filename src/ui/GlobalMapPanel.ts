@@ -1,3 +1,5 @@
+import { I18N } from "../i18n/I18n";
+import { locationDesc, locationTitle } from "../i18n/contentApi";
 import { LOCATION_REGISTRY, getLocation, type LocationId } from "../locations/LocationRegistry";
 import type { LocationManager, TravelMode } from "../locations/LocationManager";
 import type { EnergyPool } from "../survival/NeedPool";
@@ -54,19 +56,19 @@ export class GlobalMapPanel {
     this.overlay.className = "overworld-overlay";
     this.overlay.setAttribute("aria-hidden", "true");
     this.overlay.innerHTML = `
-      <div class="overworld-frame" role="application" aria-label="World Map">
+      <div class="overworld-frame" role="application" aria-label="${I18N.t("map.title")}">
         <header class="overworld-header">
           <div>
-            <small class="overworld-kicker">WORLD MAP</small>
+            <small class="overworld-kicker">${I18N.t("map.title")}</small>
             <h2>TRAVEL</h2>
           </div>
-          <div class="overworld-energy" aria-live="polite">ENERGY <b data-role="energy">100</b></div>
+          <div class="overworld-energy" aria-live="polite"><span data-role="energy-label">ENERGY</span> <b data-role="energy">100</b></div>
           <div class="overworld-modes" data-role="modes">
-            <button type="button" data-mode="walk" class="map-mode active">WALK</button>
-            <button type="button" data-mode="run" class="map-mode">RUN</button>
-            <button type="button" data-mode="vehicle" class="map-mode">VEHICLE</button>
+            <button type="button" data-mode="walk" class="map-mode active">${I18N.t("map.walk")}</button>
+            <button type="button" data-mode="run" class="map-mode">${I18N.t("map.run")}</button>
+            <button type="button" data-mode="vehicle" class="map-mode">${I18N.t("map.vehicle")}</button>
           </div>
-          <button type="button" class="overworld-close" data-role="close" aria-label="Close map">×</button>
+          <button type="button" class="overworld-close" data-role="close" aria-label="${I18N.t("map.close")}">×</button>
         </header>
         <div class="overworld-intel" data-role="intel"></div>
         <div class="overworld-stage" data-role="stage">
@@ -103,6 +105,33 @@ export class GlobalMapPanel {
 
     window.addEventListener("keydown", this.onKeyDown, true);
     window.addEventListener("keyup", this.onKeyUp, true);
+    this.applyMapLocale();
+    I18N.onChange(() => {
+      this.applyMapLocale();
+      if (this.openState) this.refresh();
+    });
+  }
+
+  private applyMapLocale(): void {
+    const t = (k: Parameters<typeof I18N.t>[0]) => I18N.t(k);
+    const frame = this.overlay.querySelector(".overworld-frame");
+    frame?.setAttribute("aria-label", t("map.title"));
+    const kicker = this.overlay.querySelector(".overworld-kicker");
+    if (kicker) kicker.textContent = t("map.title");
+    const h2 = this.overlay.querySelector(".overworld-header h2");
+    if (h2) h2.textContent = t("map.title").toUpperCase();
+    const energyLabel = this.overlay.querySelector("[data-role=energy-label]");
+    if (energyLabel) energyLabel.textContent = t("hud.energy").toUpperCase();
+    for (const btn of this.overlay.querySelectorAll<HTMLButtonElement>("[data-mode]")) {
+      const mode = btn.dataset.mode;
+      if (mode === "walk") btn.textContent = t("map.walk");
+      else if (mode === "run") btn.textContent = t("map.run");
+      else if (mode === "vehicle") btn.textContent = t("map.vehicle");
+    }
+    this.overlay.querySelector("[data-role=close]")?.setAttribute("aria-label", t("map.close"));
+    this.hintEl.textContent = t("map.hint");
+    if (!this.nearest) this.enterBtn.textContent = t("map.enter");
+    else this.refreshEnterState();
   }
 
   setIntelProviders(providers: MapIntelProviders): void {
@@ -265,15 +294,15 @@ export class GlobalMapPanel {
       btn.classList.toggle("visited", state === "visited" || state === "completed");
       if (loc.regionId === "greyhaven") btn.classList.add("region-city");
       if (loc.regionId === "exclusion") btn.classList.add("region-hazard");
-      const label = state === "hidden" && !unlocked ? "???" : loc.title;
+      const label = state === "hidden" && !unlocked ? "???" : locationTitle(loc.id);
       btn.innerHTML = `<span class="overworld-node-dot"></span><span class="overworld-node-label">${label}</span>`;
       btn.title = unlocked
-        ? `${loc.title} · D${loc.difficulty}`
-        : `${loc.title} (locked)`;
+        ? `${locationTitle(loc.id)} · D${loc.difficulty}`
+        : `${locationTitle(loc.id)} (${I18N.t("map.locked")})`;
       btn.addEventListener("click", () => {
         // soft select / aim toward: snap gently
         if (!unlocked) {
-          this.infoEl.textContent = `${loc.title} is locked — level up or progress further.`;
+          this.infoEl.textContent = `${locationTitle(loc.id)} — ${I18N.t("map.locked")}`;
           return;
         }
         this.playerX = pin.x;
@@ -308,18 +337,21 @@ export class GlobalMapPanel {
   private refreshEnterState(): void {
     if (!this.nearest) {
       this.enterBtn.disabled = true;
+      this.enterBtn.textContent = I18N.t("map.enter");
       this.infoEl.textContent = this.leftInTransit
-        ? "In transit · walk to a marker"
-        : "Explore · approach a marker to enter";
+        ? I18N.t("map.hint")
+        : I18N.t("map.hint");
       return;
     }
     const def = getLocation(this.nearest);
     const check = this.locations.canEnterFromMap(this.nearest);
     this.enterBtn.disabled = !check.ok;
-    this.enterBtn.textContent = check.ok ? `ENTER · ${def.title}` : def.title;
+    this.enterBtn.textContent = check.ok
+      ? `${I18N.t("map.enter")} · ${locationTitle(def.id)}`
+      : locationTitle(def.id);
     this.infoEl.textContent = check.ok
-      ? `${def.title} — ${def.description}`
-      : `${def.title}: ${check.reason}`;
+      ? `${locationTitle(def.id)} — ${locationDesc(def.id)}`
+      : `${locationTitle(def.id)}: ${check.reason ?? I18N.t("map.locked")}`;
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {

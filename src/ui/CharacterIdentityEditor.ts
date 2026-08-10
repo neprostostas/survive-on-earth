@@ -3,6 +3,7 @@ import {
   type CharacterGender,
 } from "../player/CharacterProfile";
 import { menuBtnLabel, uiIcon } from "./uiIcons";
+import { I18N } from "../i18n/I18n";
 
 /**
  * Modal editor for survivor name + gender (shared by Settings & Inventory).
@@ -18,29 +19,30 @@ export function openCharacterIdentityEditor(_root?: HTMLElement | null): Promise
     overlay.setAttribute("aria-labelledby", "char-edit-title");
     overlay.style.pointerEvents = "auto";
     const current = CHARACTER_PROFILE.snapshot;
+    const t = (k: Parameters<typeof I18N.t>[0]) => I18N.t(k);
     overlay.innerHTML = `
       <div class="character-edit-panel" role="document">
         <div class="character-edit-mark" aria-hidden="true">${uiIcon("survivor", "ui-icon-img confirm-mark-img")}</div>
-        <h2 id="char-edit-title" class="soi-confirm-title">Character</h2>
-        <p class="soi-confirm-body">Name and look of your survivor. Saved on this device.</p>
+        <h2 id="char-edit-title" class="soi-confirm-title">${t("char.title")}</h2>
+        <p class="soi-confirm-body">${t("settings.character")}</p>
         <label class="character-edit-field">
-          <span class="settings-row-label">${uiIcon("survivor")}<span>Name</span></span>
+          <span class="settings-row-label">${uiIcon("survivor")}<span>${t("char.name")}</span></span>
           <input type="text" class="character-edit-name" maxlength="20" value="${escapeAttr(current.name)}" autocomplete="off" spellcheck="false" enterkeyhint="done" />
         </label>
         <div class="settings-row-block">
-          <span class="settings-row-label">${uiIcon("survivor")}<span>Gender</span></span>
-          <div class="soi-choice-group" role="listbox" aria-label="Gender">
-            ${genderBtn("male", "Male", current.gender)}
-            ${genderBtn("female", "Female", current.gender)}
-            ${genderBtn("other", "Other", current.gender)}
+          <span class="settings-row-label">${uiIcon("survivor")}<span>${t("char.gender")}</span></span>
+          <div class="soi-choice-group" role="listbox" aria-label="${t("char.gender")}">
+            ${genderBtn("male", t("settings.gender.male"), current.gender)}
+            ${genderBtn("female", t("settings.gender.female"), current.gender)}
+            ${genderBtn("other", t("settings.gender.other"), current.gender)}
           </div>
         </div>
         <div class="soi-confirm-actions">
           <button type="button" class="menu-btn ghost" data-role="cancel">
-            <span class="menu-btn-inner">${uiIcon("close", "ui-icon-img menu-btn-icon")}<span class="menu-btn-text">Cancel</span></span>
+            <span class="menu-btn-inner">${uiIcon("close", "ui-icon-img menu-btn-icon")}<span class="menu-btn-text">${t("char.cancel")}</span></span>
           </button>
           <button type="button" class="menu-btn primary" data-role="save">
-            ${menuBtnLabel("check", "Save")}
+            ${menuBtnLabel("check", t("char.save"))}
           </button>
         </div>
       </div>`;

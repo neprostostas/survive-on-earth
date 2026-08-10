@@ -18,6 +18,54 @@
   --soe-danger: #d87868;
   --soe-radius: 10px;
   --soe-radius-sm: 6px;
+  /* Defaults for scale / HUD — overridden by #soi-runtime-theme when live. */
+  --ui-scale: 1;
+  --text-scale: 1;
+  --hud-status-left: 2.8vh;
+  --hud-status-top: 2.2vh;
+  --hud-status-width: 27vh;
+  --hud-joystick-x: 14.9%;
+  --hud-joystick-y: 68.6%;
+  --hud-joystick-size: 22.6vh;
+  --hud-auto-x: 7.2%;
+  --hud-auto-y: 87.5%;
+  --hud-auto-size: 7.2vh;
+  --hud-minimap-x: 88.5%;
+  --hud-minimap-y: 18%;
+  --hud-minimap-size: 24vh;
+  --hud-settings-x: 78.9%;
+  --hud-settings-y: 5.9%;
+  --hud-settings-size: 5.2vh;
+  --hud-map-x: 87.6%;
+  --hud-map-y: 41.9%;
+  --hud-map-size: 6.2vh;
+  --hud-build-x: 93.7%;
+  --hud-build-y: 41%;
+  --hud-build-size: 8vh;
+  --hud-quick-x: 86.1%;
+  --hud-quick-y: 53.8%;
+  --hud-quick-size: 5.8vh;
+  --hud-quick2-x: 82.7%;
+  --hud-quick2-y: 64.8%;
+  --hud-quick2-size: 5.5vh;
+  --hud-attack-x: 91.4%;
+  --hud-attack-y: 68.2%;
+  --hud-attack-size: 15.5vh;
+  --hud-interact-x: 82.2%;
+  --hud-interact-y: 83.7%;
+  --hud-interact-size: 14vh;
+  --hud-sneak-x: 93%;
+  --hud-sneak-y: 86.6%;
+  --hud-sneak-size: 9vh;
+  --hud-utilB-x: 68.2%;
+  --hud-utilB-y: 88.7%;
+  --hud-utilB-size: 5.8vh;
+  --hud-utilI-x: 73.7%;
+  --hud-utilI-y: 88.6%;
+  --hud-utilI-size: 5.8vh;
+  --hud-level-left: 23.2%;
+  --hud-level-right: 16.9%;
+  --hud-level-bottom: 2.7vh;
   font-family: "SoE UI", "Segoe UI", system-ui, sans-serif;
   color: var(--soe-ink);
   background: #141c16;
@@ -1403,9 +1451,9 @@ body.hud-edit-mode .hud-edit-resize {
   text-shadow: 0 1px 3px #000a;
 }
 .local-map-overlay.expanded .local-map-hint { opacity: 1; }
-html[data-reduced-motion="1"] .local-map-stage,
-html[data-reduced-motion="1"] .local-map-chrome,
-html[data-reduced-motion="1"] .local-map-hint { transition: none; }
+body.soe-reduced-motion .local-map-stage,
+body.soe-reduced-motion .local-map-chrome,
+body.soe-reduced-motion .local-map-hint { transition: none; }
 
 .character-summary {
   display: grid; gap: .8vh;
@@ -1576,7 +1624,7 @@ html[data-reduced-motion="1"] .local-map-hint { transition: none; }
   0% { transform: scale(.7); opacity: .9; }
   100% { transform: scale(1.6); opacity: 0; }
 }
-html[data-reduced-motion="1"] .overworld-player-ring { animation: none; opacity: .7; }
+body.soe-reduced-motion .overworld-player-ring { animation: none; opacity: .7; }
 .overworld-footer {
   display: flex; flex-wrap: wrap; align-items: center; gap: 1vh;
   padding: 1vh max(1.6vh, env(safe-area-inset-right)) max(1.4vh, env(safe-area-inset-bottom)) max(1.6vh, env(safe-area-inset-left));
@@ -1660,8 +1708,8 @@ html[data-reduced-motion="1"] .overworld-player-ring { animation: none; opacity:
   from { opacity: .55; transform: translateY(0); }
   to { opacity: .9; transform: translateY(-1.2vh); }
 }
-html[data-reduced-motion="1"] .main-menu-glow,
-html[data-reduced-motion="1"] .main-menu-embers { animation: none; }
+body.soe-reduced-motion .main-menu-glow,
+body.soe-reduced-motion .main-menu-embers { animation: none; }
 
 .main-menu-mark {
   width: 7.2vh; height: 7.2vh; margin: 0 auto 1.4vh;
@@ -2033,7 +2081,7 @@ html {
 }
 
 /* High contrast: stronger edges, brighter type, clearer bars */
-html[data-high-contrast="1"] {
+body.soe-high-contrast {
   --soe-ink: #ffffff;
   --soe-muted: #d5e8c8;
   --soe-edge: #e8f5c0cc;
@@ -2041,36 +2089,36 @@ html[data-high-contrast="1"] {
   --soe-panel: #0a120cff;
   --soe-panel-2: #050a07ff;
 }
-html[data-high-contrast="1"] .menu-btn,
-html[data-high-contrast="1"] .inventory-action,
-html[data-high-contrast="1"] .soi-choice,
-html[data-high-contrast="1"] .soi-toggle-row,
-html[data-high-contrast="1"] .settings-panel,
-html[data-high-contrast="1"] .inventory-panel,
-html[data-high-contrast="1"] .crafting-panel,
-html[data-high-contrast="1"] .main-menu,
-html[data-high-contrast="1"] .pause-menu {
+body.soe-high-contrast .menu-btn,
+body.soe-high-contrast .inventory-action,
+body.soe-high-contrast .soi-choice,
+body.soe-high-contrast .soi-toggle-row,
+body.soe-high-contrast .settings-panel,
+body.soe-high-contrast .inventory-panel,
+body.soe-high-contrast .crafting-panel,
+body.soe-high-contrast .main-menu,
+body.soe-high-contrast .pause-menu {
   border-width: 2px;
   border-color: #d0e8b0;
   color: #fff;
 }
-html[data-high-contrast="1"] .menu-btn.primary {
+body.soe-high-contrast .menu-btn.primary {
   background: #2a6a20;
   border-color: #b0e080;
 }
-html[data-high-contrast="1"] .soi-choice.active {
+body.soe-high-contrast .soi-choice.active {
   border-color: #d0ff90;
   background: #355a2c;
 }
-html[data-high-contrast="1"] .need-bar-track,
-html[data-high-contrast="1"] .combat-health-track {
+body.soe-high-contrast .need-bar-track,
+body.soe-high-contrast .combat-health-track {
   outline: 1px solid #e8f5c0;
 }
 
 /* Reduced motion */
-html[data-reduced-motion="1"] *,
-html[data-reduced-motion="1"] *::before,
-html[data-reduced-motion="1"] *::after {
+body.soe-reduced-motion *,
+body.soe-reduced-motion *::before,
+body.soe-reduced-motion *::after {
   animation-duration: 0.001ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;
@@ -2078,21 +2126,21 @@ html[data-reduced-motion="1"] *::after {
 }
 
 /* Color assist — stronger status hues + slight world contrast */
-html[data-color-assist="1"] {
+body.soe-color-assist {
   --soe-accent: #ffe066;
   --soe-danger: #ff6b6b;
   --soe-warn: #ffcc44;
 }
-html[data-color-assist="1"] #game-canvas {
+body.soe-color-assist #game-canvas {
   filter: contrast(1.08) saturate(1.18);
 }
-html[data-color-assist="1"] .combat-damage-feedback {
+body.soe-color-assist .combat-damage-feedback {
   color: #ffee55;
   text-shadow: 0 .2vh .4vh #000, 0 0 .8vh #aa4400;
 }
 
 /* Damage numbers can be hidden via CombatPresentation (settings flag). */
-html[data-damage-numbers="0"] .combat-damage-feedback {
+body.soe-hide-damage-numbers .combat-damage-feedback {
   display: none !important;
 }
 
@@ -2270,9 +2318,9 @@ html[data-damage-numbers="0"] .combat-damage-feedback {
 }
 .game-toast-achievement .game-toast-kind { color: #e0c060; }
 
-html[data-reduced-motion="1"] .game-toast,
-html[data-reduced-motion="1"] .game-toast.visible,
-html[data-reduced-motion="1"] .game-toast.leaving {
+body.soe-reduced-motion .game-toast,
+body.soe-reduced-motion .game-toast.visible,
+body.soe-reduced-motion .game-toast.leaving {
   transition: opacity .12s ease;
   transform: none;
 }
@@ -2338,7 +2386,7 @@ html[data-reduced-motion="1"] .game-toast.leaving {
   background: linear-gradient(90deg, #6ab84a, #c9a44a); transition: width .25s ease;
 }
 @keyframes soi-spin { to { transform: rotate(360deg); } }
-html[data-reduced-motion="1"] .soi-loader-ring { animation: none; border-top-color: #9fd87a; }
+body.soe-reduced-motion .soi-loader-ring { animation: none; border-top-color: #9fd87a; }
 
 /* ── Local loader ── */
 .soi-loader-local {
