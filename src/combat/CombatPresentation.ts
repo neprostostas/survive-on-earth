@@ -24,6 +24,7 @@ interface DamageEntry {
   readonly position: Vector3;
   active: boolean;
   elapsed: number;
+  crit: boolean;
 }
 
 export class CombatPresentation {
@@ -69,12 +70,12 @@ export class CombatPresentation {
     this.statusValue = statusValue;
     this.statusFill = statusFill;
 
-    this.damageEntries = Object.freeze(Array.from({ length: 4 }, () => {
+    this.damageEntries = Object.freeze(Array.from({ length: 6 }, () => {
       const element = document.createElement("div");
       element.className = "combat-damage-feedback";
       element.setAttribute("aria-hidden", "true");
       uiRoot.append(element);
-      return { element, position: Vector3.Zero(), active: false, elapsed: 0 };
+      return { element, position: Vector3.Zero(), active: false, elapsed: 0, crit: false };
     }));
   }
 
@@ -114,19 +115,21 @@ export class CombatPresentation {
     }
   }
 
-  showImpact(target: CombatTarget, appliedDamage: number): void {
+  showImpact(target: CombatTarget, appliedDamage: number, isCrit = false): void {
     const visual = this.visuals.get(target.combatId);
-    if (visual) visual.recoil = 0.12;
-    this.showDamage(target.getCombatPosition(), appliedDamage, 1.75);
+    if (visual) visual.recoil = isCrit ? 0.18 : 0.12;
+    this.showDamage(target.getCombatPosition(), appliedDamage, 1.75, isCrit);
   }
 
-  showDamage(position: CombatPoint, appliedDamage: number, height = 1.75): void {
+  showDamage(position: CombatPoint, appliedDamage: number, height = 1.75, isCrit = false): void {
     if (!I18N.gameSettings.damageNumbers) return;
     const entry = this.damageEntries.find((candidate) => !candidate.active) ?? this.damageEntries.reduce((oldest, candidate) => candidate.elapsed > oldest.elapsed ? candidate : oldest);
     entry.active = true;
     entry.elapsed = 0;
-    entry.position.set(position.x, position.y + height, position.z);
-    entry.element.textContent = `-${appliedDamage}`;
+    entry.crit = isCrit;
+    entry.position.set(position.x, position.y + height + (isCrit ? 0.15 : 0), position.z);
+    entry.element.textContent = isCrit ? `CRIT -${appliedDamage}` : `-${appliedDamage}`;
+    entry.element.classList.toggle("is-crit", isCrit);
     entry.element.style.display = "block";
     entry.element.style.opacity = "0";
   }
@@ -180,18 +183,23 @@ export class CombatPresentation {
     for (const entry of this.damageEntries) {
       if (!entry.active) continue;
       if (delta > 0) entry.elapsed += delta;
-      if (entry.elapsed >= 0.72) {
+      const life = entry.crit ? 0.95 : 0.72;
+      if (entry.elapsed >= life) {
         entry.active = false;
+        entry.crit = false;
+        entry.element.classList.remove("is-crit");
         entry.element.style.display = "none";
         continue;
       }
       const projected = Vector3.Project(entry.position, this.identity, this.scene.getTransformMatrix(), viewport);
-      const progress = entry.elapsed / 0.72;
+      const progress = entry.elapsed / life;
       const opacity = Math.min(1, progress / 0.1) * Math.min(1, (1 - progress) / 0.35);
+      const lift = entry.crit ? 36 : 22;
+      const scale = entry.crit ? 1 + (1 - progress) * 0.35 : 1;
       entry.element.style.left = `${projected.x * scaleX}px`;
       entry.element.style.top = `${projected.y * scaleY}px`;
       entry.element.style.opacity = String(opacity);
-      entry.element.style.transform = `translate(-50%, -100%) translateY(${-progress * 22}px)`;
+      entry.element.style.transform = `translate(-50%, -100%) translateY(${-progress * lift}px) scale(${scale})`;
     }
   }
 

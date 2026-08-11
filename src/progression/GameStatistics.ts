@@ -12,6 +12,7 @@ export interface GameStatisticsSnapshot {
   readonly distanceTraveled: number;
   readonly locationsDiscovered: number;
   readonly raidsCleared: number;
+  readonly criticalHits: number;
 }
 
 export class GameStatistics {
@@ -25,6 +26,7 @@ export class GameStatistics {
   private distanceTraveled = 0;
   private locationsDiscovered = 0;
   private raidsCleared = 0;
+  private criticalHits = 0;
 
   tickPlaytime(dt: number): void {
     if (dt <= 0) return;
@@ -42,6 +44,9 @@ export class GameStatistics {
   recordTravel(distance = 1): void { this.distanceTraveled += Math.max(0, distance); }
   recordLocationDiscovered(): void { this.locationsDiscovered += 1; }
   recordRaidClear(): void { this.raidsCleared += 1; }
+  recordCriticalHit(): void { this.criticalHits += 1; }
+
+  get criticalHitCount(): number { return this.criticalHits; }
 
   beginSession(): void {
     this.sessionPlaytimeSec = 0;
@@ -59,6 +64,7 @@ export class GameStatistics {
       distanceTraveled: this.distanceTraveled,
       locationsDiscovered: this.locationsDiscovered,
       raidsCleared: this.raidsCleared,
+      criticalHits: this.criticalHits,
     });
   }
 
@@ -77,6 +83,7 @@ export class GameStatistics {
     this.distanceTraveled = data.distanceTraveled ?? 0;
     this.locationsDiscovered = data.locationsDiscovered ?? 0;
     this.raidsCleared = data.raidsCleared ?? 0;
+    this.criticalHits = data.criticalHits ?? 0;
     this.sessionPlaytimeSec = 0;
   }
 }

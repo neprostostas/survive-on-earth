@@ -10,8 +10,15 @@ import { hudIconImg } from "./hudIcons";
 import { I18N } from "../i18n/I18n";
 import { itemName } from "../i18n/contentApi";
 import { CHARACTER_PROFILE } from "../player/CharacterProfile";
+import type { StatusEffectId } from "../status/StatusEffectSystem";
 
 export type PrimaryActionContext = "none" | "generic" | "pickup" | HarvestTool;
+
+const STATUS_CHIP_KEYS: Record<StatusEffectId, Parameters<typeof I18N.t>[0]> = {
+  bleeding: "status.bleeding",
+  slow: "status.slow",
+  regeneration: "status.regeneration",
+};
 
 const PRIMARY_ICONS: Record<Exclude<PrimaryActionContext, "none">, string> = {
   generic: hudIconImg("interact"),
@@ -62,6 +69,7 @@ export class HUD {
   private readonly levelLabel: HTMLElement;
   private readonly levelFill: HTMLElement;
   private readonly defeatedFeedback: HTMLElement;
+  private readonly statusChipsEl: HTMLElement;
   private primaryContext: PrimaryActionContext = "none";
   private pickupContextKey = "";
   private attackWeaponKey = "fists";
@@ -93,6 +101,7 @@ export class HUD {
                 <div class="need-track energy-track" title="Energy"><i class="need-fill energy-fill"></i></div>
               </div>
             </div>
+            <div class="status-chips" data-role="status-chips" aria-live="polite"></div>
           </div>
         </section>
 
@@ -212,13 +221,14 @@ export class HUD {
     const levelLabel = root.querySelector<HTMLElement>(".level-label");
     const levelFill = root.querySelector<HTMLElement>(".level-fill");
     const defeatedFeedback = root.querySelector<HTMLElement>(".player-defeated-feedback");
+    const statusChipsEl = root.querySelector<HTMLElement>("[data-role=status-chips]");
     const quickSlotButton = root.querySelector<HTMLButtonElement>(".quick-action-1");
     const quickSlot2Button = root.querySelector<HTMLButtonElement>(".quick-action-2");
     const sneakButton = root.querySelector<HTMLButtonElement>(".sneak-action");
     const buildButton = root.querySelector<HTMLButtonElement>(".build-action");
     const mapButton = root.querySelector<HTMLButtonElement>(".map-action");
     if (!playerNameEl || !healthFill || !healthTrack || !healthValue || !hungerFill || !thirstFill || !energyFill
-      || !levelLabel || !levelFill || !defeatedFeedback || !quickSlotButton || !quickSlot2Button
+      || !levelLabel || !levelFill || !defeatedFeedback || !statusChipsEl || !quickSlotButton || !quickSlot2Button
       || !sneakButton || !buildButton || !mapButton) {
       throw new Error("HUD elements failed to mount");
     }
@@ -232,6 +242,7 @@ export class HUD {
     this.levelLabel = levelLabel;
     this.levelFill = levelFill;
     this.defeatedFeedback = defeatedFeedback;
+    this.statusChipsEl = statusChipsEl;
     this.quickSlotButton = quickSlotButton;
     this.quickSlot2Button = quickSlot2Button;
     this.sneakButton = sneakButton;
@@ -290,6 +301,12 @@ export class HUD {
     this.root.querySelector(".auto-label")!.textContent = t("hud.auto");
     this.defeatedFeedback.textContent = t("hud.defeated");
     if (this.attackWeaponKey === "fists") this.attackWeaponDisplayName = t("hud.fists");
+    // Refresh chip labels if locale changed
+    const ids = (this.statusChipsEl.dataset.ids ?? "").split(",").filter(Boolean) as StatusEffectId[];
+    if (ids.length > 0) {
+      this.statusChipsEl.dataset.ids = "";
+      this.setStatusEffects(ids);
+    }
   }
 
   get minimapElement(): HTMLElement { return this.minimapShell; }
@@ -329,6 +346,24 @@ export class HUD {
     this.hungerFill.style.width = `${clamp01(hungerRatio) * 100}%`;
     this.thirstFill.style.width = `${clamp01(thirstRatio) * 100}%`;
     this.energyFill.style.width = `${clamp01(energyRatio) * 100}%`;
+  }
+
+  setStatusEffects(ids: readonly StatusEffectId[]): void {
+    const wanted = ids.join(",");
+    if (this.statusChipsEl.dataset.ids === wanted) return;
+    this.statusChipsEl.dataset.ids = wanted;
+    this.statusChipsEl.replaceChildren();
+    for (const id of ids) {
+      const chip = document.createElement("span");
+      chip.className = `status-chip status-chip--${id}`;
+      chip.textContent = I18N.t(STATUS_CHIP_KEYS[id]);
+      chip.title = chip.textContent;
+      this.statusChipsEl.append(chip);
+    }
+    const statusRoot = this.root.querySelector(".player-status");
+    statusRoot?.classList.toggle("is-bleeding", ids.includes("bleeding"));
+    statusRoot?.classList.toggle("is-slowed", ids.includes("slow"));
+    statusRoot?.classList.toggle("is-regen", ids.includes("regeneration"));
   }
 
   setLevel(level: number, xpRatio: number): void {

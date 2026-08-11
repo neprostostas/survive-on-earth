@@ -249,7 +249,7 @@ export class Game {
     this.notify = new NotificationService(uiRoot);
     this.fullLoader = new FullLoader(uiRoot);
     this.locations = new LocationManager(this.energy);
-    this.consumables = new ConsumableUseSystem(this.inventory, this.player.health, this.hunger, this.thirst, this.quickSlot);
+    this.consumables = new ConsumableUseSystem(this.inventory, this.player.health, this.hunger, this.thirst, this.quickSlot, this.status);
     this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
     this.combatPresentation = new CombatPresentation(this.scene, this.engine, uiRoot);
     this.enemyPresentation = new EnemyPresentation(this.scene);
@@ -281,7 +281,9 @@ export class Game {
         onPlayerDamage: (_enemy, damage) => {
           this.combatPresentation.showDamage(this.player.position, damage.finalDamage, 1.9);
           this.pulseCameraShake(0.45);
+          GAME_AUDIO.playPlayerHit();
           this.lastDeathCause = "Infected attack";
+          if (!damage.becameDefeated) this.applyCombatWound(damage.finalDamage);
           if (damage.becameDefeated) this.enterPlayerDefeatedState();
         },
         onEnemyHit: (enemy) => { this.enemyPresentation.showHit(enemy); },
@@ -309,7 +311,13 @@ export class Game {
         }
         const crit = resolveCriticalHit(damage.requested);
         const finalReq = crit.isCrit ? crit.damage : damage.requested;
-        this.combatPresentation.showImpact(target, finalReq);
+        this.combatPresentation.showImpact(target, finalReq, crit.isCrit);
+        if (crit.isCrit) {
+          this.stats.recordCriticalHit();
+          GAME_AUDIO.playCrit();
+          this.pulseCameraShake(0.22);
+          if (this.stats.criticalHitCount >= 25) this.notifyAchievement("critical-master");
+        }
         const hit = Object.freeze({ ...damage, requested: finalReq });
         if (this.enemies.handlePlayerCombatImpact(target, hit)) return;
         if (!hit.becameDead) return;
@@ -340,6 +348,7 @@ export class Game {
         if (result.accepted) {
           this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
           this.syncHudNeeds();
+          this.feedbackConsumable(result);
         }
         return result.accepted;
       },
@@ -834,7 +843,7 @@ export class Game {
       return;
     }
     const sprinting = this.input.isSprintHeld && !this.sneak.isSneaking;
-    const speedMul = this.sneak.moveMul * (sprinting ? 2 : 1);
+    const speedMul = this.sneak.moveMul * (sprinting ? 2 : 1) * this.status.moveSpeedMultiplier();
     const action = this.input.consumePrimaryActionState();
     const attackPressed = this.input.consumeAttackPressed();
     const attackHeld = this.input.isAttackHeld;
@@ -959,6 +968,7 @@ export class Game {
         moveSpeed: this.config.player.movementSpeed
           * this.skills.moveSpeedMultiplier()
           * this.sneak.moveMul
+          * this.status.moveSpeedMultiplier()
           * (this.input.isSprintHeld && !this.sneak.isSneaking ? 2 : 1),
         motionFrozen: this.fidelity.motionFrozen,
       });
@@ -1001,6 +1011,7 @@ export class Game {
       this.player.health.applyDamage(-statusTick.healthDelta);
       if (this.player.health.dead) this.enterPlayerDefeatedState();
     }
+    this.hud.setStatusEffects(statusTick.active);
     if (this.hunger.isEmpty) {
       this.player.health.applyDamage(SURVIVAL_CONFIG.hunger.starvationDamagePerSecond * frameDelta);
       if (this.player.health.dead) this.enterPlayerDefeatedState();
@@ -1051,6 +1062,7 @@ export class Game {
     this.syncQuickHud();
     this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
     this.syncHudNeeds();
+    this.feedbackConsumable(result);
   }
 
   /** Equip first torch from pockets into utility slot (or unequip when KeyU). */
@@ -1626,6 +1638,8 @@ export class Game {
     if (this.deathHandled) return;
     this.deathHandled = true;
     this.stats.recordDeath();
+    this.status.clear();
+    this.hud.setStatusEffects([]);
     this.combat.cancelAttack();
     this.harvesting.cancel();
     this.player.stopMovement();
@@ -1677,6 +1691,8 @@ export class Game {
     this.deathHandled = false;
     this.sneak.setActive(false);
     this.hud.setSneakActive(false);
+    this.status.clear();
+    this.hud.setStatusEffects([]);
     this.applyGameplayPanelState(false);
     this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
     this.syncHudNeeds();
@@ -1754,6 +1770,31 @@ export class Game {
     this.farming.ensurePlot("home-plot-1");
   }
 
+
+  private applyCombatWound(finalDamage: number): void {
+    const bleedChance = finalDamage >= 12 ? 0.42 : finalDamage >= 6 ? 0.28 : 0.14;
+    if (Math.random() < bleedChance) {
+      const wasNew = this.status.apply("bleeding");
+      if (wasNew) this.notify.push(I18N.t("notify.bleeding"), "warn");
+    }
+    const slowChance = finalDamage >= 10 ? 0.28 : 0.16;
+    if (Math.random() < slowChance) {
+      const wasNew = this.status.apply("slow");
+      if (wasNew) this.notify.push(I18N.t("notify.slowed"), "info");
+    }
+    this.hud.setStatusEffects(this.status.ids());
+  }
+
+  private feedbackConsumable(result: { clearedBleeding?: boolean; appliedRegen?: boolean }): void {
+    if (result.clearedBleeding) {
+      GAME_AUDIO.playHeal();
+      this.notify.push(I18N.t("notify.woundTreated"), "success");
+    }
+    if (result.appliedRegen) {
+      this.notify.push(I18N.t("notify.regenerating"), "info");
+    }
+    this.hud.setStatusEffects(this.status.ids());
+  }
 
   private notifyAchievement(id: AchievementId): void {
     if (!this.achievements.tryUnlock(id)) return;

@@ -53,16 +53,32 @@ export interface StatusTickResult {
 export class StatusEffectSystem {
   private readonly active = new Map<StatusEffectId, ActiveStatus>();
 
-  apply(id: StatusEffectId): void {
+  apply(id: StatusEffectId): boolean {
     const def = STATUS_EFFECT_DEFS[id];
     const existing = this.active.get(id);
-    if (existing && def.stackPolicy === "ignore") return;
+    if (existing && def.stackPolicy === "ignore") return false;
+    const wasNew = !existing;
     this.active.set(id, { id, remaining: def.duration, tickAccum: 0 });
+    return wasNew;
   }
+
+  has(id: StatusEffectId): boolean { return this.active.has(id); }
+
+  remove(id: StatusEffectId): boolean { return this.active.delete(id); }
 
   clear(): void { this.active.clear(); }
 
   ids(): readonly StatusEffectId[] { return Object.freeze([...this.active.keys()]); }
+
+  /** Instant move speed multiplier from active effects (no side effects). */
+  moveSpeedMultiplier(): number {
+    let mul = 1;
+    for (const id of this.active.keys()) {
+      const ms = STATUS_EFFECT_DEFS[id].moveSpeedMul;
+      if (ms !== undefined) mul *= ms;
+    }
+    return mul;
+  }
 
   serialize(): readonly { id: StatusEffectId; remaining: number; tickAccum: number }[] {
     return Object.freeze([...this.active.values()].map((s) => Object.freeze({

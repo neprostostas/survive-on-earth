@@ -201,6 +201,13 @@ export type StringKey =
   | "notify.skillVitality"
   | "notify.bossStirs"
   | "notify.crafted"
+  | "notify.bleeding"
+  | "notify.slowed"
+  | "notify.woundTreated"
+  | "notify.regenerating"
+  | "status.bleeding"
+  | "status.slow"
+  | "status.regeneration"
   | "travel.locked"
   | "travel.parent"
   | "travel.needBunker"
@@ -418,6 +425,13 @@ const EN: Record<StringKey, string> = {
   "notify.skillVitality": "Skill: Vitality +1",
   "notify.bossStirs": "{name} stirs…",
   "notify.crafted": "Crafted {name}",
+  "notify.bleeding": "You're bleeding!",
+  "notify.slowed": "Movement slowed",
+  "notify.woundTreated": "Bleeding stopped",
+  "notify.regenerating": "Regenerating…",
+  "status.bleeding": "Bleeding",
+  "status.slow": "Slow",
+  "status.regeneration": "Regen",
   "travel.locked": "Locked",
   "travel.parent": "Use parent entrance",
   "travel.needBunker": "Need bunker access card",
@@ -634,6 +648,13 @@ const UK: Dict = {
   "notify.skillVitality": "Навичка: Живучість +1",
   "notify.bossStirs": "{name} пробуджується…",
   "notify.crafted": "Скрафтено: {name}",
+  "notify.bleeding": "Ви кровоточите!",
+  "notify.slowed": "Рух сповільнено",
+  "notify.woundTreated": "Кровотечу зупинено",
+  "notify.regenerating": "Регенерація…",
+  "status.bleeding": "Кровотеча",
+  "status.slow": "Повільність",
+  "status.regeneration": "Реген",
   "travel.locked": "Зачинено",
   "travel.parent": "Увійдіть з батьківської локації",
   "travel.needBunker": "Потрібна карта доступу до бункера",

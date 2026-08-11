@@ -3,6 +3,7 @@ import type { PlayerInventory } from "../inventory/PlayerInventory.ts";
 import type { PlayerQuickSlot } from "../equipment/PlayerQuickSlot.ts";
 import type { HungerPool, ThirstPool } from "../survival/NeedPool.ts";
 import { ITEM_REGISTRY, type ItemStack } from "../items/ItemSystem.ts";
+import type { StatusEffectSystem } from "../status/StatusEffectSystem.ts";
 
 export type ConsumableSource = "inventory" | "quick-slot";
 
@@ -10,7 +11,23 @@ export interface ConsumableUseResult {
   readonly accepted: boolean;
   readonly reason: string | null;
   readonly applied: number;
+  /** Extra flags for feedback (optional). */
+  readonly clearedBleeding?: boolean;
+  readonly appliedRegen?: boolean;
 }
+
+/** Items that stop bleeding / support wound care at full HP. */
+const BLEED_TREATMENTS = new Set([
+  "bandage",
+  "sterile-bandage",
+  "bleeding-treatment",
+  "first-aid-kit",
+]);
+
+const REGEN_ON_USE = new Set([
+  "sterile-bandage",
+  "first-aid-kit",
+]);
 
 /**
  * Applies consumable effects against production survival pools.
@@ -23,6 +40,7 @@ export class ConsumableUseSystem {
     private readonly hunger: HungerPool,
     private readonly thirst: ThirstPool,
     private readonly quickSlot: PlayerQuickSlot,
+    private readonly status?: StatusEffectSystem,
   ) {}
 
   useFromInventory(slotIndex: number, expected?: ItemStack): ConsumableUseResult {
@@ -61,12 +79,34 @@ export class ConsumableUseSystem {
     const meta = def.consumable;
     if (!meta) return { accepted: false, reason: "not-consumable", applied: 0 };
     if (meta.kind === "heal") {
-      if (meta.rejectWhenFull && this.health.currentHealth >= this.health.maxHealth) {
+      const bleeding = this.status?.has("bleeding") ?? false;
+      const canTreatBleed = BLEED_TREATMENTS.has(itemId) && bleeding;
+      if (meta.rejectWhenFull && this.health.currentHealth >= this.health.maxHealth && !canTreatBleed) {
         return { accepted: false, reason: "full-health", applied: 0 };
       }
       const heal = this.health.heal(meta.amount);
-      if (heal.applied <= 0) return { accepted: false, reason: "no-effect", applied: 0 };
-      return { accepted: true, reason: null, applied: heal.applied };
+      let clearedBleeding = false;
+      let appliedRegen = false;
+      if (BLEED_TREATMENTS.has(itemId) && this.status) {
+        clearedBleeding = this.status.remove("bleeding");
+        if (REGEN_ON_USE.has(itemId)) {
+          this.status.apply("regeneration");
+          appliedRegen = true;
+        }
+      }
+      if (itemId === "pain-relief" && this.status?.has("slow")) {
+        this.status.remove("slow");
+      }
+      if (heal.applied <= 0 && !clearedBleeding) {
+        return { accepted: false, reason: "no-effect", applied: 0 };
+      }
+      return Object.freeze({
+        accepted: true,
+        reason: null,
+        applied: heal.applied,
+        clearedBleeding,
+        appliedRegen,
+      });
     }
     if (meta.kind === "food") {
       if (meta.rejectWhenFull && this.hunger.isFull) return { accepted: false, reason: "full-hunger", applied: 0 };
