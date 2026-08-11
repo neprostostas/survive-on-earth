@@ -1,5 +1,13 @@
 import type { ItemId } from "../items/ItemId";
-import { ITEM_REGISTRY, cloneItemStack, createItemStack, mergeItemStacks, type ItemStack } from "../items/ItemSystem.ts";
+import {
+  ITEM_REGISTRY,
+  cloneItemStack,
+  createItemStack,
+  expandToLegalStacks,
+  isStackMergeable,
+  mergeItemStacks,
+  type ItemStack,
+} from "../items/ItemSystem.ts";
 import { INVENTORY_CONFIG, inventoryStorageLength } from "./inventoryConfig.ts";
 
 export interface InventorySlot {
@@ -46,31 +54,69 @@ function assertPlanLength(current: readonly (ItemStack | null)[]): void {
   }
 }
 
+function planInsertLegalChunk(
+  current: readonly (ItemStack | null)[],
+  chunk: ItemStack,
+  pocketBoundary: number,
+): (ItemStack | null)[] | null {
+  const planned = [...current];
+  let remainder: ItemStack | null = cloneItemStack(chunk);
+  const cap = planned.length;
+  const pocketEnd = Math.min(Math.max(0, pocketBoundary), cap);
+  const maxStack = ITEM_REGISTRY.get(chunk.itemId).maxStack;
+  const canMerge = isStackMergeable(chunk);
+
+  const mergeRange = (from: number, to: number): void => {
+    if (!canMerge || !remainder) return;
+    for (let index = from; index < to && remainder; index += 1) {
+      const existing = planned[index];
+      if (!existing || existing.itemId !== remainder.itemId || !isStackMergeable(existing)) continue;
+      if (existing.quantity >= maxStack) continue;
+      const merged = mergeItemStacks(existing, remainder);
+      planned[index] = merged.stack;
+      remainder = merged.remainder;
+    }
+  };
+
+  const fillEmptyRange = (from: number, to: number): void => {
+    for (let index = from; index < to && remainder; index += 1) {
+      if (planned[index] !== null) continue;
+      // Always place at most one maxStack (or the remaining legal chunk).
+      const take = Math.min(maxStack, remainder.quantity);
+      if (take === remainder.quantity) {
+        planned[index] = cloneItemStack(remainder);
+        remainder = null;
+      } else {
+        planned[index] = createItemStack(remainder.itemId, take);
+        remainder = createItemStack(remainder.itemId, remainder.quantity - take);
+      }
+    }
+  };
+
+  // Pockets first (merge → empty), then backpack storage (merge → empty).
+  mergeRange(0, pocketEnd);
+  fillEmptyRange(0, pocketEnd);
+  mergeRange(pocketEnd, cap);
+  fillEmptyRange(pocketEnd, cap);
+
+  return remainder ? null : planned;
+}
+
 export function planInventoryInsertion(
   current: readonly (ItemStack | null)[],
   incoming: ItemStack,
+  /** Prefer base pockets for both merges and new stacks before backpack storage. */
+  pocketBoundary: number = INVENTORY_CONFIG.baseSlotCount,
 ): readonly (ItemStack | null)[] | null {
   assertPlanLength(current);
-  cloneItemStack(incoming);
-  const planned = [...current];
-  let remainder: ItemStack | null = cloneItemStack(incoming);
-
-  for (let index = 0; index < planned.length && remainder; index += 1) {
-    const existing = planned[index];
-    if (!existing || existing.itemId !== remainder.itemId) continue;
-    if (existing.quantity >= ITEM_REGISTRY.get(existing.itemId).maxStack) continue;
-    const merged = mergeItemStacks(existing, remainder);
-    planned[index] = merged.stack;
-    remainder = merged.remainder;
+  const chunks = expandToLegalStacks(incoming);
+  let planned: (ItemStack | null)[] = [...current];
+  for (const chunk of chunks) {
+    const next = planInsertLegalChunk(planned, chunk, pocketBoundary);
+    if (!next) return null;
+    planned = next;
   }
-
-  for (let index = 0; index < planned.length && remainder; index += 1) {
-    if (planned[index] !== null) continue;
-    planned[index] = cloneItemStack(remainder);
-    remainder = null;
-  }
-
-  return remainder ? null : Object.freeze(planned);
+  return Object.freeze(planned);
 }
 
 export interface PartialInventoryInsertPlan {
@@ -80,56 +126,85 @@ export interface PartialInventoryInsertPlan {
 }
 
 /**
- * Harvest delivery planning: insert as much as possible (merge → empty slots).
+ * Harvest delivery planning: insert as much as possible.
+ * Prefer base pockets (merge → empty) before backpack storage.
  * Overflow is reported, never requires failure rejection of the whole stack.
  * Does not change manual ground full-stack-or-nothing pickup (tryInsert).
  */
 export function planInventoryInsertionPartial(
   current: readonly (ItemStack | null)[],
   incoming: ItemStack,
+  pocketBoundary: number = INVENTORY_CONFIG.baseSlotCount,
 ): PartialInventoryInsertPlan {
   assertPlanLength(current);
-  cloneItemStack(incoming);
-  const planned = [...current];
-  let remaining = incoming.quantity;
-  const maxStack = ITEM_REGISTRY.get(incoming.itemId).maxStack;
-  // Durable tools never merge; quantity is always 1.
-  if (incoming.currentDurability !== undefined) {
-    for (let index = 0; index < planned.length && remaining > 0; index += 1) {
-      if (planned[index] !== null) continue;
-      planned[index] = cloneItemStack(incoming);
-      remaining = 0;
-    }
-    const insertedQuantity = incoming.quantity - remaining;
-    return Object.freeze({
-      slots: Object.freeze(planned),
-      insertedQuantity,
-      overflowQuantity: remaining,
-    });
+  const chunks = expandToLegalStacks(incoming);
+  let planned: (ItemStack | null)[] = [...current];
+  let insertedQuantity = 0;
+  const totalRequested = chunks.reduce((sum, c) => sum + c.quantity, 0);
+
+  for (const chunk of chunks) {
+    const partial = planPartialSingleChunk(planned, chunk, pocketBoundary);
+    if (partial.insertedQuantity === 0) break;
+    planned = [...partial.slots];
+    insertedQuantity += partial.insertedQuantity;
+    if (partial.insertedQuantity < chunk.quantity) break;
   }
 
-  for (let index = 0; index < planned.length && remaining > 0; index += 1) {
-    const existing = planned[index];
-    if (!existing || existing.itemId !== incoming.itemId) continue;
-    if (existing.quantity >= maxStack) continue;
-    const room = maxStack - existing.quantity;
-    const take = Math.min(room, remaining);
-    planned[index] = createItemStack(incoming.itemId, existing.quantity + take);
-    remaining -= take;
-  }
-
-  for (let index = 0; index < planned.length && remaining > 0; index += 1) {
-    if (planned[index] !== null) continue;
-    const take = Math.min(maxStack, remaining);
-    planned[index] = createItemStack(incoming.itemId, take);
-    remaining -= take;
-  }
-
-  const insertedQuantity = incoming.quantity - remaining;
   return Object.freeze({
     slots: Object.freeze(planned),
     insertedQuantity,
-    overflowQuantity: remaining,
+    overflowQuantity: Math.max(0, totalRequested - insertedQuantity),
+  });
+}
+
+/** Partial insert of a single already-legal chunk (may fill only part of its quantity). */
+function planPartialSingleChunk(
+  current: readonly (ItemStack | null)[],
+  chunk: ItemStack,
+  pocketBoundary: number,
+): { slots: readonly (ItemStack | null)[]; insertedQuantity: number } {
+  const planned = [...current];
+  let remaining = chunk.quantity;
+  const maxStack = ITEM_REGISTRY.get(chunk.itemId).maxStack;
+  const cap = planned.length;
+  const pocketEnd = Math.min(Math.max(0, pocketBoundary), cap);
+  const canMerge = isStackMergeable(chunk);
+
+  const mergeRange = (from: number, to: number): void => {
+    if (!canMerge) return;
+    for (let index = from; index < to && remaining > 0; index += 1) {
+      const existing = planned[index];
+      if (!existing || existing.itemId !== chunk.itemId || !isStackMergeable(existing)) continue;
+      if (existing.quantity >= maxStack) continue;
+      const room = maxStack - existing.quantity;
+      const take = Math.min(room, remaining);
+      planned[index] = createItemStack(chunk.itemId, existing.quantity + take);
+      remaining -= take;
+    }
+  };
+
+  const fillEmptyRange = (from: number, to: number): void => {
+    for (let index = from; index < to && remaining > 0; index += 1) {
+      if (planned[index] !== null) continue;
+      if (!canMerge) {
+        planned[index] = cloneItemStack(chunk);
+        remaining = 0;
+        continue;
+      }
+      const take = Math.min(maxStack, remaining);
+      planned[index] = createItemStack(chunk.itemId, take);
+      remaining -= take;
+    }
+  };
+
+  mergeRange(0, pocketEnd);
+  fillEmptyRange(0, pocketEnd);
+  mergeRange(pocketEnd, cap);
+  fillEmptyRange(pocketEnd, cap);
+
+  return Object.freeze({
+    slots: Object.freeze(planned),
+    insertedQuantity: chunk.quantity - remaining,
   });
 }
 
@@ -246,35 +321,121 @@ export class PlayerInventory {
 
   /** Wipe every reserved storage cell and reset backpack extra capacity (save load / new game). */
   clearAllStorage(): void {
+    const activeBefore = this.slotCount;
     for (let i = 0; i < this.stacks.length; i += 1) this.stacks[i] = null;
     if (this.extraSlotCount !== 0) {
       this.extraSlotCount = 0;
       for (const listener of this.capacityListeners) listener(this.slotCount);
     }
     this.lastAccepted = null;
-    const result = Object.freeze({ accepted: true, changedSlotIndexes: Object.freeze([]) as readonly number[] });
-    for (const listener of this.listeners) listener(result);
+    // Emit every previously-active index so UI listeners don't keep stale icons after a domain wipe.
+    this.emitSlotRange(0, activeBefore);
   }
 
   /**
    * Deterministic save restore: place stacks at exact indices after capacity is set.
-   * Overflows that no longer fit try-insert into remaining free cells.
+   * Oversize stacks are split by maxStack; leftovers try-insert into free cells.
    */
   restoreSlots(slots: readonly { readonly index: number; readonly stack: ItemStack }[], extra: number): void {
-    this.clearAllStorage();
+    // Mute intermediate clear notification — final state is published once below.
+    this.clearAllStorageQuiet();
     this.setExtraSlotCount(extra);
     const overflow: ItemStack[] = [];
     for (const entry of slots) {
-      const { index, stack } = entry;
-      if (!Number.isInteger(index) || index < 0 || index >= this.slotCount || this.stacks[index] !== null) {
-        overflow.push(stack);
+      const { index } = entry;
+      let legal: readonly ItemStack[];
+      try {
+        legal = expandToLegalStacks(entry.stack);
+      } catch {
         continue;
       }
-      this.stacks[index] = stack;
+      for (let i = 0; i < legal.length; i += 1) {
+        const chunk = legal[i]!;
+        if (
+          i === 0
+          && Number.isInteger(index)
+          && index >= 0
+          && index < this.slotCount
+          && this.stacks[index] === null
+        ) {
+          this.stacks[index] = chunk;
+        } else {
+          overflow.push(chunk);
+        }
+      }
     }
-    for (const stack of overflow) this.tryInsert(stack);
-    const result = Object.freeze({ accepted: true, changedSlotIndexes: Object.freeze([]) as readonly number[] });
+    for (const stack of overflow) this.tryInsertQuiet(stack);
+    this.sanitizeActiveStacks();
+    // Full-capacity notify: subscribers with index-only patches must re-read every cell after load.
+    this.emitSlotRange(0, this.slotCount);
+  }
+
+  /** clearAllStorage without listener storm (paired with restoreSlots final emit). */
+  private clearAllStorageQuiet(): void {
+    for (let i = 0; i < this.stacks.length; i += 1) this.stacks[i] = null;
+    if (this.extraSlotCount !== 0) {
+      this.extraSlotCount = 0;
+      for (const listener of this.capacityListeners) listener(this.slotCount);
+    }
+    this.lastAccepted = null;
+  }
+
+  /** tryInsert without change listeners — bulk restore batches a single final emit. */
+  private tryInsertQuiet(incoming: ItemStack): boolean {
+    const plan = planInventoryInsertion(this.activeView(), incoming);
+    if (!plan) {
+      this.lastAccepted = false;
+      return false;
+    }
+    for (let index = 0; index < this.slotCount; index += 1) {
+      this.stacks[index] = plan[index] ?? null;
+    }
+    this.lastAccepted = true;
+    return true;
+  }
+
+  private emitSlotRange(from: number, to: number): void {
+    const start = Math.max(0, Math.floor(from));
+    const end = Math.max(start, Math.floor(to));
+    const indexes: number[] = [];
+    for (let i = start; i < end; i += 1) indexes.push(i);
+    const result = Object.freeze({
+      accepted: true,
+      changedSlotIndexes: Object.freeze(indexes) as readonly number[],
+    });
     for (const listener of this.listeners) listener(result);
+  }
+
+  /** Rewrite any illegal overfull stacks into maxStack chunks (defensive recovery). */
+  sanitizeActiveStacks(): void {
+    const overflow: ItemStack[] = [];
+    for (let index = 0; index < this.slotCount; index += 1) {
+      const stack = this.stacks[index];
+      if (!stack) continue;
+      try {
+        cloneItemStack(stack);
+        continue; // already legal
+      } catch {
+        /* expand corrupt / oversize */
+      }
+      let legal: readonly ItemStack[];
+      try {
+        legal = expandToLegalStacks(stack);
+      } catch {
+        this.stacks[index] = null;
+        continue;
+      }
+      this.stacks[index] = legal[0] ?? null;
+      for (let i = 1; i < legal.length; i += 1) overflow.push(legal[i]!);
+    }
+    for (const stack of overflow) {
+      const plan = planInventoryInsertion(this.activeView(), stack);
+      if (!plan) break;
+      for (let index = 0; index < this.slotCount; index += 1) {
+        if (plan[index] === this.stacks[index]) continue;
+        this.stacks[index] = plan[index] ?? null;
+      }
+    }
   }
 
   getSlots(): readonly InventorySlot[] {
@@ -354,6 +515,7 @@ export class PlayerInventory {
       this.stacks[index] = plan.slots[index] ?? null;
       changedSlotIndexes.push(index);
     }
+    this.sanitizeActiveStacks();
     this.lastAccepted = true;
     const result = Object.freeze({
       insertedQuantity: plan.insertedQuantity,
@@ -424,21 +586,45 @@ export class PlayerInventory {
   exchangeWholeStack(index: number, expected: ItemStack, replacement: ItemStack | null): boolean {
     const current = this.getSlot(index).stack;
     if (current !== expected) return false;
-    if (replacement) cloneItemStack(replacement);
-    this.stacks[index] = replacement;
+    if (replacement) {
+      try {
+        cloneItemStack(replacement);
+        this.stacks[index] = replacement;
+      } catch {
+        try {
+          const legal = expandToLegalStacks(replacement);
+          if (legal.length !== 1) return false;
+          this.stacks[index] = legal[0]!;
+        } catch {
+          return false;
+        }
+      }
+    } else {
+      this.stacks[index] = null;
+    }
     const result = Object.freeze({ accepted: true, changedSlotIndexes: Object.freeze([index]) });
     for (const listener of this.listeners) listener(result);
     return true;
   }
 
-  /** Place whole stack into an empty slot (unequip / rearrange target). Preserves identity. */
+  /** Place whole stack into an empty slot (unequip / rearrange target). Preserves identity when already legal. */
   placeIntoEmptySlot(index: number, stack: ItemStack): boolean {
     if (!Number.isInteger(index) || index < 0 || index >= this.slotCount) {
       throw new RangeError(`Invalid inventory slot index: ${index}`);
     }
     if (this.stacks[index] !== null) return false;
-    cloneItemStack(stack);
-    this.stacks[index] = stack;
+    try {
+      cloneItemStack(stack);
+      this.stacks[index] = stack;
+    } catch {
+      try {
+        const legal = expandToLegalStacks(stack);
+        if (legal.length !== 1) return false;
+        this.stacks[index] = legal[0]!;
+      } catch {
+        return false;
+      }
+    }
     const result = Object.freeze({ accepted: true, changedSlotIndexes: Object.freeze([index]) });
     for (const listener of this.listeners) listener(result);
     return true;
@@ -463,8 +649,8 @@ export class PlayerInventory {
       this.stacks[fromIndex] = null;
     } else if (
       from.itemId === to.itemId
-      && from.currentDurability === undefined
-      && to.currentDurability === undefined
+      && isStackMergeable(from)
+      && isStackMergeable(to)
     ) {
       const merged = mergeItemStacks(to, from);
       this.stacks[toIndex] = merged.stack;
@@ -491,23 +677,44 @@ export class PlayerInventory {
     return total;
   }
 
-  /** Split non-durable stack: leave remainder, insert new stack with take quantity. */
+  /**
+   * Nearest empty slot to `fromIndex` by absolute grid index distance.
+   * Ties prefer lower indices. Ignores `fromIndex` itself.
+   */
+  findNearestEmptySlot(fromIndex: number): number | null {
+    if (!Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex >= this.slotCount) {
+      return null;
+    }
+    let best: number | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < this.slotCount; i += 1) {
+      if (i === fromIndex || this.stacks[i] !== null) continue;
+      const dist = Math.abs(i - fromIndex);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Split non-durable stack into a new cell at the nearest empty slot
+   * (not merge-into-existing, so half does not glue back onto the source).
+   */
   trySplitStack(index: number, takeQuantity: number): boolean {
     const stack = this.getSlot(index).stack;
     if (!stack || stack.currentDurability !== undefined) return false;
     if (!Number.isInteger(takeQuantity) || takeQuantity < 1 || takeQuantity >= stack.quantity) return false;
+    const dest = this.findNearestEmptySlot(index);
+    if (dest === null) return false;
     const leave = stack.quantity - takeQuantity;
-    const moved = createItemStack(stack.itemId, takeQuantity);
-    if (!this.canInsert(moved)) return false;
     this.stacks[index] = createItemStack(stack.itemId, leave);
-    const insert = this.tryInsert(moved);
-    if (!insert.accepted) {
-      this.stacks[index] = stack;
-      return false;
-    }
+    this.stacks[dest] = createItemStack(stack.itemId, takeQuantity);
+    this.lastAccepted = true;
     const change = Object.freeze({
       accepted: true,
-      changedSlotIndexes: Object.freeze([index, ...insert.changedSlotIndexes]),
+      changedSlotIndexes: Object.freeze([index, dest]),
     });
     for (const listener of this.listeners) listener(change);
     return true;
@@ -549,6 +756,7 @@ export class PlayerInventory {
       this.stacks[index] = plan[index] ?? null;
       changedSlotIndexes.push(index);
     }
+    this.sanitizeActiveStacks();
     this.lastAccepted = accepted;
     const result = Object.freeze({ accepted, changedSlotIndexes: Object.freeze(changedSlotIndexes) });
     for (const listener of this.listeners) listener(result);

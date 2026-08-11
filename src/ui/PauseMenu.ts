@@ -22,7 +22,6 @@ export class PauseMenu {
     private readonly getSummary: () => PauseSummary,
     private readonly onResume: () => void,
     private readonly onMainMenu: () => void,
-    private readonly onInventory: () => void,
   ) {
     this.overlay = document.createElement("section");
     this.overlay.className = "pause-menu-overlay";
@@ -69,21 +68,14 @@ export class PauseMenu {
         </div>
         <nav class="pause-actions" aria-labelledby="pause-title">
           <button type="button" data-role="resume" class="menu-btn primary">${menuBtnLabel("resume", t("pause.resume"))}</button>
-          <button type="button" data-role="inventory" class="menu-btn secondary">${menuBtnLabel("inventory", t("pause.inventory"))}</button>
           <button type="button" data-role="settings" class="menu-btn secondary">${menuBtnLabel("settings", t("pause.settings"))}</button>
           <button type="button" data-role="language" class="menu-btn secondary">${menuBtnLabel("language", t("pause.language"))}</button>
-          <button type="button" data-role="controls" class="menu-btn ghost">${menuBtnLabel("text", t("pause.controls"))}</button>
           <button type="button" data-role="menu" class="menu-btn ghost">${menuBtnLabel("home", t("pause.mainMenu"))}</button>
         </nav>
-        <p class="pause-controls-hint" data-controls hidden>${t("pause.controlsBody")}</p>
       </div>`;
     this.overlay.querySelector("[data-role=resume]")?.addEventListener("click", () => {
       this.close();
       this.onResume();
-    });
-    this.overlay.querySelector("[data-role=inventory]")?.addEventListener("click", () => {
-      this.close();
-      this.onInventory();
     });
     this.overlay.querySelector("[data-role=settings]")?.addEventListener("click", () => {
       this.language.close();
@@ -92,10 +84,6 @@ export class PauseMenu {
     this.overlay.querySelector("[data-role=language]")?.addEventListener("click", () => {
       this.settings.close();
       this.language.openChange();
-    });
-    this.overlay.querySelector("[data-role=controls]")?.addEventListener("click", () => {
-      const hint = this.overlay.querySelector<HTMLElement>("[data-controls]");
-      if (hint) hint.hidden = !hint.hidden;
     });
     this.overlay.querySelector("[data-role=menu]")?.addEventListener("click", () => {
       this.close();

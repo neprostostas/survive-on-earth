@@ -1,4 +1,4 @@
-import { createItemStack, type ItemStack } from "../items/ItemSystem.ts";
+import { createItemStack, expandToLegalStacks, isStackMergeable, type ItemStack } from "../items/ItemSystem.ts";
 import { ITEM_REGISTRY } from "../items/ItemSystem.ts";
 import type { InteractionPoint } from "../interaction/InteractionTypes.ts";
 import type { Interactable } from "../interaction/Interactable.ts";
@@ -54,23 +54,38 @@ export class WorldContainerInventory {
   }
 
   tryInsert(stack: ItemStack): boolean {
-    // merge non-durable then empty
-    if (stack.currentDurability === undefined) {
-      for (let i = 0; i < this.capacity; i += 1) {
+    let chunks: readonly ItemStack[];
+    try {
+      chunks = expandToLegalStacks(stack);
+    } catch {
+      return false;
+    }
+    for (const chunk of chunks) {
+      if (!this.insertLegalChunk(chunk)) return false;
+    }
+    return true;
+  }
+
+  private insertLegalChunk(chunk: ItemStack): boolean {
+    let remaining: ItemStack | null = chunk;
+    if (isStackMergeable(chunk)) {
+      for (let i = 0; i < this.capacity && remaining; i += 1) {
         const existing = this.stacks[i];
-        if (!existing || existing.itemId !== stack.itemId) continue;
-        const max = ITEM_REGISTRY.get(stack.itemId).maxStack;
+        if (!existing || existing.itemId !== remaining.itemId || !isStackMergeable(existing)) continue;
+        const max = ITEM_REGISTRY.get(remaining.itemId).maxStack;
         if (existing.quantity >= max) continue;
         const room = max - existing.quantity;
-        const take = Math.min(room, stack.quantity);
-        this.stacks[i] = createItemStack(stack.itemId, existing.quantity + take);
-        if (take === stack.quantity) return true;
-        stack = createItemStack(stack.itemId, stack.quantity - take);
+        const take = Math.min(room, remaining.quantity);
+        this.stacks[i] = createItemStack(remaining.itemId, existing.quantity + take);
+        remaining = take === remaining.quantity
+          ? null
+          : createItemStack(remaining.itemId, remaining.quantity - take);
       }
     }
+    if (!remaining) return true;
     for (let i = 0; i < this.capacity; i += 1) {
       if (this.stacks[i] !== null) continue;
-      this.stacks[i] = stack;
+      this.stacks[i] = remaining;
       return true;
     }
     return false;

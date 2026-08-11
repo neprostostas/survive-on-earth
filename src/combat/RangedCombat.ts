@@ -1,5 +1,5 @@
 import type { ItemId } from "../items/ItemId.ts";
-import { ITEM_REGISTRY, type ItemStack } from "../items/ItemSystem.ts";
+import { ITEM_REGISTRY, createItemStack } from "../items/ItemSystem.ts";
 import type { PlayerInventory } from "../inventory/PlayerInventory.ts";
 import type { PlayerWeaponSlot } from "../equipment/PlayerWeaponSlot.ts";
 
@@ -100,8 +100,7 @@ export class RangedCombatSystem {
       if (stack.quantity === take) {
         this.inventory.exchangeWholeStack(i, stack, null);
       } else {
-        const next: ItemStack = Object.freeze({ itemId: stack.itemId, quantity: stack.quantity - take });
-        this.inventory.exchangeWholeStack(i, stack, next);
+        this.inventory.exchangeWholeStack(i, stack, createItemStack(stack.itemId, stack.quantity - take));
       }
       consumed += take;
       remaining -= take;

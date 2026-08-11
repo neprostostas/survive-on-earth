@@ -82,6 +82,14 @@ assert.deepEqual(
   "same starting state must produce a deterministic plan",
 );
 
+// Prefer free base-pocket over merging into an existing backpack stack of the same item.
+const pocketVsBackpack = Array.from({ length: 15 }, () => null);
+pocketVsBackpack[10] = createItemStack("pine-log", 5);
+const pocketFirstPlan = planInventoryInsertion(pocketVsBackpack, createItemStack("pine-log", 3));
+assert.ok(pocketFirstPlan);
+assert.deepEqual(pocketFirstPlan[0], { itemId: "pine-log", quantity: 3 }, "free pocket must win over backpack merge");
+assert.deepEqual(pocketFirstPlan[10], { itemId: "pine-log", quantity: 5 }, "backpack stack stays untouched when pocket has room");
+
 const multiplePartial = Array.from({ length: 10 }, () => createItemStack("limestone", 20));
 multiplePartial[0] = createItemStack("pine-log", 19);
 multiplePartial[4] = createItemStack("pine-log", 18);

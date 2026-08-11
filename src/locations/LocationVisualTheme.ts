@@ -23,7 +23,13 @@ export type BiomeVisualId =
   | "exclusion"
   | "camp"
   | "waterfront"
-  | "farm";
+  | "farm"
+  /** Open prism ice basin — not pine snow. */
+  | "ice-caldera"
+  /** Bronze heath amphitheater — not leaf thickets/farm. */
+  | "copper-heath"
+  /** Braided gorge river ford — not pier docks. */
+  | "cataract-ford";
 
 export interface LocationVisualTheme {
   readonly biome: BiomeVisualId;
@@ -431,11 +437,82 @@ const THEMES: Record<BiomeVisualId, LocationVisualTheme> = {
     clutterDensity: 0.6,
     propDensity: 0.7,
   },
+  // Open ice plateaus + cyan crystal light — deliberately no timber, not Frozen Pine Valley.
+  "ice-caldera": {
+    biome: "ice-caldera",
+    groundTint: c(0.72, 0.86, 0.98),
+    clearColor: [0.42, 0.58, 0.78],
+    ambient: c(0.72, 0.88, 1),
+    ambientGround: c(0.35, 0.48, 0.62),
+    sun: c(0.75, 0.9, 1),
+    sunIntensity: 0.7,
+    ambientIntensity: 1.15,
+    showHouse: false,
+    showHomeDecor: false,
+    showCampfire: false,
+    showCrate: false,
+    treeVisibility: 0.02,
+    rockVisibility: 0.15,
+    plantVisibility: 0,
+    treeScale: 0.4,
+    rockScale: 0.7,
+    clutterDensity: 0.12,
+    propDensity: 1,
+  },
+  // Bronze stone heath at dusk — open circle, not wood or crop rows.
+  "copper-heath": {
+    biome: "copper-heath",
+    groundTint: c(0.48, 0.28, 0.16),
+    clearColor: [0.48, 0.24, 0.28],
+    ambient: c(1, 0.62, 0.42),
+    ambientGround: c(0.32, 0.14, 0.1),
+    sun: c(1, 0.55, 0.32),
+    sunIntensity: 0.65,
+    ambientIntensity: 0.95,
+    showHouse: false,
+    showHomeDecor: false,
+    showCampfire: false,
+    showCrate: false,
+    treeVisibility: 0.08,
+    rockVisibility: 0.55,
+    plantVisibility: 0.4,
+    treeScale: 0.55,
+    rockScale: 1.35,
+    clutterDensity: 0.45,
+    propDensity: 0.95,
+  },
+  // Diagonal whitewater channels + basalt — no docks, reeds-as-bank, or boats.
+  "cataract-ford": {
+    biome: "cataract-ford",
+    groundTint: c(0.42, 0.4, 0.32),
+    clearColor: [0.32, 0.48, 0.46],
+    ambient: c(0.7, 0.88, 0.86),
+    ambientGround: c(0.22, 0.28, 0.26),
+    sun: c(0.9, 0.96, 0.88),
+    sunIntensity: 0.95,
+    ambientIntensity: 0.95,
+    showHouse: false,
+    showHomeDecor: false,
+    showCampfire: false,
+    showCrate: false,
+    treeVisibility: 0.12,
+    rockVisibility: 0.7,
+    plantVisibility: 0.15,
+    treeScale: 0.7,
+    rockScale: 1.4,
+    clutterDensity: 0.3,
+    propDensity: 1,
+  },
 };
 
 export function resolveBiomeVisual(location: LocationDefinition): BiomeVisualId {
   const id = location.id;
   if (id === "home") return "home";
+
+  // Exclusive destination packs (must not fall through to snow/autumn/waterfront).
+  if (id === "glass-caldera") return "ice-caldera";
+  if (id === "copperleaf-basin") return "copper-heath";
+  if (id === "silt-cataract") return "cataract-ford";
 
   // Explicit seasonal / coastal destinations
   if (id === "frozen-pine-valley" || id.includes("frozen") || id.includes("snow") || id.includes("rime")) {

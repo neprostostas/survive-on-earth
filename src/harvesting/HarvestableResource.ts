@@ -16,6 +16,8 @@ export interface HarvestableVisual {
   impact(playerPosition: Readonly<Vector3>, strength: number, particleIntensity: number): void;
   deplete(playerPosition: Readonly<Vector3>, strength: number, particleIntensity: number): void;
   update(delta: number): void;
+  /** Instant hide for save restore (no particles). */
+  hideDepleted?(): void;
 }
 
 export interface HarvestableResourceOptions {
@@ -25,6 +27,13 @@ export interface HarvestableResourceOptions {
   radius: () => number;
   visualEnabled: () => boolean;
   visual: HarvestableVisual;
+}
+
+export interface SerializedHarvestResource {
+  readonly id: string;
+  readonly remainingHits: number;
+  readonly isDepleted: boolean;
+  readonly resultClaimed: boolean;
 }
 
 export class HarvestableResource implements Interactable {
@@ -73,4 +82,34 @@ export class HarvestableResource implements Interactable {
   }
 
   updateVisual(delta: number): void { this.options.visual.update(delta); }
+
+  serializeProgress(): SerializedHarvestResource {
+    return Object.freeze({
+      id: this.resourceId,
+      remainingHits: this.remainingHits,
+      isDepleted: this.isDepleted,
+      resultClaimed: this.resultClaimed,
+    });
+  }
+
+  /** Full fresh harvest node (new game). */
+  resetProgress(): void {
+    this.remainingHits = this.totalHits;
+    this.isDepleted = false;
+    this.resultClaimed = false;
+  }
+
+  restoreProgress(data: SerializedHarvestResource): void {
+    const hits = Number.isInteger(data.remainingHits)
+      ? Math.max(0, Math.min(this.totalHits, data.remainingHits))
+      : this.totalHits;
+    this.remainingHits = hits;
+    this.isDepleted = Boolean(data.isDepleted) || hits === 0;
+    this.resultClaimed = Boolean(data.resultClaimed) || this.isDepleted;
+    if (this.isDepleted) {
+      this.remainingHits = 0;
+      if (this.options.visual.hideDepleted) this.options.visual.hideDepleted();
+      else this.playDepletion(this.getInteractionPosition(), 1, 0);
+    }
+  }
 }

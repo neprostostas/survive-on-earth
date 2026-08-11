@@ -34,7 +34,7 @@ export class DeathBagSystem {
     readonly equipment: PlayerEquipment;
     readonly weapon: PlayerWeaponSlot;
     readonly backpack: PlayerBackpackSlot;
-    readonly quick: PlayerQuickSlot;
+    readonly quicks: readonly PlayerQuickSlot[];
     readonly utility: PlayerUtilitySlot;
   }): DeathBagSnapshot {
     const stacks: ItemStack[] = [];
@@ -46,7 +46,9 @@ export class DeathBagSystem {
     }
     if (params.weapon.current) stacks.push(cloneItemStack(params.weapon.current));
     if (params.backpack.current) stacks.push(cloneItemStack(params.backpack.current));
-    if (params.quick.current) stacks.push(cloneItemStack(params.quick.current));
+    for (const quick of params.quicks) {
+      if (quick.current) stacks.push(cloneItemStack(quick.current));
+    }
     if (params.utility.current) stacks.push(cloneItemStack(params.utility.current));
 
     for (let i = 0; i < params.inventory.slotCount; i += 1) {
@@ -61,7 +63,9 @@ export class DeathBagSystem {
     }
     if (params.weapon.current) params.weapon.unequipIfAccepted(params.weapon.current, () => true);
     if (params.backpack.current) params.backpack.unequipIfAccepted(params.backpack.current, () => true);
-    if (params.quick.current) params.quick.clearIfAccepted(params.quick.current, () => true);
+    for (const quick of params.quicks) {
+      if (quick.current) quick.clearIfAccepted(quick.current, () => true);
+    }
     if (params.utility.current) params.utility.unequipIfAccepted(params.utility.current, () => true);
 
     const bag: DeathBagSnapshot = Object.freeze({

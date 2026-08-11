@@ -106,6 +106,32 @@ export function enemySpawnSpecsFor(locationId: LocationId): readonly LocationEne
     total += 1;
   }
 
+  // Exclusive destination rosters (keep distinct from frozen/autumn/riverbank)
+  if (locationId === "glass-caldera") {
+    return Object.freeze([
+      Object.freeze({ archetypeId: "cave-crawler", count: 2 }),
+      Object.freeze({ archetypeId: "screecher", count: 2 }),
+      Object.freeze({ archetypeId: "frozen-infected", count: 1 + (difficulty >= 3 ? 1 : 0) }),
+      Object.freeze({ archetypeId: "stalker", count: 1 }),
+    ].filter((s) => s.count > 0));
+  }
+  if (locationId === "copperleaf-basin") {
+    return Object.freeze([
+      Object.freeze({ archetypeId: "toxic-mire", count: 2 }),
+      Object.freeze({ archetypeId: "stalker-night", count: 1 }),
+      Object.freeze({ archetypeId: "bloater-gas", count: 1 }),
+      Object.freeze({ archetypeId: "swamp-infected", count: 1 + (difficulty >= 3 ? 1 : 0) }),
+    ].filter((s) => s.count > 0));
+  }
+  if (locationId === "silt-cataract") {
+    return Object.freeze([
+      Object.freeze({ archetypeId: "runner-waste", count: 2 }),
+      Object.freeze({ archetypeId: "toxic-infected", count: 2 }),
+      Object.freeze({ archetypeId: "screecher-tunnel", count: 1 }),
+      Object.freeze({ archetypeId: "marauder-scout", count: difficulty >= 2 ? 1 : 0 }),
+    ].filter((s) => s.count > 0));
+  }
+
   // Seasonal / locale flavor caps (without reusing the same generic forest pack)
   if (locationId === "frozen-pine-valley" || locationId.includes("frozen") || locationId.includes("snow")) {
     return Object.freeze([

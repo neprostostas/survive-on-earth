@@ -85,9 +85,12 @@ export class GameCamera {
       this.config.camera.targetOffsetY,
       this.config.camera.targetOffsetZ,
     ));
-    if (!this.initialized) {
+    // Hard lock when first framed or when callers pass delta=0 (load / travel / new game).
+    // Otherwise a leftover smooth follow target from the menu would lerp for a long "shake".
+    if (!this.initialized || delta <= 0) {
       this.smoothTarget.copyFrom(desiredTarget);
       this.initialized = true;
+      this.shake = 0;
     } else {
       const blend = 1 - Math.exp(-this.config.camera.followSharpness * delta);
       Vector3.LerpToRef(this.smoothTarget, desiredTarget, blend, this.smoothTarget);
@@ -143,6 +146,20 @@ export class GameCamera {
   /** Hit / impact feedback. Magnitude ~0.25–0.8. Caller gates on settings. */
   pulseShake(magnitude = 0.4): void {
     this.shake = Math.min(1.2, this.shake + magnitude);
+  }
+
+  /** Stop impact shake residual (e.g. entering a save mid-combat feedback). */
+  clearShake(): void {
+    this.shake = 0;
+  }
+
+  /**
+   * Instant lock to player — no follow lag after teleport / load / location enter.
+   */
+  snapTo(playerPosition: Vector3): void {
+    this.shake = 0;
+    this.initialized = false;
+    this.update(0, playerPosition);
   }
 
   /** LDOE build mode: slight camera pullback (smoothed in update). */

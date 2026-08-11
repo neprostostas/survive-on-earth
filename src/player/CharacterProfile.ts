@@ -1,6 +1,6 @@
 /** Player presentation identity (name / gender) — persisted client-side. */
 
-export type CharacterGender = "male" | "female" | "other";
+export type CharacterGender = "male" | "female";
 
 export interface CharacterIdentity {
   readonly name: string;
@@ -18,7 +18,8 @@ function sanitizeName(raw: string): string {
 }
 
 function sanitizeGender(raw: unknown): CharacterGender {
-  if (raw === "male" || raw === "female" || raw === "other") return raw;
+  if (raw === "female") return "female";
+  // Legacy "other" and unknown values map to male.
   return DEFAULT_GENDER;
 }
 
@@ -61,11 +62,7 @@ export class CharacterProfile {
 
   /** Subtle presentation scale for procedural mesh (does not affect combat stats). */
   presentationHeight(baseHeight = 1.8): number {
-    switch (this.identity.gender) {
-      case "female": return baseHeight * 0.96;
-      case "other": return baseHeight * 0.98;
-      default: return baseHeight;
-    }
+    return this.identity.gender === "female" ? baseHeight * 0.96 : baseHeight;
   }
 
   onChange(listener: () => void): () => void {

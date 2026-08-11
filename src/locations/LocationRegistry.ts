@@ -17,6 +17,12 @@ export type LocationId =
   | "overgrown-farm"
   | "riverbank"
   | "frozen-pine-valley"
+  /** Prism ice field — not snowy forest. */
+  | "glass-caldera"
+  /** Open bronze heath — not autumn thickets or farm. */
+  | "copperleaf-basin"
+  /** Forded river gorge — not bank reeds or docks. */
+  | "silt-cataract"
   | "survivor-camp"
   | "marauder-camp"
   | "underground-depot"
@@ -278,6 +284,46 @@ export const LOCATION_REGISTRY: readonly LocationDefinition[] = Object.freeze([
     description: "Snow-lit valley, rare timber and ore. Extreme cold.",
     recommendedGear: "Winter clothing",
     coldExposure: 0.9,
+  }),
+  loc({
+    id: "glass-caldera",
+    title: "Glass Caldera",
+    difficulty: 4,
+    energyCost: 22,
+    type: "danger",
+    regionId: "northern",
+    unlockedByDefault: false,
+    resourceProfile: "crystal-ice-ore",
+    enemyProfile: "prism-hunters",
+    description: "Wind-scoured ice basin of mirror plates and spectral light. No timber, only glass and mineral ice.",
+    recommendedGear: "Winter gear + spiked boots",
+    coldExposure: 0.95,
+  }),
+  loc({
+    id: "copperleaf-basin",
+    title: "Copperleaf Basin",
+    difficulty: 3,
+    energyCost: 14,
+    type: "resource",
+    regionId: "green",
+    unlockedByDefault: false,
+    resourceProfile: "bronze-fiber-herbs",
+    enemyProfile: "heath-hosts",
+    description: "Open copper heath ringed by standing stones — a late-autumn amphitheater without woods or fields.",
+    recommendedGear: "Knife + warm midlayer",
+  }),
+  loc({
+    id: "silt-cataract",
+    title: "Silt Cataract",
+    difficulty: 2,
+    energyCost: 12,
+    type: "resource",
+    regionId: "green",
+    unlockedByDefault: true,
+    resourceProfile: "silt-fiber-scrap",
+    enemyProfile: "ford-patrol",
+    description: "Braided gorge river under a wrecked cable span. Fords, basalt columns, roaring whitewater — no pier docks.",
+    recommendedGear: "Waterproof boots",
   }),
   loc({
     id: "survivor-camp",

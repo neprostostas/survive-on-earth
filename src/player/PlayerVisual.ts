@@ -99,7 +99,7 @@ export class PlayerVisual {
     this.part("Hair", this.hairCapMesh, this.hairMat, this.bodyPivot, new Vector3(0, 1.84, -0.01));
     this.hairFrontMesh = MeshBuilder.CreateBox("HairFront", { width: 0.22, height: 0.08, depth: 0.08 }, scene);
     this.part("HairFront", this.hairFrontMesh, this.hairMat, this.bodyPivot, new Vector3(0, 1.86, 0.12));
-    // Female / other long-hair strands (toggled via applyGender)
+    // Female long-hair strands (toggled via applyGender)
     this.hairLongL = MeshBuilder.CreateCapsule("HairLongL", { height: 0.42, radius: 0.055, tessellation: 8 }, scene);
     this.part("HairLongL", this.hairLongL, this.hairMat, this.bodyPivot, new Vector3(-0.12, 1.55, -0.04));
     this.hairLongR = MeshBuilder.CreateCapsule("HairLongR", { height: 0.42, radius: 0.055, tessellation: 8 }, scene);
@@ -161,45 +161,40 @@ export class PlayerVisual {
   applyGender(gender: CharacterGender): void {
     this.gender = gender;
     const female = gender === "female";
-    const other = gender === "other";
 
     // Body proportions
     this.hipsMesh.scaling.set(
-      female ? 1.22 : other ? 1.1 : 1,
+      female ? 1.22 : 1,
       female ? 0.95 : 1,
-      female ? 1.12 : other ? 1.05 : 1,
+      female ? 1.12 : 1,
     );
-    this.waistMesh.scaling.set(female ? 0.88 : other ? 0.94 : 1, 1, female ? 0.92 : 1);
+    this.waistMesh.scaling.set(female ? 0.88 : 1, 1, female ? 0.92 : 1);
     this.bodyMesh.scaling.set(
-      female ? 0.92 : other ? 0.98 : 1.08,
+      female ? 0.92 : 1.08,
       1,
-      female ? 0.78 : other ? 0.8 : 0.8,
+      female ? 0.78 : 0.8,
     );
     this.jacketFrontMesh.scaling.set(female ? 0.9 : 1, female ? 0.96 : 1, 1);
-    this.shoulderL.scaling.set(female ? 0.82 : other ? 0.92 : 1.05, 0.78, 0.95);
-    this.shoulderR.scaling.set(female ? 0.82 : other ? 0.92 : 1.05, 0.78, 0.95);
-    this.shoulderL.position.x = female ? -0.26 : other ? -0.28 : -0.30;
-    this.shoulderR.position.x = female ? 0.26 : other ? 0.28 : 0.30;
+    this.shoulderL.scaling.set(female ? 0.82 : 1.05, 0.78, 0.95);
+    this.shoulderR.scaling.set(female ? 0.82 : 1.05, 0.78, 0.95);
+    this.shoulderL.position.x = female ? -0.26 : -0.30;
+    this.shoulderR.position.x = female ? 0.26 : 0.30;
 
     // Head / jaw softer for female
     this.headMesh.scaling.set(female ? 0.88 : 0.9, female ? 1.08 : 1.1, female ? 0.9 : 0.92);
-    this.jawMesh.scaling.set(female ? 0.9 : other ? 0.98 : 1.05, female ? 0.45 : 0.55, female ? 0.9 : 0.95);
+    this.jawMesh.scaling.set(female ? 0.9 : 1.05, female ? 0.45 : 0.55, female ? 0.9 : 0.95);
     this.jawMesh.setEnabled(!female);
 
     // Hair styles
     this.hairCapMesh.scaling.set(female ? 1.02 : 0.96, female ? 0.72 : 0.62, female ? 1.02 : 0.98);
     this.hairFrontMesh.scaling.set(female ? 1.15 : 1, female ? 1.2 : 1, 1);
-    this.hairLongL.setEnabled(female || other);
-    this.hairLongR.setEnabled(female || other);
+    this.hairLongL.setEnabled(female);
+    this.hairLongR.setEnabled(female);
     this.hairBun.setEnabled(female);
     if (female) {
       this.hairMat.diffuseColor.set(0.22, 0.12, 0.08);
       this.skinMat.diffuseColor.set(0.78, 0.56, 0.48);
       this.skinShadeMat.diffuseColor.set(0.64, 0.44, 0.36);
-    } else if (other) {
-      this.hairMat.diffuseColor.set(0.18, 0.12, 0.14);
-      this.skinMat.diffuseColor.set(0.74, 0.54, 0.42);
-      this.skinShadeMat.diffuseColor.set(0.6, 0.42, 0.32);
     } else {
       this.hairMat.diffuseColor.set(0.14, 0.09, 0.05);
       this.skinMat.diffuseColor.set(0.72, 0.52, 0.40);
@@ -207,8 +202,8 @@ export class PlayerVisual {
     }
 
     // Slight limb width via arm/leg local x scale
-    const armW = female ? 0.9 : other ? 0.95 : 1;
-    const legW = female ? 0.92 : other ? 0.96 : 1;
+    const armW = female ? 0.9 : 1;
+    const legW = female ? 0.92 : 1;
     this.leftArm.scaling.set(armW, 1, armW);
     this.rightArm.scaling.set(armW, 1, armW);
     this.leftLeg.scaling.set(legW, 1, legW);

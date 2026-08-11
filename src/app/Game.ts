@@ -66,7 +66,7 @@ import { ConsumableUseSystem } from "../consumables/ConsumableUseSystem";
 import { DeathBagSystem } from "../death/DeathBagSystem";
 import { LocationManager } from "../locations/LocationManager";
 import type { LocationId } from "../locations/LocationRegistry";
-import { getLocation, effectiveColdExposure } from "../locations/LocationRegistry";
+import { effectiveColdExposure } from "../locations/LocationRegistry";
 import { ExperiencePool, SkillTree } from "../progression/ExperiencePool";
 import { BuildingRegistry } from "../building/BuildingRegistry";
 import { BuildingPresentation } from "../building/BuildingPresentation";
@@ -80,7 +80,7 @@ import { DeathScreen } from "../ui/DeathScreen";
 import { FullLoader } from "../ui/Loaders";
 import { confirmDialog } from "../ui/ConfirmDialog";
 import { NotificationService } from "../notify/NotificationService";
-import { SAVE_SYSTEM, SAVE_VERSION, serializeStack, serializeInventorySlot, deserializeStack, type SaveBlob, type SerializedInventorySlot, type SerializedContainer } from "../save/SaveSystem";
+import { SAVE_SYSTEM, SAVE_VERSION, serializeStack, serializeInventorySlot, deserializeStack, deserializeStacks, type SaveBlob, type SerializedInventorySlot, type SerializedContainer } from "../save/SaveSystem";
 import { I18N } from "../i18n/I18n";
 import { achievementTitle, locationTitle } from "../i18n/contentApi";
 import { GAME_AUDIO } from "../audio/GameAudio";
@@ -140,8 +140,8 @@ export class Game {
   private readonly weaponEquipSystem: WeaponEquipSystem;
   private readonly backpackSlot = new PlayerBackpackSlot();
   private readonly backpackEquipSystem: BackpackEquipSystem;
-  private readonly quickSlot = new PlayerQuickSlot();
-  private readonly quickSlotSystem: QuickSlotSystem;
+  private readonly quickSlots = Object.freeze([new PlayerQuickSlot(), new PlayerQuickSlot()]) as readonly [PlayerQuickSlot, PlayerQuickSlot];
+  private readonly quickSlotSystems: readonly [QuickSlotSystem, QuickSlotSystem];
   private readonly utilitySlot = new PlayerUtilitySlot();
   private readonly utilityEquipSystem: UtilityEquipSystem;
   private readonly hunger = new HungerPool(SURVIVAL_CONFIG.hunger.max, SURVIVAL_CONFIG.hunger.initial);
@@ -215,6 +215,10 @@ export class Game {
   private readonly worldContainers: WorldContainerEntity[] = [];
   private gameStarted = false;
   private deathHandled = false;
+  /** Blocks persist while inventory is wiped/restored so an empty mid-load snapshot cannot clobber a good save. */
+  private saveHydrating = false;
+  /** Last applied harvest snapshot — re-applied after each location visual so trees stay cut. */
+  private loadedHarvestResources: readonly import("../harvesting/HarvestableResource").SerializedHarvestResource[] | null = null;
   private autosaveTimer = 0;
   private deferredSaveTimer = 0;
   private sessionPlaytimeSec = 0;
@@ -249,7 +253,7 @@ export class Game {
     this.notify = new NotificationService(uiRoot);
     this.fullLoader = new FullLoader(uiRoot);
     this.locations = new LocationManager(this.energy);
-    this.consumables = new ConsumableUseSystem(this.inventory, this.player.health, this.hunger, this.thirst, this.quickSlot, this.status);
+    this.consumables = new ConsumableUseSystem(this.inventory, this.player.health, this.hunger, this.thirst, this.quickSlots, this.status);
     this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
     this.combatPresentation = new CombatPresentation(this.scene, this.engine, uiRoot);
     this.enemyPresentation = new EnemyPresentation(this.scene);
@@ -328,7 +332,10 @@ export class Game {
     );
     this.weaponEquipSystem = new WeaponEquipSystem(this.inventory, this.weaponSlot, () => { this.combat.cancelAttack(); });
     this.backpackEquipSystem = new BackpackEquipSystem(this.inventory, this.backpackSlot);
-    this.quickSlotSystem = new QuickSlotSystem(this.inventory, this.quickSlot);
+    this.quickSlotSystems = Object.freeze([
+      new QuickSlotSystem(this.inventory, this.quickSlots[0]),
+      new QuickSlotSystem(this.inventory, this.quickSlots[1]),
+    ]) as readonly [QuickSlotSystem, QuickSlotSystem];
     this.utilityEquipSystem = new UtilityEquipSystem(this.inventory, this.utilitySlot);
     this.inventoryPanel = new InventoryPanel(
       uiRoot,
@@ -339,6 +346,8 @@ export class Game {
       this.weaponEquipSystem,
       this.backpackSlot,
       this.backpackEquipSystem,
+      this.quickSlots,
+      this.quickSlotSystems,
       this.hud.inventoryToggle,
       (open) => { this.setInventoryOpen(open); },
     );
@@ -352,7 +361,11 @@ export class Game {
         }
         return result.accepted;
       },
-      quickAssign: (slot, stack) => this.quickSlotSystem.assignFromInventory(slot, stack).accepted,
+      quickAssign: (slot, stack) => {
+        const empty = this.quickSlots.findIndex((q) => q.isEmpty);
+        const index = (empty >= 0 ? empty : 0) as 0 | 1;
+        return this.quickSlotSystems[index].assignFromInventory(slot, stack).accepted;
+      },
         delete: (slot, stack) => {
           void (async () => {
             const ok = await confirmDialog(uiRoot, {
@@ -444,9 +457,6 @@ export class Game {
         this.gameStarted = false;
         this.input.setSuppressed(true);
       },
-      () => {
-        this.inventoryPanel.toggle();
-      },
     );
     this.mainMenu = new MainMenu(uiRoot, () => this.getMainMenuSummary(), (mode) => this.beginPlay(mode));
     this.langSelect = new LanguageSelectScreen(uiRoot, () => {
@@ -472,11 +482,13 @@ export class Game {
     this.harvestTools = new InventoryHarvestTools(this.inventory, this.weaponSlot);
     this.harvesting = new HarvestingSystem(this.config, this.harvestTools, this.player, this.interaction, resourceResults, (resource) => {
       this.world.removeResourceCollision(resource.resourceId);
+      this.loadedHarvestResources = this.world.serializeHarvestState();
       this.experience.addXp(3);
       this.stats.recordHarvest();
       this.notifyAchievement("first-harvest");
       if (resource.resourceKind === "pine-tree") this.completeQuest("collect-pine-logs");
       if (resource.resourceKind === "limestone-rock") this.completeQuest("collect-limestone");
+      this.queueAutosaveSoon();
     });
     this.backpackSlot.subscribe((_prev, stack) => {
       if (stack) {
@@ -484,7 +496,8 @@ export class Game {
         this.notifyAchievement("backpacker");
       }
     });
-    this.quickSlot.subscribe(() => { this.syncQuickHud(); });
+    this.quickSlots[0].subscribe(() => { this.syncQuickHud(); });
+    this.quickSlots[1].subscribe(() => { this.syncQuickHud(); });
     this.experience.subscribe((level) => {
       this.locations.unlockByLevel(level);
       this.syncHudNeeds();
@@ -613,6 +626,7 @@ export class Game {
   }
 
   private beginPlay(mode: "new" | "continue"): void {
+    this.saveHydrating = true;
     try {
       if (mode === "continue") {
         const blob = SAVE_SYSTEM.load();
@@ -626,32 +640,60 @@ export class Game {
         this.grantStarterInventory();
       }
       this.gameStarted = true;
-      this.deathHandled = false;
+      // Dead save: keep death screen — do not re-strip (would wipe a restored loadout / already-empty corpse).
+      if (this.player.health.dead) {
+        this.deathHandled = true;
+      } else {
+        this.deathHandled = false;
+      }
       this.locations.unlockByLevel(this.experience.currentLevel);
       // Visual/theme already applied inside applySave; re-apply so New Game and Continue agree.
       const theme = this.world.applyLocationVisual(this.locations.currentId);
       this.lighting.applyLocationTheme(theme);
       this.nearFire = this.locations.currentId === "home" || theme.showCampfire;
+      // Layout re-enables meshes — re-apply harvest so cut trees stay cut.
+      this.world.restoreHarvestState(this.loadedHarvestResources);
       this.respawnLocationEnemies(this.locations.currentId);
-      this.camera.update(0, this.player.position);
+      this.camera.clearShake();
+      this.camera.snapTo(this.player.position);
+      this.equipmentVisual.resync();
+      this.syncHeldWeaponVisual();
       this.mainMenu.close();
       this.pauseMenu.close();
-      this.deathScreen.close();
-      this.input.setSuppressed(false);
-      this.applyGameplayPanelState(false);
+      if (this.player.health.dead) {
+        this.deathScreen.open({
+          locationName: locationTitle(this.locations.currentId),
+          cause: this.lastDeathCause,
+        });
+        this.applyGameplayPanelState(true);
+      } else {
+        this.deathScreen.close();
+        this.input.setSuppressed(false);
+        this.applyGameplayPanelState(false);
+      }
+      this.inventoryPanel.close();
+      this.craftingPanel.close();
+      this.mapPanel.close();
+      this.localMap.close();
       // Commit immediately so Continue always has bag/armor/resources after New Game or load.
+      this.deferredSaveTimer = 0;
+      this.saveHydrating = false;
       this.persistSave(false);
       this.autosaveTimer = 0;
       this.syncQuickHud();
       this.syncHudNeeds();
       this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
+      this.hud.setStatusEffects(this.status.ids());
       this.mainMenu.refresh();
     } catch (error) {
       console.error("[beginPlay]", error);
+      this.saveHydrating = false;
       this.mainMenu.open();
       this.gameStarted = false;
       this.input.setSuppressed(true);
       this.notify.push(I18N.t("notify.startFailed"), "error");
+    } finally {
+      this.saveHydrating = false;
     }
   }
 
@@ -659,6 +701,8 @@ export class Game {
   private resetSessionForNewGame(): void {
     SAVE_SYSTEM.clear();
     this.clearInventoryCompletely();
+    this.loadedHarvestResources = null;
+    this.world.resetHarvestState();
     this.player.health.restoreFull();
     this.hunger.set(SURVIVAL_CONFIG.hunger.max);
     this.thirst.set(SURVIVAL_CONFIG.thirst.max);
@@ -743,8 +787,10 @@ export class Game {
     if (weapon) this.weaponSlot.unequipIfAccepted(weapon, () => true);
     const pack = this.backpackSlot.current;
     if (pack) this.backpackSlot.unequipIfAccepted(pack, () => true);
-    const quick = this.quickSlot.current;
-    if (quick) this.quickSlot.clearIfAccepted(quick, () => true);
+    const q0 = this.quickSlots[0].current;
+    if (q0) this.quickSlots[0].clearIfAccepted(q0, () => true);
+    const q1 = this.quickSlots[1].current;
+    if (q1) this.quickSlots[1].clearIfAccepted(q1, () => true);
     const util = this.utilitySlot.current;
     if (util) this.utilitySlot.unequipIfAccepted(util, () => true);
     this.syncHeldWeaponVisual();
@@ -753,19 +799,19 @@ export class Game {
   private getMainMenuSummary() {
     const blob = SAVE_SYSTEM.load();
     if (!blob) return { hasSave: false as const };
-    const loc = getLocation(blob.locationId);
     return {
       hasSave: true as const,
       level: blob.xp?.level ?? 1,
       locationId: blob.locationId,
-      locationName: loc.title,
+      locationName: locationTitle(blob.locationId),
       playtimeSec: blob.playtimeSec ?? 0,
       lastPlayedAt: blob.savedAt,
     };
   }
 
   private bindHudControls(): void {
-    this.hud.quickSlotButton.addEventListener("click", () => { this.useQuickSlot(); });
+    this.hud.quickSlotButton.addEventListener("click", () => { this.useQuickSlot(0); });
+    this.hud.quickSlot2Button.addEventListener("click", () => { this.useQuickSlot(1); });
     this.hud.sneakButton.addEventListener("click", () => { this.toggleSneak(); });
     this.hud.mapButton.addEventListener("click", () => {
       if (!this.gameStarted || this.player.health.dead) return;
@@ -819,7 +865,8 @@ export class Game {
     this.powerGrid.tick(frameDelta, this.worldClock.sunIntensity());
     this.water.tick(frameDelta, this.powerGrid.net >= 0 || this.powerGrid.storage > 1);
     if (frameDelta > 0 && this.player.health.alive) this.stats.tickPlaytime(frameDelta);
-    this.quickSlot.tick(frameDelta);
+    this.quickSlots[0].tick(frameDelta);
+    this.quickSlots[1].tick(frameDelta);
     this.tickSurvival(frameDelta);
     this.autosaveTimer += frameDelta;
     if (this.deferredSaveTimer > 0) {
@@ -829,7 +876,7 @@ export class Game {
         this.persistSave(false);
       }
     }
-    if (this.autosaveTimer >= 20) {
+    if (this.autosaveTimer >= 12) {
       this.autosaveTimer = 0;
       this.persistSave(false);
     }
@@ -1029,29 +1076,27 @@ export class Game {
   }
 
   private syncQuickHud(): void {
-    const stack = this.quickSlot.current;
-    this.hud.setQuickSlot(stack?.itemId ?? null, stack?.quantity ?? 0);
+    const a = this.quickSlots[0].current;
+    const b = this.quickSlots[1].current;
+    this.hud.setQuickSlot(a?.itemId ?? null, a?.quantity ?? 0);
+    this.hud.setQuickSlot2(b?.itemId ?? null, b?.quantity ?? 0);
   }
 
-  private useQuickSlot(): void {
+  private useQuickSlot(index: 0 | 1 = 0): void {
     if (!this.gameStarted || !this.player.health.alive) return;
-    if (!this.quickSlotSystem.canUse() && this.quickSlot.current === null) {
-      // Auto-assign first matching consumable from inventory base pockets.
-      for (let i = 0; i < this.inventory.slotCount; i += 1) {
-        const stack = this.inventory.getSlot(i).stack;
-        if (!stack || !PlayerQuickSlot.isCompatible(stack.itemId)) continue;
-        const assigned = this.quickSlotSystem.assignFromInventory(i, stack);
-        if (assigned.accepted) {
-          this.syncQuickHud();
-          break;
-        }
-      }
-      if (this.quickSlot.current === null) {
-        this.notify.push(I18N.t("notify.noConsumable"), "warn");
-        return;
-      }
+    const slot = this.quickSlots[index];
+    const system = this.quickSlotSystems[index];
+    // Empty by default — never auto-fill. Player must put items via inventory / drag.
+    if (slot.current === null) {
+      this.notify.push(I18N.t("notify.quickEmpty"), "warn");
+      return;
     }
-    const result = this.consumables.useFromQuickSlot();
+    if (!system.canUse()) {
+      // Occupied by a non-consumable (storage only) — no activate action.
+      this.notify.push(I18N.t("notify.cantUse"), "info");
+      return;
+    }
+    const result = this.consumables.useFromQuickSlot(index);
     if (!result.accepted) {
       if (result.reason === "full-health") this.notify.push(I18N.t("notify.healthFull"), "info");
       else if (result.reason === "empty") this.notify.push(I18N.t("notify.quickEmpty"), "warn");
@@ -1303,6 +1348,9 @@ export class Game {
     const theme = this.world.applyLocationVisual(id);
     this.lighting.applyLocationTheme(theme);
     this.nearFire = id === "home" || theme.showCampfire;
+    // Keep in-memory harvest progress (layout respects depleted flags).
+    this.loadedHarvestResources = this.world.serializeHarvestState();
+    this.camera.snapTo(this.player.position);
     this.journal.discoverLocation(id);
     this.stats.recordTravel(1);
     this.stats.recordLocationDiscovered();
@@ -1653,7 +1701,7 @@ export class Game {
       equipment: this.equipment,
       weapon: this.weaponSlot,
       backpack: this.backpackSlot,
-      quick: this.quickSlot,
+      quicks: this.quickSlots,
       utility: this.utilitySlot,
     });
     // Drop bag as ground loot for first stack + leave rest lootable via deathBags.lootInto when interacting near bag marker
@@ -1675,6 +1723,9 @@ export class Game {
       cause: this.lastDeathCause,
     });
     this.notify.push(I18N.t("notify.died"), "error");
+    // Persist stripped loadout + death bag immediately (don't wait for autosave).
+    this.deferredSaveTimer = 0;
+    this.persistSave(false);
   }
 
   private respawnPlayer(): void {
@@ -1881,7 +1932,8 @@ export class Game {
       equipment: Object.freeze(equipment),
       weapon: this.weaponSlot.current ? serializeStack(this.weaponSlot.current) : null,
       backpack: this.backpackSlot.current ? serializeStack(this.backpackSlot.current) : null,
-      quick: this.quickSlot.current ? serializeStack(this.quickSlot.current) : null,
+      quick: this.quickSlots[0].current ? serializeStack(this.quickSlots[0].current) : null,
+      quick2: this.quickSlots[1].current ? serializeStack(this.quickSlots[1].current) : null,
       utility: this.utilitySlot.current ? serializeStack(this.utilitySlot.current) : null,
       bunkerAccess: this.locations.hasBunkerAccess,
       unlockedLocations: this.locations.unlockedIds,
@@ -1919,6 +1971,7 @@ export class Game {
       greyhavenVisits: this.greyhavenVisits,
       campfireQueue: this.campfireQueue.serialize(),
       sneakActive: this.sneak.isSneaking,
+      harvestResources: this.world.serializeHarvestState(),
     }) as unknown as SaveBlob;
   }
 
@@ -1964,12 +2017,13 @@ export class Game {
     const indexed: { index: number; stack: NonNullable<ReturnType<typeof deserializeStack>> }[] = [];
     const ordered: NonNullable<ReturnType<typeof deserializeStack>>[] = [];
     for (const entry of blob.inventory ?? []) {
-      const stack = deserializeStack(entry);
-      if (!stack) continue;
+      const stacks = deserializeStacks(entry);
+      if (stacks.length === 0) continue;
       if ("index" in entry && typeof (entry as SerializedInventorySlot).index === "number") {
-        indexed.push({ index: (entry as SerializedInventorySlot).index, stack });
+        indexed.push({ index: (entry as SerializedInventorySlot).index, stack: stacks[0]! });
+        for (let i = 1; i < stacks.length; i += 1) ordered.push(stacks[i]!);
       } else {
-        ordered.push(stack);
+        for (const stack of stacks) ordered.push(stack);
       }
     }
     if (indexed.length > 0) {
@@ -1993,7 +2047,11 @@ export class Game {
     }
     if (blob.quick) {
       const stack = deserializeStack(blob.quick);
-      if (stack) this.quickSlot.assignIfAccepted(stack, () => true);
+      if (stack) this.quickSlots[0].assignIfAccepted(stack, () => true);
+    }
+    if (blob.quick2) {
+      const stack = deserializeStack(blob.quick2);
+      if (stack) this.quickSlots[1].assignIfAccepted(stack, () => true);
     }
     if (blob.utility) {
       const stack = deserializeStack(blob.utility);
@@ -2068,9 +2126,10 @@ export class Game {
       this.hud.setSneakActive(false);
     }
 
-    // Ground piles + chests for the whole session.
+    // Ground piles + chests — empty arrays are intentional (player looted everything).
+    // Only missing/undefined fields re-seed starter world loot for pre-v3 saves.
     this.clearWorldLootAndContainers();
-    if (blob.groundLoot && blob.groundLoot.length > 0) {
+    if (Array.isArray(blob.groundLoot)) {
       for (const entry of blob.groundLoot) {
         const stack = deserializeStack(entry);
         if (!stack) continue;
@@ -2080,7 +2139,7 @@ export class Game {
       spawnStarterGroundResources(this.groundLoot);
       this.spawnStarterGroundMats();
     }
-    if (blob.worldContainers && blob.worldContainers.length > 0) {
+    if (Array.isArray(blob.worldContainers)) {
       this.restoreWorldContainers(blob.worldContainers);
     } else {
       this.spawnStarterSupplyCrate();
@@ -2089,10 +2148,19 @@ export class Game {
     const theme = this.world.applyLocationVisual(blob.locationId);
     this.lighting.applyLocationTheme(theme);
     this.nearFire = blob.locationId === "home" || theme.showCampfire;
+    // Keep harvested trees/rocks as saved (layout would re-enable otherwise).
+    this.loadedHarvestResources = blob.harvestResources
+      ? Object.freeze(blob.harvestResources.map((r) => Object.freeze({ ...r })))
+      : null;
+    this.world.restoreHarvestState(this.loadedHarvestResources);
     this.totalPlaytimeSec = blob.playtimeSec ?? 0;
     this.sessionPlaytimeSec = 0;
     this.applyUserSettingsRuntime();
-    this.camera.update(0, this.player.position);
+    this.equipmentVisual.resync();
+    this.syncHeldWeaponVisual();
+    this.hud.setStatusEffects(this.status.ids());
+    this.camera.clearShake();
+    this.camera.snapTo(this.player.position);
   }
 
   /**
@@ -2100,15 +2168,47 @@ export class Game {
    * Periodic autosave no longer depends on a re-checked timer (previous bug skipped every tick).
    */
   private persistSave(notifyUser: boolean): void {
-    if (!this.gameStarted) return;
-    const ok = SAVE_SYSTEM.save(this.buildSaveBlob());
+    if (!this.gameStarted || this.saveHydrating) return;
+    const blob = this.buildSaveBlob();
+    if (!this.shouldWriteSaveBlob(blob)) return;
+    const ok = SAVE_SYSTEM.save(blob);
     if (notifyUser) this.notify.push(ok ? I18N.t("notify.saved") : I18N.t("notify.saveFailed"), ok ? "success" : "error");
   }
 
-  /** Coalesce rapid inventory/equip changes into one write within ~1.2s. */
+  /** Never clobber a rich on-disk loadout with an accidental mid-wipe empty snapshot. */
+  private shouldWriteSaveBlob(blob: SaveBlob): boolean {
+    const next = this.countSerializedLoadout(blob);
+    if (next > 0) return true;
+    if (this.player.health.dead || this.deathHandled) return true;
+    const prev = SAVE_SYSTEM.load();
+    if (!prev) return true;
+    if (this.countSerializedLoadout(prev) > 0) {
+      console.warn("[Game.persistSave] refused empty loadout overwrite of existing save");
+      return false;
+    }
+    return true;
+  }
+
+  private countSerializedLoadout(blob: SaveBlob): number {
+    let n = blob.inventory?.length ?? 0;
+    if (blob.equipment) {
+      for (const v of Object.values(blob.equipment)) if (v) n += 1;
+    }
+    if (blob.weapon) n += 1;
+    if (blob.backpack) n += 1;
+    if (blob.utility) n += 1;
+    if (blob.quick) n += 1;
+    if (blob.quick2) n += 1;
+    return n;
+  }
+
+  /** Coalesce rapid inventory/equip changes into one write within ~0.4s. */
   private queueAutosaveSoon(): void {
     if (!this.gameStarted) return;
-    this.deferredSaveTimer = 1.2;
+    // Keep short so reloads right after actions still flush full progress.
+    if (this.deferredSaveTimer <= 0 || this.deferredSaveTimer > 0.4) {
+      this.deferredSaveTimer = 0.4;
+    }
   }
 
   private readonly onFunctionKey = (event: KeyboardEvent): void => {
@@ -2175,7 +2275,8 @@ export class Game {
       } else this.notify.push(I18N.t("notify.noSkillPoints"), "warn");
       return;
     }
-    if (event.code === "Digit1" && !event.repeat) { event.preventDefault(); this.useQuickSlot(); return; }
+    if (event.code === "Digit1" && !event.repeat) { event.preventDefault(); this.useQuickSlot(0); return; }
+    if (event.code === "Digit2" && !event.repeat) { event.preventDefault(); this.useQuickSlot(1); return; }
     if (event.code === "KeyU" && !event.repeat) { event.preventDefault(); this.toggleUtilityTorch(); return; }
     if (event.code === "KeyK" && !event.repeat && event.shiftKey) {
       // debug grant bandage

@@ -190,9 +190,11 @@ export class LocationManager {
       this.unlock("old-highway");
       this.unlock("abandoned-camp");
       this.unlock("riverbank");
+      this.unlock("silt-cataract");
       this.unlock("survivor-camp");
     }
     if (level >= 3) this.unlock("dense-forest");
+    if (level >= 3) this.unlock("copperleaf-basin");
     if (level >= 4) this.unlock("gas-station");
     if (level >= 5) this.unlock("industrial-yard");
     if (level >= 6) this.unlock("derelict-motel");
@@ -200,6 +202,7 @@ export class LocationManager {
     if (level >= 7) this.unlock("abandoned-factory");
     if (level >= 8) this.unlock("frozen-pine-valley");
     if (level >= 8) this.unlock("swamp-hollow");
+    if (level >= 9) this.unlock("glass-caldera");
     if (level >= 9) this.unlock("marauder-camp");
     if (level >= 9) this.unlock("hunters-cabin");
     if (level >= 10) this.unlock("underground-depot");

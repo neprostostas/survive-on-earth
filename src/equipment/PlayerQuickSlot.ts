@@ -1,9 +1,13 @@
 import type { ItemStack } from "../items/ItemSystem.ts";
-import { ITEM_REGISTRY } from "../items/ItemSystem.ts";
+import { createItemStack, ITEM_REGISTRY } from "../items/ItemSystem.ts";
 
 export type QuickSlotListener = (previous: ItemStack | null, stack: ItemStack | null) => void;
 
-/** Single consumable quick-use slot — separate from weapon. */
+/**
+ * Hotbar storage slot (1 / 2) — holds any inventory item like a pocket cell.
+ * Empty by default; only filled when the player assigns something.
+ * Consumable use is handled separately (does not require a special item flag).
+ */
 export class PlayerQuickSlot {
   private stack: ItemStack | null = null;
   private readonly listeners = new Set<QuickSlotListener>();
@@ -13,9 +17,9 @@ export class PlayerQuickSlot {
   get current(): ItemStack | null { return this.stack; }
   get cooldown(): number { return this.cooldownRemaining; }
 
+  /** Any registered catalog item can occupy a quick slot. */
   static isCompatible(itemId: string): boolean {
-    const def = ITEM_REGISTRY.get(itemId);
-    return def.quickSlot === true && def.consumable !== undefined;
+    return ITEM_REGISTRY.has(itemId);
   }
 
   tick(delta: number): void {
@@ -51,7 +55,7 @@ export class PlayerQuickSlot {
     if (previous.quantity === 1) {
       this.stack = null;
     } else {
-      this.stack = Object.freeze({ itemId: previous.itemId, quantity: previous.quantity - 1 });
+      this.stack = createItemStack(previous.itemId, previous.quantity - 1);
     }
     this.emit(previous, this.stack);
     return true;

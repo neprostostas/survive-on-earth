@@ -31,7 +31,8 @@ assert.equal(panelSource.includes("INVENTORY_CONFIG.columns"), true, "columns fr
 assert.equal(panelSource.includes("dataset.equipmentSlot"), true, "armor slot mapping");
 assert.equal(panelSource.includes('data-role="weapon-slot"'), true, "weapon slot UI");
 assert.equal(panelSource.includes('data-role="backpack-equip"'), true, "backpack equip slot");
-assert.equal(panelSource.includes('data-role="utility-equip"'), true, "utility shell");
+assert.equal(panelSource.includes('data-role="quick-equip-0"'), true, "quick slot 1");
+assert.equal(panelSource.includes('data-role="quick-equip-1"'), true, "quick slot 2");
 assert.equal(panelSource.includes('data-role="backpack-future"'), true, "backpack storage area");
 assert.equal(panelSource.includes("BACKPACK_STORAGE_UI_COUNT"), true, "backpack storage UI count");
 assert.equal(panelSource.includes("BackpackEquipSystem"), true, "production backpack equip");

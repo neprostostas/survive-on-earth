@@ -2,7 +2,7 @@ import type { HealthPool } from "../combat/HealthPool.ts";
 import type { PlayerInventory } from "../inventory/PlayerInventory.ts";
 import type { PlayerQuickSlot } from "../equipment/PlayerQuickSlot.ts";
 import type { HungerPool, ThirstPool } from "../survival/NeedPool.ts";
-import { ITEM_REGISTRY, type ItemStack } from "../items/ItemSystem.ts";
+import { ITEM_REGISTRY, createItemStack, type ItemStack } from "../items/ItemSystem.ts";
 import type { StatusEffectSystem } from "../status/StatusEffectSystem.ts";
 
 export type ConsumableSource = "inventory" | "quick-slot";
@@ -39,7 +39,7 @@ export class ConsumableUseSystem {
     private readonly health: HealthPool,
     private readonly hunger: HungerPool,
     private readonly thirst: ThirstPool,
-    private readonly quickSlot: PlayerQuickSlot,
+    private readonly quickSlots: readonly PlayerQuickSlot[],
     private readonly status?: StatusEffectSystem,
   ) {}
 
@@ -54,23 +54,22 @@ export class ConsumableUseSystem {
     if (stack.quantity === 1) {
       this.inventory.exchangeWholeStack(slotIndex, stack, null);
     } else {
-      this.inventory.exchangeWholeStack(slotIndex, stack, Object.freeze({
-        itemId: stack.itemId,
-        quantity: stack.quantity - 1,
-      }));
+      this.inventory.exchangeWholeStack(slotIndex, stack, createItemStack(stack.itemId, stack.quantity - 1));
     }
     return effect;
   }
 
-  useFromQuickSlot(): ConsumableUseResult {
+  useFromQuickSlot(index = 0): ConsumableUseResult {
     if (!this.health.alive) return { accepted: false, reason: "defeated", applied: 0 };
-    if (this.quickSlot.cooldown > 0) return { accepted: false, reason: "cooldown", applied: 0 };
-    const stack = this.quickSlot.current;
+    const quickSlot = this.quickSlots[index] ?? this.quickSlots[0];
+    if (!quickSlot) return { accepted: false, reason: "empty", applied: 0 };
+    if (quickSlot.cooldown > 0) return { accepted: false, reason: "cooldown", applied: 0 };
+    const stack = quickSlot.current;
     if (!stack) return { accepted: false, reason: "empty", applied: 0 };
     const effect = this.applyEffect(stack.itemId);
     if (!effect.accepted) return effect;
-    this.quickSlot.consumeOne();
-    this.quickSlot.setCooldown(0.35);
+    quickSlot.consumeOne();
+    quickSlot.setCooldown(0.35);
     return effect;
   }
 

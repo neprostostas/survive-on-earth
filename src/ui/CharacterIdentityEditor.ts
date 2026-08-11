@@ -6,7 +6,8 @@ import { menuBtnLabel, uiIcon } from "./uiIcons";
 import { I18N } from "../i18n/I18n";
 
 /**
- * Modal editor for survivor name + gender (shared by Settings & Inventory).
+ * Modal character editor (Settings only).
+ * Inventory uses inline name/gender controls — no full-screen blur overlay there.
  * Mounts on document.body so #ui-root pointer-events:none cannot swallow input.
  */
 export function openCharacterIdentityEditor(_root?: HTMLElement | null): Promise<void> {
@@ -34,7 +35,6 @@ export function openCharacterIdentityEditor(_root?: HTMLElement | null): Promise
           <div class="soi-choice-group" role="listbox" aria-label="${t("char.gender")}">
             ${genderBtn("male", t("settings.gender.male"), current.gender)}
             ${genderBtn("female", t("settings.gender.female"), current.gender)}
-            ${genderBtn("other", t("settings.gender.other"), current.gender)}
           </div>
         </div>
         <div class="soi-confirm-actions">

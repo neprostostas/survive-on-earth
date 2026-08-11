@@ -54,7 +54,15 @@ export class LocalMapPanel {
     if (!stage || !canvas || !titleEl) throw new Error("Local map failed to mount");
     this.stage = stage;
     this.titleEl = titleEl;
-    this.map = new Minimap(canvas, { worldRadius: 42, square: true, orientation: "world" });
+    this.map = new Minimap(canvas, {
+      worldRadius: 42,
+      square: true,
+      orientation: "world",
+      // Full location map — entire site, origin-centered (not HUD follow zoom).
+      coverage: "location",
+      // 180° from default north-up (two 90° right turns).
+      worldYawOffsetRad: Math.PI,
+    });
 
     for (const el of this.overlay.querySelectorAll("[data-role=close]")) {
       el.addEventListener("click", () => this.close());
@@ -86,7 +94,8 @@ export class LocalMapPanel {
   update(frame: MinimapFrame): void {
     this.lastFrame = frame;
     if (this.openState) {
-      this.map.setWorldRadius(Math.max(28, frame.worldHalfExtent * 1.05));
+      // Radius is overridden by coverage=location; keep buffer dirty via refresh.
+      this.map.setWorldRadius(Math.max(28, frame.worldHalfExtent * 1.1));
       this.map.update(frame);
     }
   }
@@ -108,6 +117,7 @@ export class LocalMapPanel {
     this.stage.style.borderRadius = "50%";
     this.stage.style.transform = "translate(-50%, -50%)";
     this.stage.style.opacity = "1";
+    this.stage.style.margin = "0";
 
     if (this.lastFrame) {
       this.map.setWorldRadius(Math.max(28, this.lastFrame.worldHalfExtent * 1.05));
@@ -149,6 +159,7 @@ export class LocalMapPanel {
     this.stage.style.borderRadius = "50%";
     this.stage.style.transform = "translate(-50%, -50%)";
     this.stage.style.opacity = "0.55";
+    this.stage.style.margin = "0";
 
     const finish = (): void => {
       this.stage.removeEventListener("transitionend", finish);
@@ -174,27 +185,32 @@ export class LocalMapPanel {
     else this.openFrom(source);
   }
 
-  /** True viewport-centered square (fits under chrome / above hint). */
+  /** True visual-viewport center (not biased by chrome/hint reserves). */
   private applyCenteredLayout(): void {
-    const vh = window.innerHeight;
-    const vw = window.innerWidth;
+    const vv = window.visualViewport;
+    // Prefer visualViewport so mobile toolbars / zoomed pages don't shift "center".
+    const vw = vv?.width ?? window.innerWidth;
+    const vh = vv?.height ?? window.innerHeight;
+    const ox = vv?.offsetLeft ?? 0;
+    const oy = vv?.offsetTop ?? 0;
     const safeTop = this.readSafeInset("top");
     const safeBottom = this.readSafeInset("bottom");
     const safeLeft = this.readSafeInset("left");
     const safeRight = this.readSafeInset("right");
-    // Symmetric outer margin so the map center = screen center.
-    const edgeY = Math.max(safeTop, safeBottom, vh * 0.08, 52);
-    const edgeX = Math.max(safeLeft, safeRight, vw * 0.04, 16);
-    const availW = Math.max(120, vw - edgeX * 2);
-    const availH = Math.max(120, vh - edgeY * 2);
-    const size = Math.floor(Math.min(availW, availH));
+    // Symmetric pad keeps the square geometrically centered in the free area.
+    const padX = Math.max(safeLeft, safeRight, Math.min(vw, vh) * 0.05, 14);
+    const padY = Math.max(safeTop, safeBottom, Math.min(vw, vh) * 0.05, 14);
+    const size = Math.floor(Math.min(vw - padX * 2, vh - padY * 2));
+    const cx = ox + vw / 2;
+    const cy = oy + vh / 2;
 
-    this.stage.style.left = "50%";
-    this.stage.style.top = "50%";
-    this.stage.style.width = `${size}px`;
-    this.stage.style.height = `${size}px`;
+    this.stage.style.left = `${Math.round(cx)}px`;
+    this.stage.style.top = `${Math.round(cy)}px`;
+    this.stage.style.width = `${Math.max(120, size)}px`;
+    this.stage.style.height = `${Math.max(120, size)}px`;
     this.stage.style.borderRadius = "1.2vh";
     this.stage.style.transform = "translate(-50%, -50%)";
+    this.stage.style.margin = "0";
     this.stage.style.opacity = "1";
   }
 

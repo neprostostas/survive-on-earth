@@ -107,6 +107,28 @@ export function createBiomePropPack(scene: Scene, biome: BiomeVisualId, seed = 1
       scatter(scene, root, mats.foliage, mats.soil, seed + 4, 16, "crop");
       scatter(scene, root, mats.metal, mats.rust, seed + 6, 6, "trough");
       break;
+    case "ice-caldera":
+      // Mirror ice field: vertical prisms and panes — not drifts/logs/cabin snow pack
+      scatter(scene, root, mats.crystal, mats.ice, seed, 18, "ice-spire");
+      scatter(scene, root, mats.ice, mats.crystal, seed + 3, 14, "crystal-shard");
+      scatter(scene, root, mats.ice, mats.snow, seed + 7, 10, "mirror-pane");
+      scatter(scene, root, mats.snow, mats.ice, seed + 11, 8, "frost-plate");
+      break;
+    case "copper-heath":
+      // Dusk amphitheater heath — standing bronze stones, not leaf hills or barns
+      scatter(scene, root, mats.bronze, mats.rock, seed, 16, "standing-stone");
+      scatter(scene, root, mats.autumnLeaf, mats.bronze, seed + 2, 14, "heath-tuft");
+      scatter(scene, root, mats.hay, mats.copperDust, seed + 5, 10, "leaf-column");
+      scatter(scene, root, mats.rock, mats.bronze, seed + 9, 8, "stone-lintel");
+      break;
+    case "cataract-ford":
+      // Gorge river channels + basalt + cable wreck — not piers/boats/docks
+      scatter(scene, root, mats.water, mats.foam, seed, 8, "river-band");
+      scatter(scene, root, mats.basalt, mats.rock, seed + 2, 16, "basalt-column");
+      scatter(scene, root, mats.rock, mats.basalt, seed + 5, 12, "ford-stone");
+      scatter(scene, root, mats.foam, mats.water, seed + 8, 10, "whitewater");
+      scatter(scene, root, mats.cable, mats.rust, seed + 12, 6, "cable-pylon");
+      break;
     default:
       break;
   }
@@ -150,6 +172,11 @@ interface PackMats {
   sign: StandardMaterial;
   soil: StandardMaterial;
   rope: StandardMaterial;
+  crystal: StandardMaterial;
+  bronze: StandardMaterial;
+  copperDust: StandardMaterial;
+  basalt: StandardMaterial;
+  foam: StandardMaterial;
 }
 
 function makeMats(scene: Scene, biome: string): PackMats {
@@ -193,6 +220,11 @@ function makeMats(scene: Scene, biome: string): PackMats {
     sign: m("sign", new Color3(0.7, 0.55, 0.15)),
     soil: m("soil", new Color3(0.38, 0.26, 0.14)),
     rope: m("rope", new Color3(0.5, 0.42, 0.28)),
+    crystal: m("crystal", new Color3(0.55, 0.85, 1), new Color3(0.1, 0.22, 0.35)),
+    bronze: m("bronze", new Color3(0.55, 0.3, 0.14)),
+    copperDust: m("copperDust", new Color3(0.65, 0.28, 0.12)),
+    basalt: m("basalt", new Color3(0.22, 0.24, 0.28)),
+    foam: m("foam", new Color3(0.82, 0.9, 0.92), new Color3(0.08, 0.12, 0.14)),
   };
 }
 
@@ -208,7 +240,10 @@ type ShapeKind =
   | "hazard-sign" | "ruined-tank" | "toxic-pool"
   | "tent" | "crate" | "tarp" | "barrel"
   | "pier" | "boat" | "dock"
-  | "plot" | "fence" | "crop" | "trough";
+  | "plot" | "fence" | "crop" | "trough"
+  | "ice-spire" | "crystal-shard" | "mirror-pane" | "frost-plate"
+  | "standing-stone" | "heath-tuft" | "leaf-column" | "stone-lintel"
+  | "river-band" | "basalt-column" | "ford-stone" | "whitewater" | "cable-pylon";
 
 function scatter(
   scene: Scene,
@@ -423,6 +458,140 @@ function placeShape(
       m.material = matA;
       break;
     }
+    case "ice-spire": {
+      const m = MeshBuilder.CreateCylinder("bp", {
+        diameterTop: 0.08 * scale,
+        diameterBottom: 0.55 * scale,
+        height: 3.4 * scale,
+        tessellation: 5,
+      }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 1.7 * scale, z);
+      m.rotation.y = yaw;
+      m.material = matA;
+      break;
+    }
+    case "crystal-shard": {
+      const m = MeshBuilder.CreateBox("bp", { width: 0.45 * scale, height: 1.8 * scale, depth: 0.35 * scale }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 0.9 * scale, z);
+      m.rotation.set(0.35, yaw, 0.2);
+      m.material = matA;
+      break;
+    }
+    case "mirror-pane": {
+      const m = MeshBuilder.CreateBox("bp", { width: 2.4 * scale, height: 0.06, depth: 1.6 * scale }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 0.05, z);
+      m.rotation.set(0.02, yaw, 0.04);
+      m.material = matA;
+      break;
+    }
+    case "frost-plate": {
+      const m = MeshBuilder.CreateCylinder("bp", { diameter: 2.8 * scale, height: 0.06, tessellation: 8 }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 0.03, z);
+      m.material = matA;
+      break;
+    }
+    case "standing-stone": {
+      const m = MeshBuilder.CreateBox("bp", { width: 0.55 * scale, height: 2.2 * scale, depth: 0.35 * scale }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 1.1 * scale, z);
+      m.rotation.y = yaw;
+      m.material = matA;
+      break;
+    }
+    case "heath-tuft": {
+      const m = MeshBuilder.CreateCylinder("bp", {
+        diameterTop: 0.05,
+        diameterBottom: 0.7 * scale,
+        height: 0.55 * scale,
+        tessellation: 6,
+      }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 0.28 * scale, z);
+      m.rotation.y = yaw;
+      m.material = matA;
+      break;
+    }
+    case "leaf-column": {
+      const m = MeshBuilder.CreateCylinder("bp", {
+        diameterTop: 0.15 * scale,
+        diameterBottom: 0.9 * scale,
+        height: 1.6 * scale,
+        tessellation: 7,
+      }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 0.8 * scale, z);
+      m.rotation.y = yaw;
+      m.material = matA;
+      break;
+    }
+    case "stone-lintel": {
+      const m = MeshBuilder.CreateBox("bp", { width: 2.4 * scale, height: 0.35 * scale, depth: 0.45 * scale }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 1.6 * scale, z);
+      m.rotation.y = yaw;
+      m.material = matA;
+      const postL = MeshBuilder.CreateBox("bp2", { width: 0.28 * scale, height: 1.5 * scale, depth: 0.28 * scale }, scene);
+      postL.parent = parent;
+      postL.position.set(x - 0.9 * scale, y0 + 0.75 * scale, z);
+      postL.material = matB;
+      const postR = MeshBuilder.CreateBox("bp3", { width: 0.28 * scale, height: 1.5 * scale, depth: 0.28 * scale }, scene);
+      postR.parent = parent;
+      postR.position.set(x + 0.9 * scale, y0 + 0.75 * scale, z);
+      postR.material = matB;
+      break;
+    }
+    case "river-band": {
+      const m = MeshBuilder.CreateBox("bp", { width: 14 * scale, height: 0.08, depth: 2.2 * scale }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 0.03, z);
+      m.rotation.y = yaw + 0.65;
+      m.material = matA;
+      break;
+    }
+    case "basalt-column": {
+      const m = MeshBuilder.CreateCylinder("bp", {
+        diameterTop: 0.45 * scale,
+        diameterBottom: 0.7 * scale,
+        height: 2.6 * scale,
+        tessellation: 6,
+      }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 1.3 * scale, z);
+      m.rotation.y = yaw;
+      m.material = matA;
+      break;
+    }
+    case "ford-stone": {
+      const m = MeshBuilder.CreateBox("bp", { width: 1.1 * scale, height: 0.35 * scale, depth: 0.85 * scale }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 0.12 * scale, z);
+      m.rotation.y = yaw;
+      m.material = matA;
+      break;
+    }
+    case "whitewater": {
+      const m = MeshBuilder.CreateCylinder("bp", { diameter: 1.8 * scale, height: 0.18, tessellation: 9 }, scene);
+      m.parent = parent;
+      m.position.set(x, y0 + 0.08, z);
+      m.material = matA;
+      break;
+    }
+    case "cable-pylon": {
+      const tower = MeshBuilder.CreateBox("bp", { width: 0.35 * scale, height: 4.5 * scale, depth: 0.35 * scale }, scene);
+      tower.parent = parent;
+      tower.position.set(x, y0 + 2.25 * scale, z);
+      tower.material = matA;
+      const arm = MeshBuilder.CreateBox("bp2", { width: 2.4 * scale, height: 0.12 * scale, depth: 0.12 * scale }, scene);
+      arm.parent = parent;
+      arm.position.set(x, y0 + 4.1 * scale, z);
+      arm.rotation.y = yaw;
+      arm.material = matB;
+      break;
+    }
     default:
       break;
   }
@@ -559,6 +728,90 @@ function placeLandmark(scene: Scene, parent: TransformNode, mats: PackMats, biom
       barn.parent = parent;
       barn.position.set(lx, 1.5, lz);
       barn.material = mats.wood;
+      break;
+    }
+    case "ice-caldera": {
+      // Ring of tall ice needles around a sunken mirror disc (no cabin)
+      const bowl = MeshBuilder.CreateCylinder("landmark-bowl", { diameter: 10, height: 0.12, tessellation: 14 }, scene);
+      bowl.parent = parent;
+      bowl.position.set(lx, 0.04, lz);
+      bowl.material = mats.ice;
+      for (let i = 0; i < 8; i += 1) {
+        const a = (i / 8) * Math.PI * 2;
+        const needle = MeshBuilder.CreateCylinder("landmark-needle", {
+          diameterTop: 0.1,
+          diameterBottom: 0.7,
+          height: 4.5 + (i % 3) * 0.6,
+          tessellation: 5,
+        }, scene);
+        needle.parent = parent;
+        needle.position.set(lx + Math.cos(a) * 5.5, 2.4, lz + Math.sin(a) * 5.5);
+        needle.material = i % 2 === 0 ? mats.crystal : mats.ice;
+      }
+      break;
+    }
+    case "copper-heath": {
+      // Stone amphitheater rings — open sky, no barn leaf-pile
+      for (let ring = 0; ring < 3; ring += 1) {
+        const segs = 6 + ring * 2;
+        const rad = 3 + ring * 2.2;
+        for (let i = 0; i < segs; i += 1) {
+          if (i % 3 === 0 && ring === 0) continue; // gate gap
+          const a = (i / segs) * Math.PI * 2;
+          const seat = MeshBuilder.CreateBox("landmark-seat", {
+            width: 1.1,
+            height: 0.45 + ring * 0.35,
+            depth: 0.55,
+          }, scene);
+          seat.parent = parent;
+          seat.position.set(lx + Math.cos(a) * rad, 0.25 + ring * 0.2, lz + Math.sin(a) * rad);
+          seat.rotation.y = -a;
+          seat.material = ring === 2 ? mats.bronze : mats.rock;
+        }
+      }
+      const menhir = MeshBuilder.CreateBox("landmark-core", { width: 1.2, height: 3.6, depth: 0.5 }, scene);
+      menhir.parent = parent;
+      menhir.position.set(lx, 1.8, lz);
+      menhir.material = mats.bronze;
+      break;
+    }
+    case "cataract-ford": {
+      // Diagonal channel + dual cable towers + broken span (not a wooden pier)
+      const channel = MeshBuilder.CreateBox("landmark-channel", { width: 28, height: 0.1, depth: 5.5 }, scene);
+      channel.parent = parent;
+      channel.position.set(0, 0.03, 2);
+      channel.rotation.y = 0.55;
+      channel.material = mats.water;
+      const foam = MeshBuilder.CreateBox("landmark-foam", { width: 10, height: 0.14, depth: 3.2 }, scene);
+      foam.parent = parent;
+      foam.position.set(4, 0.1, -2);
+      foam.rotation.y = 0.55;
+      foam.material = mats.foam;
+      const pylonA = MeshBuilder.CreateBox("landmark-pylon-a", { width: 0.5, height: 7, depth: 0.5 }, scene);
+      pylonA.parent = parent;
+      pylonA.position.set(-8, 3.5, 6);
+      pylonA.material = mats.cable;
+      const pylonB = MeshBuilder.CreateBox("landmark-pylon-b", { width: 0.5, height: 6.2, depth: 0.5 }, scene);
+      pylonB.parent = parent;
+      pylonB.position.set(9, 3.1, -5);
+      pylonB.material = mats.rust;
+      const span = MeshBuilder.CreateBox("landmark-span", { width: 18, height: 0.18, depth: 0.25 }, scene);
+      span.parent = parent;
+      span.position.set(0.5, 5.2, 0.5);
+      span.rotation.y = 0.55;
+      span.rotation.z = 0.12;
+      span.material = mats.metal;
+      for (let i = 0; i < 5; i += 1) {
+        const col = MeshBuilder.CreateCylinder("landmark-basalt", {
+          diameterTop: 0.5,
+          diameterBottom: 0.85,
+          height: 2 + i * 0.35,
+          tessellation: 6,
+        }, scene);
+        col.parent = parent;
+        col.position.set(-6 + i * 2.2, 1.1, -10 + i * 0.8);
+        col.material = mats.basalt;
+      }
       break;
     }
     default:

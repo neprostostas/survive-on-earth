@@ -118,6 +118,7 @@ export type StringKey =
   | "inv.notAvailable"
   | "inv.editCharacter"
   | "inv.edit"
+  | "inv.editName"
   | "inv.close"
   | "inv.armor"
   | "inv.durability"
@@ -342,6 +343,7 @@ const EN: Record<StringKey, string> = {
   "inv.notAvailable": "Not available",
   "inv.editCharacter": "Edit character",
   "inv.edit": "Edit",
+  "inv.editName": "Edit name",
   "inv.close": "Close",
   "inv.armor": "Armor +{n}",
   "inv.durability": "Durability {cur}/{max}",
@@ -565,6 +567,7 @@ const UK: Dict = {
   "inv.notAvailable": "Недоступно",
   "inv.editCharacter": "Редагувати персонажа",
   "inv.edit": "Змінити",
+  "inv.editName": "Змінити імʼя",
   "inv.close": "Закрити",
   "inv.armor": "Броня +{n}",
   "inv.durability": "Міцність {cur}/{max}",

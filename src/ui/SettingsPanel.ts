@@ -143,7 +143,7 @@ export class SettingsPanel {
     const s = I18N.gameSettings;
     const t = (k: Parameters<typeof I18N.t>[0]) => I18N.t(k);
     const identity = CHARACTER_PROFILE.snapshot;
-    const genderLabel = identity.gender === "male" ? t("settings.gender.male") : identity.gender === "female" ? t("settings.gender.female") : t("settings.gender.other");
+    const genderLabel = identity.gender === "female" ? t("settings.gender.female") : t("settings.gender.male");
     this.overlay.innerHTML = `
       <div class="settings-panel settings-screen">
         <header class="settings-header">

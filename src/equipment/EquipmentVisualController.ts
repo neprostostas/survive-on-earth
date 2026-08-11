@@ -13,19 +13,29 @@ export class EquipmentVisualController {
   readonly meshes: import("@babylonjs/core/Meshes/mesh").Mesh[];
   private readonly apparel: EquipmentApparelVisuals;
   private readonly backpack: BackpackEquipPresentation;
+  private readonly equipment: PlayerEquipment;
+  private readonly backpackSlot: PlayerBackpackSlot;
 
   constructor(scene: Scene, visual: PlayerVisual, equipment: PlayerEquipment, backpackSlot: PlayerBackpackSlot) {
+    this.equipment = equipment;
+    this.backpackSlot = backpackSlot;
     this.apparel = new EquipmentApparelVisuals(scene, visual, "WorldEq");
     this.backpack = new BackpackEquipPresentation(scene, visual.bodyPivot, "WorldPack");
     this.meshes = [...this.apparel.meshes];
-    this.apparel.syncFrom(equipment);
-    this.backpack.setEquippedItemId(backpackSlot.current?.itemId ?? null);
+    this.resync();
     equipment.subscribe((change) => { this.apparel.setSlotEnabled(change.slot, change.stack !== null); });
     backpackSlot.subscribe((_prev, stack) => {
       this.backpack.setEquippedItemId(stack?.itemId ?? null);
-      // Backpack mesh list is dynamic — Game only uses apparel casters at boot; backpack still renders without shadows if needed.
       this.meshes.length = 0;
       this.meshes.push(...this.apparel.meshes, ...this.backpack.meshes);
     });
+  }
+
+  /** Re-read equipment domain after save load. */
+  resync(): void {
+    this.apparel.syncFrom(this.equipment);
+    this.backpack.setEquippedItemId(this.backpackSlot.current?.itemId ?? null);
+    this.meshes.length = 0;
+    this.meshes.push(...this.apparel.meshes, ...this.backpack.meshes);
   }
 }

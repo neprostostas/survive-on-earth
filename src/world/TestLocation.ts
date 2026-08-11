@@ -143,19 +143,23 @@ export class TestLocation {
       this.trees.forEach((tree, i) => {
         const p = this.homeTreePos[i];
         if (p) tree.root.position.set(p.x, 0, p.z);
-        tree.root.setEnabled(true);
+        const depleted = this.harvestables[i]?.isDepleted === true;
+        tree.root.setEnabled(!depleted);
         tree.root.scaling.setAll(tree.baseScale * this.config.world.treeScale * theme.treeScale);
       });
       this.rocks.forEach((rock, i) => {
         const p = this.homeRockPos[i];
         if (p) rock.root.position.set(p.x, 0, p.z);
-        rock.root.setEnabled(i / Math.max(1, this.rocks.length) < theme.rockVisibility);
+        const depleted = this.harvestables[this.trees.length + i]?.isDepleted === true;
+        rock.root.setEnabled(!depleted && i / Math.max(1, this.rocks.length) < theme.rockVisibility);
         rock.root.scaling.setAll(rock.baseScale * this.config.world.rockScale * theme.rockScale);
       });
       this.plants.forEach((plant, i) => {
         const p = this.homePlantPos[i];
         if (p) plant.root.position.set(p.x, 0, p.z);
-        plant.root.setEnabled(true);
+        const plantIdx = this.trees.length + this.rocks.length + i;
+        const depleted = this.harvestables[plantIdx]?.isDepleted === true;
+        plant.root.setEnabled(!depleted);
       });
       this.crate.root.position.set(this.homeCrateX, 0, this.homeCrateZ);
       this.campfire.root.position.set(this.homeCampX, 0, this.homeCampZ);
@@ -169,7 +173,8 @@ export class TestLocation {
     };
 
     this.trees.forEach((tree, index) => {
-      const visible = index / Math.max(1, this.trees.length) < theme.treeVisibility;
+      const depleted = this.harvestables[index]?.isDepleted === true;
+      const visible = !depleted && index / Math.max(1, this.trees.length) < theme.treeVisibility;
       tree.root.setEnabled(visible);
       if (visible) {
         const p = placeAway();
@@ -179,7 +184,8 @@ export class TestLocation {
       }
     });
     this.rocks.forEach((rock, index) => {
-      const visible = index / Math.max(1, this.rocks.length) < theme.rockVisibility;
+      const depleted = this.harvestables[this.trees.length + index]?.isDepleted === true;
+      const visible = !depleted && index / Math.max(1, this.rocks.length) < theme.rockVisibility;
       rock.root.setEnabled(visible);
       if (visible) {
         const p = placeAway();
@@ -189,7 +195,9 @@ export class TestLocation {
       }
     });
     this.plants.forEach((plant, index) => {
-      const visible = index / Math.max(1, this.plants.length) < theme.plantVisibility;
+      const plantIdx = this.trees.length + this.rocks.length + index;
+      const depleted = this.harvestables[plantIdx]?.isDepleted === true;
+      const visible = !depleted && index / Math.max(1, this.plants.length) < theme.plantVisibility;
       plant.root.setEnabled(visible);
       if (visible) {
         const p = placeAway();
@@ -254,6 +262,29 @@ export class TestLocation {
   }
 
   removeResourceCollision(resourceId: string): void { this.collision.remove(resourceId); }
+
+  serializeHarvestState(): readonly import("../harvesting/HarvestableResource").SerializedHarvestResource[] {
+    return Object.freeze(this.harvestables.map((h) => h.serializeProgress()));
+  }
+
+  /** New game: full nodes; call before re-applying location visual. */
+  resetHarvestState(): void {
+    for (const h of this.harvestables) h.resetProgress();
+  }
+
+  /**
+   * Restore hits/depletion from save. Prefer after `applyLocationVisual` so layout
+   * does not re-enable depleted nodes.
+   */
+  restoreHarvestState(rows: readonly import("../harvesting/HarvestableResource").SerializedHarvestResource[] | null | undefined): void {
+    if (!rows) return;
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const h of this.harvestables) {
+      const data = byId.get(h.resourceId);
+      if (data) h.restoreProgress(data);
+    }
+    this.rebuildCollisions();
+  }
 
   applyCalibration(): void {
     const treeMul = this.currentTheme.treeScale;
@@ -325,6 +356,7 @@ export class TestLocation {
             this.harvestEffects.spawn("pine-tree", tree.root.position, particleIntensity, true);
           },
           update: (delta) => { tree.updateHarvest(delta); },
+          hideDepleted: () => { tree.root.setEnabled(false); },
         },
       });
       this.harvestables.push(resource);
@@ -353,6 +385,7 @@ export class TestLocation {
             this.harvestEffects.spawn("limestone-rock", rock.root.position, particleIntensity, true);
           },
           update: (delta) => { rock.updateHarvest(delta); },
+          hideDepleted: () => { rock.root.setEnabled(false); },
         },
       });
       this.harvestables.push(resource);
@@ -379,6 +412,10 @@ export class TestLocation {
           impact: () => { /* soft plant sway omitted */ },
           deplete: () => { plant.deplete(); },
           update: () => { /* static */ },
+          hideDepleted: () => {
+            plant.deplete();
+            plant.root.setEnabled(false);
+          },
         },
       });
       this.harvestables.push(resource);
@@ -401,6 +438,10 @@ export class TestLocation {
           impact: () => { /* soft */ },
           deplete: () => { plant.deplete(); },
           update: () => { /* static */ },
+          hideDepleted: () => {
+            plant.deplete();
+            plant.root.setEnabled(false);
+          },
         },
       });
       this.harvestables.push(resource);

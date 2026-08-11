@@ -139,7 +139,7 @@ export class HUD {
           <button class="action shell quick-action quick-action-1" type="button" aria-label="Quick slot 1" title="Quick slot 1">
             ${withKeys(QUICK1_EMPTY, ["1"])}
           </button>
-          <button class="action shell quick-action quick-action-2 locked" type="button" aria-label="Quick slot 2" title="Quick slot 2" disabled>
+          <button class="action shell quick-action quick-action-2" type="button" aria-label="Quick slot 2" title="Quick slot 2">
             ${withKeys(QUICK2_EMPTY, ["2"])}
           </button>
           <button class="action shell map-action" type="button" aria-label="World Map" title="Map (M)">
@@ -337,6 +337,7 @@ export class HUD {
     this.primaryAction.disabled = defeated;
     this.attackAction.disabled = defeated;
     this.quickSlotButton.disabled = defeated;
+    this.quickSlot2Button.disabled = defeated;
     this.sneakButton.disabled = defeated;
     this.buildButton.disabled = defeated;
     this.mapButton.disabled = defeated;
@@ -381,17 +382,31 @@ export class HUD {
   }
 
   setQuickSlot(itemId: ItemId | null, quantity: number): void {
+    this.paintQuickButton(this.quickSlotButton, itemId, quantity, ["1"], QUICK1_EMPTY);
+  }
+
+  setQuickSlot2(itemId: ItemId | null, quantity: number): void {
+    this.paintQuickButton(this.quickSlot2Button, itemId, quantity, ["2"], QUICK2_EMPTY);
+  }
+
+  private paintQuickButton(
+    button: HTMLButtonElement,
+    itemId: ItemId | null,
+    quantity: number,
+    keys: readonly string[],
+    empty: string,
+  ): void {
     if (!itemId) {
-      this.quickSlotButton.innerHTML = withKeys(QUICK1_EMPTY, ["1"]);
-      this.quickSlotButton.classList.remove("occupied");
+      button.innerHTML = withKeys(empty, keys);
+      button.classList.remove("occupied");
       return;
     }
     const def = ITEM_REGISTRY.get(itemId);
-    this.quickSlotButton.innerHTML = withKeys(
+    button.innerHTML = withKeys(
       `<span class="quick-item-icon">${ITEM_ICONS[def.iconId]}</span><small class="quick-qty">${quantity}</small>`,
-      ["1"],
+      keys,
     );
-    this.quickSlotButton.classList.add("occupied");
+    button.classList.add("occupied");
   }
 
   updateMinimap(frame: MinimapFrame): void {

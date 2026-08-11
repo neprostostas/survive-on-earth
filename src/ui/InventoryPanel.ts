@@ -9,34 +9,40 @@ import type { WeaponEquipSystem } from "../equipment/WeaponEquipSystem";
 import { isBackpackCapableItemId } from "../equipment/BackpackTypes";
 import { isWeaponCapableItemId, toHeldWeaponVisualId } from "../equipment/WeaponTypes";
 import { PlayerQuickSlot } from "../equipment/PlayerQuickSlot";
+import type { QuickSlotSystem } from "../equipment/QuickSlotSystem";
 import type { PickupRejectionSink } from "../ground-loot/PickupResult";
 import { INVENTORY_CONFIG } from "../inventory/inventoryConfig";
 import type { PlayerInventory } from "../inventory/PlayerInventory";
+import { resolveItemActions } from "../items/ItemActions";
 import { ITEM_REGISTRY, stackDurability, type ItemStack } from "../items/ItemSystem";
 import { InventoryCharacterPreview } from "./InventoryCharacterPreview";
-import { openCharacterIdentityEditor } from "./CharacterIdentityEditor";
-import { CHARACTER_PROFILE } from "../player/CharacterProfile";
+import { CHARACTER_PROFILE, type CharacterGender } from "../player/CharacterProfile";
 import { ITEM_ICONS } from "./itemIcons";
 import { I18N } from "../i18n/I18n";
 import { itemName } from "../i18n/contentApi";
+
+const PENCIL_SVG = `<svg class="inv-pencil-svg" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.21a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>`;
 
 type Selection =
   | { readonly source: "inventory"; readonly index: number; readonly stack: ItemStack }
   | { readonly source: "equipment"; readonly slot: EquipmentSlotId; readonly stack: ItemStack }
   | { readonly source: "weapon"; readonly stack: ItemStack }
-  | { readonly source: "backpack"; readonly stack: ItemStack };
+  | { readonly source: "backpack"; readonly stack: ItemStack }
+  | { readonly source: "quick"; readonly index: 0 | 1; readonly stack: ItemStack };
 
 type DragOrigin =
   | { readonly kind: "inventory"; readonly index: number }
   | { readonly kind: "equipment"; readonly slot: EquipmentSlotId }
   | { readonly kind: "weapon" }
-  | { readonly kind: "backpack" };
+  | { readonly kind: "backpack" }
+  | { readonly kind: "quick"; readonly index: 0 | 1 };
 
 type DropTarget =
   | { readonly kind: "inventory"; readonly index: number }
   | { readonly kind: "equipment"; readonly slot: EquipmentSlotId }
   | { readonly kind: "weapon" }
-  | { readonly kind: "backpack" };
+  | { readonly kind: "backpack" }
+  | { readonly kind: "quick"; readonly index: 0 | 1 };
 
 interface ActiveDrag {
   origin: DragOrigin;
@@ -63,7 +69,7 @@ const ARMOR_SILHOUETTES: Readonly<Record<EquipmentSlotId, string>> = Object.free
 
 const WEAPON_SIL = `<svg class="inv-slot-sil" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.2 3.8 20.2 11l-1.6 1.6-2.4-2.4-5.4 5.4-1.1-.3-.3-1.1 5.4-5.4-2.4-2.4z"/><path d="m8.6 14.4-3.8 5.8 5.8-3.8"/></svg>`;
 const BACKPACK_SIL = `<svg class="inv-slot-sil" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7.2V5.8A2.2 2.2 0 0 1 10.2 3.6h3.6A2.2 2.2 0 0 1 16 5.8v1.4"/><rect x="6.2" y="7.2" width="11.6" height="13" rx="1.6"/><path d="M9 11.2h6v2.2H9z"/></svg>`;
-const UTILITY_SIL = `<svg class="inv-slot-sil" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="8" width="10" height="11" rx="1.4"/><path d="M9.2 8V6.6A2 2 0 0 1 11.2 4.6h1.6A2 2 0 0 1 14.8 6.6V8"/></svg>`;
+const QUICK_SIL = `<svg class="inv-slot-sil" viewBox="0 0 24 24" aria-hidden="true"><rect x="5.5" y="5.5" width="13" height="13" rx="2"/><path d="M9 12h6M12 9v6"/></svg>`;
 
 const STAT_ICONS = Object.freeze({
   damage: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 17.5 6.5l1.2 1.2L6.2 20.2zm13.2-14.4 1.3 1.3-1.6 1.6-1.3-1.3z"/></svg>`,
@@ -96,6 +102,8 @@ export class InventoryPanel implements PickupRejectionSink {
   private readonly weaponEquipSystem: WeaponEquipSystem;
   private readonly backpackSlot: PlayerBackpackSlot;
   private readonly backpackEquipSystem: BackpackEquipSystem;
+  private readonly quickSlots: readonly [PlayerQuickSlot, PlayerQuickSlot];
+  private readonly quickSystems: readonly [QuickSlotSystem, QuickSlotSystem];
   private readonly toggleButton: HTMLButtonElement;
   private readonly onVisibilityChange: (open: boolean) => void;
   private readonly overlay: HTMLElement;
@@ -105,12 +113,16 @@ export class InventoryPanel implements PickupRejectionSink {
   private readonly equipmentSlots: Readonly<Record<EquipmentSlotId, HTMLButtonElement>>;
   private readonly weaponSlotButton: HTMLButtonElement;
   private readonly backpackShell: HTMLButtonElement;
-  private readonly utilityShell: HTMLButtonElement;
+  private readonly quickSlotButtons: readonly [HTMLButtonElement, HTMLButtonElement];
   private readonly backpackSectionLabel: HTMLElement;
   private readonly backpackSectionMeta: HTMLElement;
   private readonly selectionName: HTMLElement;
   private readonly selectionStats: HTMLElement;
   private readonly actionButton: HTMLButtonElement;
+  private readonly splitButton: HTMLButtonElement;
+  private readonly stripUse: HTMLButtonElement;
+  private readonly stripSplit: HTMLButtonElement;
+  private readonly stripDelete: HTMLButtonElement;
   private readonly hpValue: HTMLElement;
   private readonly hpFill: HTMLElement;
   private readonly statDamage: HTMLElement;
@@ -119,9 +131,17 @@ export class InventoryPanel implements PickupRejectionSink {
   private readonly statAps: HTMLElement;
   private readonly preview: InventoryCharacterPreview;
   private readonly charTitle: HTMLElement;
+  private readonly nameView: HTMLElement;
+  private readonly nameEditRow: HTMLElement;
+  private readonly nameInput: HTMLInputElement;
+  private readonly namePencil: HTMLButtonElement;
+  private readonly nameSave: HTMLButtonElement;
+  private readonly genderMale: HTMLButtonElement;
+  private readonly genderFemale: HTMLButtonElement;
   private readonly fullFeedback: HTMLElement;
   private readonly itemTooltip: HTMLElement;
   private openState = false;
+  private nameEditing = false;
   private feedbackTimer: number | null = null;
   private selected: Selection | null = null;
   private drag: ActiveDrag | null = null;
@@ -129,6 +149,7 @@ export class InventoryPanel implements PickupRejectionSink {
   private lastHpKey = "";
   private onUseItem: ((slotIndex: number, stack: ItemStack) => boolean) | null = null;
   private onQuickAssign: ((slotIndex: number, stack: ItemStack) => boolean) | null = null;
+  private onDeleteItem: ((slotIndex: number, stack: ItemStack) => boolean) | null = null;
 
   constructor(
     root: HTMLElement,
@@ -139,6 +160,8 @@ export class InventoryPanel implements PickupRejectionSink {
     weaponEquipSystem: WeaponEquipSystem,
     backpackSlot: PlayerBackpackSlot,
     backpackEquipSystem: BackpackEquipSystem,
+    quickSlots: readonly [PlayerQuickSlot, PlayerQuickSlot],
+    quickSystems: readonly [QuickSlotSystem, QuickSlotSystem],
     toggleButton: HTMLButtonElement,
     onVisibilityChange: (open: boolean) => void,
   ) {
@@ -149,6 +172,8 @@ export class InventoryPanel implements PickupRejectionSink {
     this.weaponEquipSystem = weaponEquipSystem;
     this.backpackSlot = backpackSlot;
     this.backpackEquipSystem = backpackEquipSystem;
+    this.quickSlots = quickSlots;
+    this.quickSystems = quickSystems;
     this.toggleButton = toggleButton;
     this.onVisibilityChange = onVisibilityChange;
     this.overlay = document.createElement("section");
@@ -171,19 +196,28 @@ export class InventoryPanel implements PickupRejectionSink {
                 <b class="selection-name">SELECT AN ITEM</b>
                 <small class="selection-stats">Tap armor or tools · drag to equip</small>
               </div>
-              <button class="inventory-action" type="button" hidden></button>
+              <div class="inv-selection-actions">
+                <button class="inventory-action" type="button" hidden></button>
+                <button class="inventory-split" type="button" hidden></button>
+              </div>
             </div>
             <div class="inv-action-strip" aria-label="Item actions">
-              <button type="button" class="inv-shell-btn" disabled title="Not available">USE</button>
-              <button type="button" class="inv-shell-btn" disabled title="Not available">SPLIT</button>
-              <button type="button" class="inv-shell-btn" disabled title="Not available">DELETE</button>
+              <button type="button" class="inv-shell-btn" data-role="strip-use" disabled title="Not available">USE</button>
+              <button type="button" class="inv-shell-btn" data-role="strip-split" disabled title="Not available">SPLIT</button>
+              <button type="button" class="inv-shell-btn" data-role="strip-delete" disabled title="Not available">DELETE</button>
             </div>
           </aside>
           <section class="inv-character" aria-label="Character equipment">
             <header class="inv-char-header">
               <div class="inv-char-title-block">
-                <div class="inv-char-title" data-role="char-name">PLAYER</div>
-                <button type="button" class="inv-edit-identity menu-btn ghost" data-role="edit-identity" title="Edit character">Edit</button>
+                <div class="inv-name-view" data-role="name-view">
+                  <div class="inv-char-title" data-role="char-name">PLAYER</div>
+                  <button type="button" class="inv-name-pencil" data-role="name-pencil" title="Edit name" aria-label="Edit name">${PENCIL_SVG}</button>
+                </div>
+                <div class="inv-name-edit-row" data-role="name-edit-row" hidden>
+                  <input type="text" class="inv-name-input" data-role="name-input" maxlength="20" autocomplete="off" spellcheck="false" enterkeyhint="done" />
+                  <button type="button" class="inv-name-save" data-role="name-save" hidden>Save</button>
+                </div>
               </div>
               <div class="inv-char-hp" aria-label="Player health">
                 <div class="inv-hp-row"><span>HP</span><b class="inv-hp-value">100 / 100</b></div>
@@ -193,7 +227,7 @@ export class InventoryPanel implements PickupRejectionSink {
               </div>
             </header>
             <div class="inv-character-stage">
-              <div class="inv-equip-col inv-equip-left" aria-label="Weapon and pack slots">
+              <div class="inv-equip-col inv-equip-left" aria-label="Weapon, pack, and quick slots">
                 <button type="button" class="equipment-slot weapon-slot inv-eq-slot" data-role="weapon-slot" data-drop="weapon" aria-label="Weapon slot, empty">
                   <span class="inv-eq-glyph" data-role="weapon-empty">${WEAPON_SIL}</span>
                   <span class="equipment-slot-content"></span>
@@ -202,14 +236,24 @@ export class InventoryPanel implements PickupRejectionSink {
                   <span class="inv-eq-glyph" data-role="backpack-empty">${BACKPACK_SIL}</span>
                   <span class="equipment-slot-content"></span>
                 </button>
-                <button type="button" class="equipment-slot inv-eq-slot inv-shell-slot" data-role="utility-equip" disabled aria-label="Utility slot unavailable" title="Utility (presentation only)">
-                  <span class="inv-eq-glyph">${UTILITY_SIL}</span>
+                <button type="button" class="equipment-slot inv-eq-slot quick-slot" data-role="quick-equip-0" data-drop="quick" data-quick-index="0" aria-label="Quick slot 1, empty">
+                  <span class="inv-eq-glyph" data-role="quick-empty">${QUICK_SIL}</span>
                   <span class="equipment-slot-content"></span>
+                  <span class="inv-quick-key" aria-hidden="true">1</span>
+                </button>
+                <button type="button" class="equipment-slot inv-eq-slot quick-slot" data-role="quick-equip-1" data-drop="quick" data-quick-index="1" aria-label="Quick slot 2, empty">
+                  <span class="inv-eq-glyph" data-role="quick-empty">${QUICK_SIL}</span>
+                  <span class="equipment-slot-content"></span>
+                  <span class="inv-quick-key" aria-hidden="true">2</span>
                 </button>
               </div>
               <div class="inv-preview-wrap">
                 <canvas class="inv-character-canvas" aria-label="Character preview — drag to rotate"></canvas>
                 <span class="inv-orbit-hint" aria-hidden="true">Drag to rotate</span>
+                <div class="inv-gender-toggle" role="group" aria-label="Gender">
+                  <button type="button" class="inv-gender-btn" data-role="gender-male" data-gender="male" aria-label="Male" title="Male">♂</button>
+                  <button type="button" class="inv-gender-btn" data-role="gender-female" data-gender="female" aria-label="Female" title="Female">♀</button>
+                </div>
               </div>
               <div class="inv-equip-col inv-equip-right" data-role="armor-column" aria-label="Armor slots"></div>
             </div>
@@ -243,12 +287,23 @@ export class InventoryPanel implements PickupRejectionSink {
     const selectionName = this.overlay.querySelector<HTMLElement>(".selection-name");
     const selectionStats = this.overlay.querySelector<HTMLElement>(".selection-stats");
     const actionButton = this.overlay.querySelector<HTMLButtonElement>(".inventory-action");
+    const splitButton = this.overlay.querySelector<HTMLButtonElement>(".inventory-split");
+    const stripUse = this.overlay.querySelector<HTMLButtonElement>('[data-role="strip-use"]');
+    const stripSplit = this.overlay.querySelector<HTMLButtonElement>('[data-role="strip-split"]');
+    const stripDelete = this.overlay.querySelector<HTMLButtonElement>('[data-role="strip-delete"]');
     const weaponSlotButton = this.overlay.querySelector<HTMLButtonElement>('[data-role="weapon-slot"]');
     const backpackShell = this.overlay.querySelector<HTMLButtonElement>('[data-role="backpack-equip"]');
-    const utilityShell = this.overlay.querySelector<HTMLButtonElement>('[data-role="utility-equip"]');
+    const quick0 = this.overlay.querySelector<HTMLButtonElement>('[data-role="quick-equip-0"]');
+    const quick1 = this.overlay.querySelector<HTMLButtonElement>('[data-role="quick-equip-1"]');
     const canvas = this.overlay.querySelector<HTMLCanvasElement>(".inv-character-canvas");
     const charTitle = this.overlay.querySelector<HTMLElement>('[data-role="char-name"]');
-    const editIdentity = this.overlay.querySelector<HTMLButtonElement>('[data-role="edit-identity"]');
+    const nameView = this.overlay.querySelector<HTMLElement>('[data-role="name-view"]');
+    const nameEditRow = this.overlay.querySelector<HTMLElement>('[data-role="name-edit-row"]');
+    const nameInput = this.overlay.querySelector<HTMLInputElement>('[data-role="name-input"]');
+    const namePencil = this.overlay.querySelector<HTMLButtonElement>('[data-role="name-pencil"]');
+    const nameSave = this.overlay.querySelector<HTMLButtonElement>('[data-role="name-save"]');
+    const genderMale = this.overlay.querySelector<HTMLButtonElement>('[data-role="gender-male"]');
+    const genderFemale = this.overlay.querySelector<HTMLButtonElement>('[data-role="gender-female"]');
     const hpValue = this.overlay.querySelector<HTMLElement>(".inv-hp-value");
     const hpFill = this.overlay.querySelector<HTMLElement>(".inv-hp-fill");
     const statDamage = this.overlay.querySelector<HTMLElement>(".inv-stat-damage");
@@ -259,8 +314,10 @@ export class InventoryPanel implements PickupRejectionSink {
     const backpackSectionMeta = this.overlay.querySelector<HTMLElement>('[data-role="backpack-section-meta"]');
     if (
       !grid || !armorColumn || !backpackFuture || !closeButton || !selectionName || !selectionStats ||
-      !actionButton || !weaponSlotButton || !backpackShell || !utilityShell || !canvas ||
-      !charTitle || !editIdentity ||
+      !actionButton || !splitButton || !stripUse || !stripSplit || !stripDelete ||
+      !weaponSlotButton || !backpackShell || !quick0 || !quick1 || !canvas ||
+      !charTitle || !nameView || !nameEditRow || !nameInput || !namePencil || !nameSave ||
+      !genderMale || !genderFemale ||
       !hpValue || !hpFill || !statDamage || !statArmor || !statSpeed || !statAps ||
       !backpackSectionLabel || !backpackSectionMeta
     ) {
@@ -271,12 +328,23 @@ export class InventoryPanel implements PickupRejectionSink {
     this.selectionName = selectionName;
     this.selectionStats = selectionStats;
     this.actionButton = actionButton;
+    this.splitButton = splitButton;
+    this.stripUse = stripUse;
+    this.stripSplit = stripSplit;
+    this.stripDelete = stripDelete;
     this.weaponSlotButton = weaponSlotButton;
     this.backpackShell = backpackShell;
-    this.utilityShell = utilityShell;
+    this.quickSlotButtons = Object.freeze([quick0, quick1]) as readonly [HTMLButtonElement, HTMLButtonElement];
     this.backpackSectionLabel = backpackSectionLabel;
     this.backpackSectionMeta = backpackSectionMeta;
     this.charTitle = charTitle;
+    this.nameView = nameView;
+    this.nameEditRow = nameEditRow;
+    this.nameInput = nameInput;
+    this.namePencil = namePencil;
+    this.nameSave = nameSave;
+    this.genderMale = genderMale;
+    this.genderFemale = genderFemale;
     this.hpValue = hpValue;
     this.hpFill = hpFill;
     this.statDamage = statDamage;
@@ -284,18 +352,13 @@ export class InventoryPanel implements PickupRejectionSink {
     this.statSpeed = statSpeed;
     this.statAps = statAps;
     this.preview = new InventoryCharacterPreview(canvas);
-    this.syncCharacterTitle();
+    this.syncCharacterIdentityUi();
     CHARACTER_PROFILE.onChange(() => {
-      this.syncCharacterTitle();
+      this.syncCharacterIdentityUi();
       if (this.openState) this.preview.applyIdentityPresentation();
     });
-    editIdentity.addEventListener("click", () => {
-      void openCharacterIdentityEditor(this.overlay.parentElement ?? document.body).then(() => {
-        this.syncCharacterTitle();
-        if (this.openState) this.preview.applyIdentityPresentation();
-      });
-    });
-
+    this.bindNameEditing();
+    this.bindGenderToggle();
     this.pocketSlots = Object.freeze(Array.from({ length: INVENTORY_CONFIG.baseSlotCount }, (_, index) => {
       const slot = document.createElement("button");
       slot.type = "button";
@@ -403,11 +466,33 @@ export class InventoryPanel implements PickupRejectionSink {
       this.performSelectedAction();
     });
 
+    for (const index of [0, 1] as const) {
+      const button = this.quickSlotButtons[index];
+      button.addEventListener("pointerdown", (event) => { this.beginDrag(event, { kind: "quick", index }); });
+      button.addEventListener("click", (event) => {
+        if (this.consumeSuppressedClick(event)) return;
+        if (this.selected?.source === "quick" && this.selected.index === index && this.quickSlots[index].current) {
+          this.performSelectedAction();
+          return;
+        }
+        this.selectQuick(index);
+      });
+      button.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        if (this.consumeSuppressedClick(event)) return;
+        const stack = this.quickSlots[index].current;
+        if (!stack) return;
+        this.selected = Object.freeze({ source: "quick", index, stack });
+        this.performSelectedAction();
+      });
+    }
+
     this.syncBackpackStorageUi();
     this.renderSlots(Array.from({ length: this.inventory.slotCount }, (_, index) => index));
     this.renderEquipment();
     this.renderWeapon();
     this.renderBackpackEquip();
+    this.renderQuickSlots();
     this.renderStats(4.5);
     this.syncPreview();
 
@@ -438,6 +523,12 @@ export class InventoryPanel implements PickupRejectionSink {
       this.syncPreview();
       this.validateSelection();
     });
+    for (const quick of quickSlots) {
+      quick.subscribe(() => {
+        this.renderQuickSlots();
+        this.validateSelection();
+      });
+    }
     I18N.onChange(() => {
       this.applyLocaleChrome();
       this.syncBackpackStorageUi();
@@ -445,12 +536,17 @@ export class InventoryPanel implements PickupRejectionSink {
       this.renderEquipment();
       this.renderWeapon();
       this.renderBackpackEquip();
+      this.renderQuickSlots();
       this.renderSelection();
       this.renderStats();
     });
     toggleButton.addEventListener("click", this.toggle);
     closeButton.addEventListener("click", this.close);
     actionButton.addEventListener("click", this.performSelectedAction);
+    splitButton.addEventListener("click", this.performSplitSelected);
+    stripUse.addEventListener("click", this.performStripUse);
+    stripSplit.addEventListener("click", this.performSplitSelected);
+    stripDelete.addEventListener("click", this.performStripDelete);
     this.overlay.addEventListener("pointerdown", this.onBackdropPointerDown);
     this.overlay.addEventListener("pointerover", this.onItemTooltipOver);
     this.overlay.addEventListener("pointerout", this.onItemTooltipOut);
@@ -475,11 +571,16 @@ export class InventoryPanel implements PickupRejectionSink {
   }): void {
     this.onUseItem = handlers.use ?? null;
     this.onQuickAssign = handlers.quickAssign ?? null;
-    void handlers.delete;
+    this.onDeleteItem = handlers.delete ?? null;
   }
 
   get utilityGameplayInteractive(): boolean {
-    return !this.utilityShell.disabled;
+    // Legacy alias: both quick slots are always interactive.
+    return true;
+  }
+
+  get quickBarInteractive(): boolean {
+    return this.quickSlotButtons.every((btn) => !btn.disabled);
   }
 
   get pocketSlotCount(): number { return this.pocketSlots.length; }
@@ -531,15 +632,21 @@ export class InventoryPanel implements PickupRejectionSink {
     this.toggleButton.classList.toggle("active", open);
     this.toggleButton.setAttribute("aria-expanded", String(open));
     if (!open) {
+      this.cancelNameEdit();
       this.clearSelection();
       this.cancelDrag();
       this.hideItemTooltip();
       this.preview.setActive(false);
     } else {
+      // Always re-read domain on open — bulk restore/clear may have run while closed
+      // with an empty changedSlotIndexes list (or before panel existed after page reload).
       this.syncBackpackStorageUi();
+      this.renderSlots(Array.from({ length: this.inventory.slotCount }, (_, index) => index));
       this.renderEquipment();
       this.renderWeapon();
       this.renderBackpackEquip();
+      this.renderQuickSlots();
+      this.renderSelection();
       this.renderStats();
       this.syncPreview();
       this.preview.setActive(true);
@@ -562,8 +669,89 @@ export class InventoryPanel implements PickupRejectionSink {
     this.preview.applyIdentityPresentation();
   }
 
-  private syncCharacterTitle(): void {
+  private syncCharacterIdentityUi(): void {
+    if (!this.nameEditing) {
+      this.charTitle.textContent = CHARACTER_PROFILE.name;
+    }
+    const gender = CHARACTER_PROFILE.gender;
+    this.genderMale.classList.toggle("active", gender === "male");
+    this.genderFemale.classList.toggle("active", gender === "female");
+    this.genderMale.setAttribute("aria-pressed", String(gender === "male"));
+    this.genderFemale.setAttribute("aria-pressed", String(gender === "female"));
+  }
+
+  private bindNameEditing(): void {
+    this.namePencil.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.beginNameEdit();
+    });
+    this.nameSave.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.commitNameEdit();
+    });
+    this.nameInput.addEventListener("input", () => { this.syncNameSaveVisibility(); });
+    this.nameInput.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.code === "Enter") {
+        e.preventDefault();
+        this.commitNameEdit();
+      } else if (e.code === "Escape") {
+        e.preventDefault();
+        this.cancelNameEdit();
+      }
+    });
+    this.nameInput.addEventListener("keyup", (e) => { e.stopPropagation(); });
+    this.nameInput.addEventListener("keypress", (e) => { e.stopPropagation(); });
+  }
+
+  private beginNameEdit(): void {
+    this.nameEditing = true;
+    this.nameView.hidden = true;
+    this.nameEditRow.hidden = false;
+    this.nameInput.value = CHARACTER_PROFILE.name;
+    this.syncNameSaveVisibility();
+    requestAnimationFrame(() => {
+      this.nameInput.focus({ preventScroll: true });
+      this.nameInput.select();
+    });
+  }
+
+  private cancelNameEdit(): void {
+    this.nameEditing = false;
+    this.nameEditRow.hidden = true;
+    this.nameView.hidden = false;
+    this.nameSave.hidden = true;
     this.charTitle.textContent = CHARACTER_PROFILE.name;
+  }
+
+  private commitNameEdit(): void {
+    if (!this.nameEditing) return;
+    CHARACTER_PROFILE.setName(this.nameInput.value);
+    this.cancelNameEdit();
+  }
+
+  private syncNameSaveVisibility(): void {
+    const draft = this.nameInput.value.trim();
+    const dirty = draft.length > 0 && draft !== CHARACTER_PROFILE.name;
+    this.nameSave.hidden = !dirty;
+  }
+
+  private bindGenderToggle(): void {
+    const pick = (gender: CharacterGender): void => {
+      CHARACTER_PROFILE.setGender(gender);
+    };
+    this.genderMale.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      pick("male");
+    });
+    this.genderFemale.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      pick("female");
+    });
   }
 
   private setHealthDisplay(current: number, max: number): void {
@@ -744,6 +932,31 @@ export class InventoryPanel implements PickupRejectionSink {
     setItemTooltip(this.backpackShell, itemName(definition));
   }
 
+  private renderQuickSlots(): void {
+    for (const index of [0, 1] as const) {
+      const button = this.quickSlotButtons[index];
+      const stack = this.quickSlots[index].current;
+      const content = button.querySelector<HTMLElement>(".equipment-slot-content");
+      const empty = button.querySelector<HTMLElement>('[data-role="quick-empty"]');
+      if (!content) continue;
+      button.classList.toggle("occupied", stack !== null);
+      button.classList.toggle("selected", this.selected?.source === "quick" && this.selected.index === index);
+      const label = index === 0 ? "Quick slot 1" : "Quick slot 2";
+      if (!stack) {
+        content.replaceChildren();
+        empty?.classList.remove("hidden");
+        button.setAttribute("aria-label", `${label}, empty`);
+        clearItemTooltip(button);
+        continue;
+      }
+      empty?.classList.add("hidden");
+      const definition = ITEM_REGISTRY.get(stack.itemId);
+      content.innerHTML = `<span class="inventory-item-icon">${ITEM_ICONS[definition.iconId]}</span><b class="inventory-quantity">${stack.quantity}</b>`;
+      button.setAttribute("aria-label", `${label}: ${itemName(definition)} ×${stack.quantity}`);
+      setItemTooltip(button, itemName(definition));
+    }
+  }
+
   private beginDrag(event: PointerEvent, origin: DragOrigin): void {
     if (event.button !== 0 || !this.openState) return;
     const stack = this.readOriginStack(origin);
@@ -836,6 +1049,7 @@ export class InventoryPanel implements PickupRejectionSink {
     if (origin.kind === "inventory") return this.inventory.getSlot(origin.index).stack;
     if (origin.kind === "equipment") return this.equipment.getSlot(origin.slot).stack;
     if (origin.kind === "backpack") return this.backpackSlot.current;
+    if (origin.kind === "quick") return this.quickSlots[origin.index].current;
     return this.weaponSlot.current;
   }
 
@@ -843,6 +1057,7 @@ export class InventoryPanel implements PickupRejectionSink {
     if (origin.kind === "inventory") return this.inventoryButton(origin.index);
     if (origin.kind === "equipment") return this.equipmentSlots[origin.slot];
     if (origin.kind === "backpack") return this.backpackShell;
+    if (origin.kind === "quick") return this.quickSlotButtons[origin.index];
     return this.weaponSlotButton;
   }
 
@@ -851,6 +1066,7 @@ export class InventoryPanel implements PickupRejectionSink {
     if (target.kind === "inventory") return this.inventoryButton(target.index);
     if (target.kind === "equipment") return this.equipmentSlots[target.slot];
     if (target.kind === "backpack") return this.backpackShell;
+    if (target.kind === "quick") return this.quickSlotButtons[target.index];
     return this.weaponSlotButton;
   }
 
@@ -872,6 +1088,11 @@ export class InventoryPanel implements PickupRejectionSink {
     }
     if (kind === "weapon") return { kind: "weapon" };
     if (kind === "backpack") return { kind: "backpack" };
+    if (kind === "quick") {
+      const q = Number(dropEl.dataset.quickIndex);
+      if (q !== 0 && q !== 1) return null;
+      return { kind: "quick", index: q };
+    }
     return null;
   }
 
@@ -889,6 +1110,9 @@ export class InventoryPanel implements PickupRejectionSink {
       return isBackpackCapableItemId(stack.itemId) && !!ITEM_REGISTRY.get(stack.itemId).backpack
         && this.inventory.isBasePocketIndex(origin.index);
     }
+    if (origin.kind === "inventory" && target.kind === "quick") {
+      return PlayerQuickSlot.isCompatible(stack.itemId);
+    }
     if (origin.kind === "equipment" && target.kind === "inventory") {
       const dest = this.inventory.getSlot(target.index).stack;
       return !dest || ITEM_REGISTRY.get(dest.itemId).equipment?.slot === origin.slot;
@@ -901,6 +1125,12 @@ export class InventoryPanel implements PickupRejectionSink {
       const dest = this.inventory.getSlot(target.index).stack;
       return this.inventory.isBasePocketIndex(target.index)
         && (!dest || (isBackpackCapableItemId(dest.itemId) && !!ITEM_REGISTRY.get(dest.itemId).backpack));
+    }
+    if (origin.kind === "quick" && target.kind === "inventory") {
+      return true;
+    }
+    if (origin.kind === "quick" && target.kind === "quick") {
+      return origin.index !== target.index;
     }
     if (origin.kind === "equipment" && target.kind === "equipment") {
       return origin.slot === target.slot;
@@ -942,6 +1172,19 @@ export class InventoryPanel implements PickupRejectionSink {
       return;
     }
 
+    if (origin.kind === "inventory" && target.kind === "quick") {
+      if (!PlayerQuickSlot.isCompatible(stack.itemId)) {
+        this.showStatus("Can't put that item here");
+        return;
+      }
+      const result = this.quickSystems[target.index].assignFromInventory(origin.index, stack);
+      if (result.accepted) {
+        this.clearSelection();
+      } else if (result.reason === "inventory-full") this.handleInventoryFull();
+      else this.showStatus("Quick slot rejected");
+      return;
+    }
+
     if (origin.kind === "inventory" && target.kind === "equipment") {
       const armorSlot = ITEM_REGISTRY.get(stack.itemId).equipment?.slot;
       if (armorSlot !== target.slot) {
@@ -966,6 +1209,28 @@ export class InventoryPanel implements PickupRejectionSink {
       const result = this.backpackEquipSystem.unequipToInventorySlot(target.index, stack);
       if (result.accepted) this.clearSelection();
       else this.reportBackpackFailure(result.reason);
+      return;
+    }
+
+    if (origin.kind === "quick" && target.kind === "inventory") {
+      const result = this.quickSystems[origin.index].clearToInventory(stack);
+      if (result.accepted) this.clearSelection();
+      else if (result.reason === "inventory-full") this.handleInventoryFull();
+      return;
+    }
+
+    if (origin.kind === "quick" && target.kind === "quick" && origin.index !== target.index) {
+      // Swap the two quick bar stacks in place.
+      const a = this.quickSlots[origin.index];
+      const b = this.quickSlots[target.index];
+      const aStack = a.current;
+      const bStack = b.current;
+      if (aStack !== stack) return;
+      if (aStack) a.clearIfAccepted(aStack, () => true);
+      if (bStack) b.clearIfAccepted(bStack, () => true);
+      if (bStack) a.assignIfAccepted(bStack, () => true);
+      if (aStack) b.assignIfAccepted(aStack, () => true);
+      this.clearSelection();
       return;
     }
 
@@ -997,6 +1262,13 @@ export class InventoryPanel implements PickupRejectionSink {
     const stack = this.equipment.getSlot(slot).stack;
     if (!stack) { this.clearSelection(); return; }
     this.selected = Object.freeze({ source: "equipment", slot, stack });
+    this.renderSelection();
+  }
+
+  private selectQuick(index: 0 | 1): void {
+    const stack = this.quickSlots[index].current;
+    if (!stack) { this.clearSelection(); return; }
+    this.selected = Object.freeze({ source: "quick", index, stack });
     this.renderSelection();
   }
 
@@ -1035,15 +1307,33 @@ export class InventoryPanel implements PickupRejectionSink {
     }
     this.weaponSlotButton.classList.toggle("selected", this.selected?.source === "weapon");
     this.backpackShell.classList.toggle("selected", this.selected?.source === "backpack");
+    for (const index of [0, 1] as const) {
+      this.quickSlotButtons[index].classList.toggle(
+        "selected",
+        this.selected?.source === "quick" && this.selected.index === index,
+      );
+    }
     if (!this.selected) {
       this.selectionName.textContent = I18N.t("inv.select").toUpperCase();
       this.selectionStats.textContent = I18N.t("inv.selectHint");
       this.actionButton.hidden = true;
+      this.splitButton.hidden = true;
+      this.syncActionStrip({ use: false, split: false, delete: false });
       return;
     }
     const definition = ITEM_REGISTRY.get(this.selected.stack.itemId);
     this.selectionName.textContent = itemName(definition).toUpperCase();
     const equipLabel = this.selected.source === "inventory" ? I18N.t("inv.equip") : I18N.t("inv.unequip");
+    const stripActions = this.selected.source === "inventory"
+      ? resolveItemActions({ source: "inventory", stack: this.selected.stack })
+      : Object.freeze([] as const);
+    const canUse = stripActions.includes("use");
+    // Need at least one free cell so the half-stack has a place of its own.
+    const canSplit = stripActions.includes("split") && this.inventory.emptySlotCount > 0;
+    const canDelete = stripActions.includes("delete");
+    this.syncActionStrip({ use: canUse, split: canSplit, delete: canDelete });
+    this.splitButton.textContent = I18N.t("inv.split");
+    this.splitButton.hidden = !canSplit;
 
     if (this.selected.source === "backpack" || (this.selected.source === "inventory" && isBackpackCapableItemId(this.selected.stack.itemId) && definition.backpack)) {
       const extra = definition.backpack?.extraSlots ?? 0;
@@ -1064,6 +1354,13 @@ export class InventoryPanel implements PickupRejectionSink {
       return;
     }
 
+    if (this.selected.source === "quick") {
+      this.selectionStats.textContent = `${I18N.t("inv.quick").toUpperCase()} ${this.selected.index + 1} · ${this.selected.stack.quantity}`;
+      this.actionButton.textContent = I18N.t("inv.unequip");
+      this.actionButton.hidden = false;
+      return;
+    }
+
     if (!definition.equipment) {
       const durability = stackDurability(this.selected.stack);
       const consumable = definition.consumable;
@@ -1073,8 +1370,11 @@ export class InventoryPanel implements PickupRejectionSink {
         this.actionButton.hidden = false;
         return;
       }
-      if (this.selected.source === "inventory" && PlayerQuickSlot.isCompatible(this.selected.stack.itemId)) {
-        this.selectionStats.textContent = `${definition.category.toUpperCase()} · ${I18N.t("inv.quick").toUpperCase()}`;
+      // Any inventory stack can move to empty quick hotbar slots (like a pocket cell).
+      if (this.selected.source === "inventory") {
+        this.selectionStats.textContent = durability
+          ? `${definition.category.toUpperCase()} · ${durability.current} / ${durability.max}`
+          : `${definition.category.toUpperCase()} · ${this.selected.stack.quantity} / ${definition.maxStack}`;
         this.actionButton.textContent = I18N.t("inv.assign");
         this.actionButton.hidden = false;
         return;
@@ -1088,6 +1388,18 @@ export class InventoryPanel implements PickupRejectionSink {
     this.selectionStats.textContent = `${slotLabel(definition.equipment.slot).toUpperCase()} · ${I18N.t("inv.armor", { n: definition.equipment.armor })}`;
     this.actionButton.textContent = equipLabel;
     this.actionButton.hidden = false;
+  }
+
+  private syncActionStrip(flags: { use: boolean; split: boolean; delete: boolean }): void {
+    const apply = (btn: HTMLButtonElement, enabled: boolean, labelKey: "inv.use" | "inv.split" | "inv.delete"): void => {
+      btn.disabled = !enabled;
+      btn.classList.toggle("available", enabled);
+      btn.title = enabled ? I18N.t(labelKey) : I18N.t("inv.notAvailable");
+      btn.setAttribute("aria-disabled", enabled ? "false" : "true");
+    };
+    apply(this.stripUse, flags.use, "inv.use");
+    apply(this.stripSplit, flags.split, "inv.split");
+    apply(this.stripDelete, flags.delete, "inv.delete");
   }
 
   private clearSelection(): void {
@@ -1108,6 +1420,8 @@ export class InventoryPanel implements PickupRejectionSink {
       current = this.equipment.getSlot(this.selected.slot).stack;
     } else if (this.selected.source === "backpack") {
       current = this.backpackSlot.current;
+    } else if (this.selected.source === "quick") {
+      current = this.quickSlots[this.selected.index].current;
     } else {
       current = this.weaponSlot.current;
     }
@@ -1133,6 +1447,12 @@ export class InventoryPanel implements PickupRejectionSink {
       else if (result.reason === "inventory-full") this.handleInventoryFull();
       return;
     }
+    if (selection.source === "quick") {
+      const result = this.quickSystems[selection.index].clearToInventory(selection.stack);
+      if (result.accepted || result.reason === "empty-source" || result.reason === "stale-source") this.clearSelection();
+      else if (result.reason === "inventory-full") this.handleInventoryFull();
+      return;
+    }
     // inventory source below
     if (isBackpackCapableItemId(selection.stack.itemId) && ITEM_REGISTRY.get(selection.stack.itemId).backpack) {
       const result = this.backpackEquipSystem.equipFromInventory(selection.index, selection.stack);
@@ -1152,10 +1472,10 @@ export class InventoryPanel implements PickupRejectionSink {
       else this.showStatus("Can't use");
       return;
     }
-    if (PlayerQuickSlot.isCompatible(selection.stack.itemId) && this.onQuickAssign) {
+    // Move any inventory stack into the first free quick slot (or replace slot 1 if both filled).
+    if (this.onQuickAssign && PlayerQuickSlot.isCompatible(selection.stack.itemId)) {
       if (this.onQuickAssign(selection.index, selection.stack)) {
         this.clearSelection();
-        this.showStatus("Assigned to quick slot");
       } else this.showStatus("Quick slot rejected");
       return;
     }
@@ -1167,6 +1487,41 @@ export class InventoryPanel implements PickupRejectionSink {
     else if (result.reason === "inventory-full") this.handleInventoryFull();
     else if (result.reason === "not-equipment") this.showStatus("Not armor");
     else if (result.reason === "wrong-slot") this.showStatus("Can't equip");
+  };
+
+  private readonly performStripUse = (): void => {
+    const selection = this.selected;
+    if (!selection || selection.source !== "inventory") return;
+    if (!ITEM_REGISTRY.get(selection.stack.itemId).consumable || !this.onUseItem) return;
+    if (this.onUseItem(selection.index, selection.stack)) this.clearSelection();
+    else this.showStatus("Can't use");
+  };
+
+  private readonly performSplitSelected = (): void => {
+    const selection = this.selected;
+    if (!selection || selection.source !== "inventory") return;
+    const stack = this.inventory.getSlot(selection.index).stack;
+    if (!stack || stack !== selection.stack) {
+      this.clearSelection();
+      return;
+    }
+    if (stack.quantity < 2 || stack.currentDurability !== undefined) return;
+    const take = Math.floor(stack.quantity / 2);
+    if (!this.inventory.trySplitStack(selection.index, take)) {
+      this.handleInventoryFull();
+      return;
+    }
+    // Stack identity changes after split — refresh selection to the remainder if still there.
+    const remainder = this.inventory.getSlot(selection.index).stack;
+    if (remainder) this.selected = Object.freeze({ source: "inventory", index: selection.index, stack: remainder });
+    else this.selected = null;
+    this.renderSelection();
+  };
+
+  private readonly performStripDelete = (): void => {
+    const selection = this.selected;
+    if (!selection || selection.source !== "inventory" || !this.onDeleteItem) return;
+    if (this.onDeleteItem(selection.index, selection.stack)) this.clearSelection();
   };
 
   private readonly onBackdropPointerDown = (event: PointerEvent): void => {
@@ -1243,11 +1598,21 @@ export class InventoryPanel implements PickupRejectionSink {
     if (headers[0]) headers[0].textContent = t("inv.pockets").toUpperCase();
     if (headers[1]) headers[1].textContent = t("inv.backpack").toUpperCase();
     const strip = this.overlay.querySelectorAll<HTMLButtonElement>(".inv-shell-btn");
-    if (strip[0]) { strip[0].textContent = t("inv.use"); strip[0].title = t("inv.notAvailable"); }
-    if (strip[1]) { strip[1].textContent = t("inv.split"); strip[1].title = t("inv.notAvailable"); }
-    if (strip[2]) { strip[2].textContent = t("inv.delete"); strip[2].title = t("inv.notAvailable"); }
-    const edit = this.overlay.querySelector<HTMLElement>("[data-role=edit-identity]");
-    if (edit) { edit.title = t("inv.editCharacter"); edit.textContent = t("inv.edit"); }
+    if (strip[0]) strip[0].textContent = t("inv.use");
+    if (strip[1]) strip[1].textContent = t("inv.split");
+    if (strip[2]) strip[2].textContent = t("inv.delete");
+    this.splitButton.textContent = t("inv.split");
+    // Re-apply enablement titles from selection state.
+    if (this.openState) this.renderSelection();
+    else this.syncActionStrip({ use: false, split: false, delete: false });
+    this.namePencil.title = t("inv.editName");
+    this.namePencil.setAttribute("aria-label", t("inv.editName"));
+    this.nameSave.textContent = t("char.save");
+    this.genderMale.title = t("settings.gender.male");
+    this.genderMale.setAttribute("aria-label", t("settings.gender.male"));
+    this.genderFemale.title = t("settings.gender.female");
+    this.genderFemale.setAttribute("aria-label", t("settings.gender.female"));
+    this.overlay.querySelector(".inv-gender-toggle")?.setAttribute("aria-label", t("char.gender"));
     this.overlay.querySelector(".inventory-close")?.setAttribute("aria-label", t("inv.close"));
     this.fullFeedback.textContent = t("inv.full");
   }

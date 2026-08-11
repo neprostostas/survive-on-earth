@@ -477,11 +477,40 @@ export function createItemStacks(itemId: ItemId, totalQuantity: number): readonl
   return Object.freeze(stacks);
 }
 
+/**
+ * Split any stack into legal inventory chunks (respects maxStack; durable items never stack).
+ * Accepts oversize / corrupt quantities so restore & insert paths can recover without a single overfull cell.
+ */
+export function expandToLegalStacks(stack: ItemStack): readonly ItemStack[] {
+  const definition = ITEM_REGISTRY.get(stack.itemId);
+  if (!Number.isInteger(stack.quantity) || stack.quantity < 1) {
+    throw new RangeError(`Invalid ${stack.itemId} stack quantity: ${stack.quantity}`);
+  }
+  if (definition.maxDurability !== undefined) {
+    const currentDurability = stack.currentDurability ?? definition.maxDurability;
+    if (!Number.isInteger(currentDurability) || currentDurability < 1 || currentDurability > definition.maxDurability) {
+      throw new RangeError(`Invalid ${stack.itemId} durability ${String(currentDurability)}`);
+    }
+    // One durable unit per slot — never stack tools/weapons by quantity.
+    const out: ItemStack[] = [];
+    for (let i = 0; i < stack.quantity; i += 1) {
+      out.push(createItemStack(stack.itemId, 1, { currentDurability }));
+    }
+    return Object.freeze(out);
+  }
+  return createItemStacks(stack.itemId, stack.quantity);
+}
+
+export function isStackMergeable(stack: ItemStack): boolean {
+  const definition = ITEM_REGISTRY.get(stack.itemId);
+  return definition.maxDurability === undefined && stack.currentDurability === undefined;
+}
+
 export function mergeItemStacks(left: ItemStack, right: ItemStack): StackMergeResult {
   validateStack(left);
   validateStack(right);
   if (left.itemId !== right.itemId) throw new Error(`Cannot merge different item types: ${left.itemId} and ${right.itemId}`);
-  if (left.currentDurability !== undefined || right.currentDurability !== undefined) {
+  if (!isStackMergeable(left) || !isStackMergeable(right)) {
     throw new Error(`Cannot merge durable tool stacks: ${left.itemId}`);
   }
   const maxStack = ITEM_REGISTRY.get(left.itemId).maxStack;

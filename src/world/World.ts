@@ -3,7 +3,7 @@ import type { CalibrationConfig } from "../config/calibrationConfig";
 import type { CollisionWorld } from "../collision/CollisionWorld";
 import { TestLocation } from "./TestLocation";
 import type { Interactable } from "../interaction/Interactable";
-import type { HarvestableResource } from "../harvesting/HarvestableResource";
+import type { HarvestableResource, SerializedHarvestResource } from "../harvesting/HarvestableResource";
 import type { MinimapMarker } from "../ui/minimapTypes";
 import type { LocationId } from "../locations/LocationRegistry";
 import type { LocationVisualTheme } from "../locations/LocationVisualTheme";
@@ -29,5 +29,17 @@ export class World {
   /** Load location-specific visual theme into the shared plane. */
   applyLocationVisual(locationId: LocationId): LocationVisualTheme {
     return this.location.applyLocationVisual(locationId);
+  }
+
+  serializeHarvestState(): readonly SerializedHarvestResource[] {
+    return this.location.serializeHarvestState();
+  }
+
+  resetHarvestState(): void {
+    this.location.resetHarvestState();
+  }
+
+  restoreHarvestState(rows: readonly SerializedHarvestResource[] | null | undefined): void {
+    this.location.restoreHarvestState(rows);
   }
 }

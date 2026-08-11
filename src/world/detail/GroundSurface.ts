@@ -54,13 +54,16 @@ export class GroundSurface {
     this.material.diffuseColor = theme.groundTint;
     const [r, g, b] = theme.clearColor;
     this.scene.clearColor = new Color4(r, g, b, 1);
-    if (theme.biome === "swamp" || theme.biome === "waterfront" || theme.biome === "seaside") {
+    if (theme.biome === "swamp" || theme.biome === "waterfront" || theme.biome === "seaside" || theme.biome === "cataract-ford") {
       this.material.specularColor = new Color3(0.06, 0.07, 0.06);
       this.material.specularPower = 40;
+    } else if (theme.biome === "ice-caldera") {
+      this.material.specularColor = new Color3(0.14, 0.16, 0.2);
+      this.material.specularPower = 60;
     } else if (theme.biome === "desert" || theme.biome === "snow") {
       this.material.specularColor = new Color3(0.02, 0.02, 0.02);
       this.material.specularPower = 8;
-    } else if (theme.biome === "autumn") {
+    } else if (theme.biome === "autumn" || theme.biome === "copper-heath") {
       this.material.specularColor = new Color3(0.03, 0.02, 0.01);
       this.material.specularPower = 14;
     } else {

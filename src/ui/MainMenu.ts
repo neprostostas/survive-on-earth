@@ -16,7 +16,8 @@ export interface MainMenuSaveSummary {
 }
 
 /**
- * Full-screen title menu with save summary, language, settings, continue/new.
+ * Full-screen title menu with save summary, language, settings, new game.
+ * With a save present, continue is activated by selecting the save card.
  */
 export class MainMenu {
   private readonly overlay: HTMLElement;
@@ -76,42 +77,65 @@ export class MainMenu {
     this.summary = this.getSummary();
     const t = (k: Parameters<typeof I18N.t>[0]) => I18N.t(k);
     const has = this.summary.hasSave;
-    const primaryContinue = has;
+    const locationLabel = this.summary.locationName ?? this.summary.locationId ?? "—";
+    const lastPlayed = this.summary.lastPlayedAt
+      ? I18N.formatDate(this.summary.lastPlayedAt)
+      : null;
+    const continueAria = `${t("menu.continue")}: ${locationLabel}`;
+
     this.overlay.innerHTML = `
       <div class="main-menu-scene" aria-hidden="true">
         <div class="main-menu-sky"></div>
+        <div class="main-menu-haze"></div>
         <div class="main-menu-glow"></div>
         <div class="main-menu-trees"></div>
         <div class="main-menu-embers"></div>
         <div class="main-menu-horizon"></div>
+        <div class="main-menu-vignette"></div>
       </div>
       <div class="main-menu">
-        <div class="main-menu-mark" aria-hidden="true">${uiIcon("fire", "ui-icon-img main-menu-mark-img")}</div>
-        <div class="main-menu-brand" id="main-menu-brand">${t("menu.brand")}</div>
-        <p class="main-menu-sub">${t("menu.sub")}</p>
-        <div class="main-menu-save" aria-live="polite">
+        <header class="main-menu-hero">
+          <div class="main-menu-mark" aria-hidden="true">${uiIcon("fire", "ui-icon-img main-menu-mark-img")}</div>
+          <div class="main-menu-brand" id="main-menu-brand">${t("menu.brand")}</div>
+          <p class="main-menu-sub">${t("menu.sub")}</p>
+        </header>
+
+        <section class="main-menu-save" aria-live="polite">
           ${has ? `
-            <div class="save-card">
-              <div class="save-card-head">
-                ${uiIcon("continue", "ui-icon-img save-card-icon")}
-                <div class="save-card-title">${t("menu.ready")}</div>
+            <button type="button" class="save-slot save-slot--action" data-role="continue-save" aria-label="${escapeHtml(continueAria)}">
+              <div class="save-slot-accent" aria-hidden="true"></div>
+              <div class="save-slot-inner">
+                <div class="save-slot-top">
+                  <span class="save-slot-kicker">${t("menu.ready")}</span>
+                  ${lastPlayed ? `<time class="save-slot-time" datetime="${new Date(this.summary.lastPlayedAt!).toISOString()}">${t("menu.lastPlayed")} · ${lastPlayed}</time>` : ""}
+                </div>
+                <h3 class="save-slot-location">${escapeHtml(String(locationLabel))}</h3>
+                <div class="save-slot-stats" role="list">
+                  <div class="save-stat" role="listitem">
+                    <span class="save-stat-icon" aria-hidden="true">${uiIcon("level", "ui-icon-img save-stat-icon-img")}</span>
+                    <div class="save-stat-copy">
+                      <span class="save-stat-label">${t("menu.level")}</span>
+                      <span class="save-stat-value">${this.summary.level ?? 1}</span>
+                    </div>
+                  </div>
+                  <div class="save-stat" role="listitem">
+                    <span class="save-stat-icon" aria-hidden="true">${uiIcon("clock", "ui-icon-img save-stat-icon-img")}</span>
+                    <div class="save-stat-copy">
+                      <span class="save-stat-label">${t("menu.playtime")}</span>
+                      <span class="save-stat-value">${I18N.formatDuration(this.summary.playtimeSec ?? 0)}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="save-card-meta">
-                <span class="save-chip">${uiIcon("level", "ui-icon-img save-chip-icon")}${t("menu.level")} ${this.summary.level ?? 1}</span>
-                <span class="save-chip">${uiIcon("map", "ui-icon-img save-chip-icon")}${this.summary.locationName ?? this.summary.locationId ?? "—"}</span>
-                <span class="save-chip">${uiIcon("clock", "ui-icon-img save-chip-icon")}${I18N.formatDuration(this.summary.playtimeSec ?? 0)}</span>
-              </div>
-            </div>` : `
-            <div class="save-card empty">
-              ${uiIcon("newgame", "ui-icon-img save-card-icon")}
-              <span>${t("menu.noSave")}</span>
+            </button>` : `
+            <div class="save-slot save-slot--empty">
+              <div class="save-slot-empty-icon" aria-hidden="true">${uiIcon("newgame", "ui-icon-img save-slot-empty-img")}</div>
+              <p class="save-slot-empty-copy">${t("menu.noSave")}</p>
             </div>`}
-        </div>
+        </section>
+
         <div class="main-menu-actions">
-          <button type="button" data-role="continue" class="menu-btn ${primaryContinue ? "primary" : "secondary"}" ${has ? "" : "disabled"}>
-            ${menuBtnLabel("continue", t("menu.continue"))}
-          </button>
-          <button type="button" data-role="new" class="menu-btn ${primaryContinue ? "secondary" : "primary"}">
+          <button type="button" data-role="new" class="menu-btn ${has ? "secondary" : "primary"}">
             ${menuBtnLabel("newgame", t("menu.newGame"))}
           </button>
           <div class="main-menu-secondary">
@@ -126,7 +150,7 @@ export class MainMenu {
         <div class="main-menu-version">${t("menu.version")}</div>
       </div>`;
 
-    this.overlay.querySelector("[data-role=continue]")?.addEventListener("click", (e) => {
+    this.overlay.querySelector("[data-role=continue-save]")?.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       if (!this.summary.hasSave || this.starting || this.confirming) return;
@@ -149,7 +173,7 @@ export class MainMenu {
       this.language.openChange();
     });
     const focusTarget = this.overlay.querySelector<HTMLButtonElement>(
-      primaryContinue ? "[data-role=continue]" : "[data-role=new]",
+      has ? "[data-role=continue-save]" : "[data-role=new]",
     );
     if (!this.confirming) focusTarget?.focus({ preventScroll: true });
   }
@@ -201,4 +225,12 @@ export class MainMenu {
     this.starting = false;
     // beginPlay() closes on success; on failure it re-opens the menu itself.
   }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

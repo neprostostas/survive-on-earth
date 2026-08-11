@@ -1,6 +1,6 @@
 import type { ItemId } from "../items/ItemId.ts";
 import type { ItemStack } from "../items/ItemSystem.ts";
-import { createItemStack, ITEM_REGISTRY } from "../items/ItemSystem.ts";
+import { createItemStack, expandToLegalStacks, ITEM_REGISTRY } from "../items/ItemSystem.ts";
 import type { LocationId } from "../locations/LocationRegistry.ts";
 import type { SerializedGroundLoot } from "../ground-loot/GroundLootSystem.ts";
 import type { GameSettings } from "../i18n/I18n.ts";
@@ -8,9 +8,9 @@ import type { LocaleId } from "../i18n/locales.ts";
 import type { CharacterIdentity } from "../player/CharacterProfile.ts";
 import type { CalibrationConfig } from "../config/calibrationConfig.ts";
 
-/** Accepted formats: v1–v4 (v4 adds settings prefs snapshot + vehicles/events/locks/etc.). */
-export const SAVE_VERSION = 4 as const;
-export const SAVE_VERSIONS = Object.freeze([1, 2, 3, 4] as const);
+/** Accepted formats: v1–v5 (v5 adds harvest resource progress). */
+export const SAVE_VERSION = 5 as const;
+export const SAVE_VERSIONS = Object.freeze([1, 2, 3, 4, 5] as const);
 const STORAGE_KEY = "survive-on-earth.save.v1";
 
 export interface SerializedContainer {
@@ -47,6 +47,7 @@ export interface SaveBlob {
   readonly weapon: SerializedStack | null;
   readonly backpack: SerializedStack | null;
   readonly quick: SerializedStack | null;
+  readonly quick2?: SerializedStack | null;
   readonly utility: SerializedStack | null;
   readonly bunkerAccess: boolean;
   readonly unlockedLocations: readonly LocationId[];
@@ -108,6 +109,13 @@ export interface SaveBlob {
     entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
   };
   readonly sneakActive?: boolean;
+  /** Tree/rock/plant harvest progress (hits remaining / depleted). */
+  readonly harvestResources?: readonly {
+    id: string;
+    remainingHits: number;
+    isDepleted: boolean;
+    resultClaimed: boolean;
+  }[];
 }
 
 export interface SerializedStack {
@@ -120,43 +128,74 @@ export interface SerializedInventorySlot extends SerializedStack {
   readonly index: number;
 }
 
+/** Prefer project identity when durability is present (avoid JSON dropping undefined). */
 export function serializeStack(stack: ItemStack): SerializedStack {
+  if (stack.currentDurability !== undefined) {
+    return Object.freeze({
+      itemId: stack.itemId,
+      quantity: stack.quantity,
+      currentDurability: stack.currentDurability,
+    });
+  }
   return Object.freeze({
     itemId: stack.itemId,
     quantity: stack.quantity,
-    currentDurability: stack.currentDurability,
   });
 }
 
 export function serializeInventorySlot(index: number, stack: ItemStack): SerializedInventorySlot {
+  if (stack.currentDurability !== undefined) {
+    return Object.freeze({
+      index,
+      itemId: stack.itemId,
+      quantity: stack.quantity,
+      currentDurability: stack.currentDurability,
+    });
+  }
   return Object.freeze({
     index,
     itemId: stack.itemId,
     quantity: stack.quantity,
-    currentDurability: stack.currentDurability,
   });
 }
 
 /** Safe stack rebuild — returns null if item id / quantity / durability invalid. */
 export function deserializeStack(data: SerializedStack): ItemStack | null {
+  const stacks = deserializeStacks(data);
+  return stacks[0] ?? null;
+}
+
+/** Full legal expansion (oversize quantities are split by maxStack). */
+export function deserializeStacks(data: SerializedStack): readonly ItemStack[] {
   try {
-    if (!data || typeof data.itemId !== "string") return null;
+    if (!data || typeof data.itemId !== "string") return Object.freeze([]);
     ITEM_REGISTRY.get(data.itemId);
     const quantity = Number(data.quantity);
-    if (!Number.isInteger(quantity) || quantity < 1) return null;
+    if (!Number.isInteger(quantity) || quantity < 1) return Object.freeze([]);
     const options = data.currentDurability !== undefined
       ? { currentDurability: Number(data.currentDurability) }
       : undefined;
-    return createItemStack(data.itemId, quantity, options);
+    // Prefer createItemStack when legal; expand oversize / corrupted durable stacks.
+    try {
+      return Object.freeze([createItemStack(data.itemId, quantity, options)]);
+    } catch {
+      return expandToLegalStacks(Object.freeze({
+        itemId: data.itemId as ItemStack["itemId"],
+        quantity,
+        ...(options?.currentDurability !== undefined
+          ? { currentDurability: options.currentDurability }
+          : {}),
+      }) as ItemStack);
+    }
   } catch {
-    return null;
+    return Object.freeze([]);
   }
 }
 
 function isValidBlob(parsed: unknown): parsed is SaveBlob {
   if (!parsed || typeof parsed !== "object") return false;
   const blob = parsed as SaveBlob;
-  if (!SAVE_VERSIONS.includes(blob.version as 1 | 2 | 3 | 4)) return false;
+  if (!SAVE_VERSIONS.includes(blob.version as 1 | 2 | 3 | 4 | 5)) return false;
   if (typeof blob.locationId !== "string") return false;
   if (!blob.xp || typeof blob.xp.level !== "number") return false;
   if (!Array.isArray(blob.inventory)) return false;
