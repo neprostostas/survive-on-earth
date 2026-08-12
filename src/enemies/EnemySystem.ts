@@ -2,6 +2,7 @@ import type { CombatPoint, CombatTarget } from "../combat/CombatTarget.ts";
 import type { CombatTargetSystem } from "../combat/CombatTargetSystem.ts";
 import type { DamageResult, HealthPool } from "../combat/HealthPool.ts";
 import type { PlayerIncomingDamageResult } from "../combat/PlayerDamageResolver.ts";
+import { ENEMY_GROUP_AGGRO_RADIUS } from "./enemyConfig.ts";
 import { RoamingZombie } from "./RoamingZombie.ts";
 
 export interface EnemyMovementAdapter {
@@ -75,11 +76,50 @@ export class EnemySystem {
     if (!this.handles(target)) return false;
     this.callbacks.onEnemyHit(target, result);
     if (result.becameDead) this.finalizeDeath(target);
+    else if (result.applied > 0 && target.isCombatAlive()) {
+      // Damage instantly opens chase so pack-share has a live fighter seed this frame.
+      if (!target.isAggressive) target.callToArms();
+      this.sharePackAggression(this.player.getPosition());
+    }
     return true;
   }
 
-  update(delta: number, awareness: { sneaking: boolean; sprinting: boolean } = { sneaking: false, sprinting: false }): void {
+  /**
+   * Highest soft awareness / aggro among live enemies in acquire bubble (0..1).
+   * Used for HUD threat pips — pure domain, no presentation side effects.
+   */
+  peakThreatLevel(): number {
+    let peak = 0;
+    for (const enemy of this.enemies.values()) {
+      if (!enemy.isCombatAlive()) continue;
+      peak = Math.max(peak, enemy.alertLevel);
+    }
+    return peak;
+  }
+
+  /** Count of fully aggressive agents (chase / attack / recovery). */
+  aggressiveCount(): number {
+    let n = 0;
+    for (const enemy of this.enemies.values()) {
+      if (enemy.isCombatAlive() && enemy.isAggressive) n += 1;
+    }
+    return n;
+  }
+
+  update(
+    delta: number,
+    awareness: {
+      sneaking: boolean;
+      sprinting: boolean;
+      noiseRadius?: number;
+      noiseLevel?: number;
+      acquireRangeMul?: number;
+      hearRangeMul?: number;
+    } = { sneaking: false, sprinting: false },
+  ): void {
     const playerPosition = this.player.getPosition();
+    const noiseRadius = awareness.noiseRadius ?? 0;
+    const noiseLevel = awareness.noiseLevel ?? 0;
     for (const enemy of [...this.enemies.values()]) {
       if (!enemy.isCombatAlive()) { this.finalizeDeath(enemy); continue; }
       enemy.update(delta, {
@@ -87,9 +127,51 @@ export class EnemySystem {
         playerAlive: this.player.health.alive,
         playerSneaking: awareness.sneaking,
         playerSprinting: awareness.sprinting,
+        playerNoiseRadius: noiseRadius,
+        playerNoiseLevel: noiseLevel,
+        acquireRangeMul: awareness.acquireRangeMul,
+        hearRangeMul: awareness.hearRangeMul,
         move: (position, displacement) => this.movement.move(enemy, position, displacement),
         damagePlayer: (amount) => { this.applyPlayerDamage(enemy, amount); },
       });
+    }
+    if (this.player.health.alive) {
+      this.sharePackAggression(playerPosition);
+    }
+  }
+
+  /**
+   * Idle / alert peers near a fighting packmate enter chase.
+   * Multi-pass so a chain of clustered zombies can all join in one tick.
+   */
+  private sharePackAggression(playerPosition: CombatPoint): void {
+    const radius = ENEMY_GROUP_AGGRO_RADIUS;
+    const radiusSq = radius * radius;
+    for (let pass = 0; pass < 4; pass += 1) {
+      let joined = 0;
+      const fighters = [...this.enemies.values()].filter((e) => e.isCombatAlive() && e.isAggressive);
+      if (fighters.length === 0) return;
+      for (const peer of this.enemies.values()) {
+        if (!peer.isCombatAlive() || peer.isAggressive) continue;
+        const peerPos = peer.getCombatPosition();
+        const toPlayer = Math.hypot(peerPos.x - playerPosition.x, peerPos.z - playerPosition.z);
+        // Skip if already outside lose leash — would snap back to idle next update.
+        if (toPlayer > peer.archetype.loseRange) continue;
+        let nearFighter = false;
+        for (const fighter of fighters) {
+          if (fighter.combatId === peer.combatId) continue;
+          const fp = fighter.getCombatPosition();
+          const dx = peerPos.x - fp.x;
+          const dz = peerPos.z - fp.z;
+          if (dx * dx + dz * dz <= radiusSq) {
+            nearFighter = true;
+            break;
+          }
+        }
+        if (!nearFighter) continue;
+        if (peer.callToArms()) joined += 1;
+      }
+      if (joined === 0) return;
     }
   }
 

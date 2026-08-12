@@ -25,6 +25,8 @@ export class Lighting {
   private readonly ambient: HemisphericLight;
   private readonly sun: DirectionalLight;
   private locationTheme: LocationVisualTheme | null = null;
+  /** Multiplier from world clock sunIntensity (1 = noon theme, ~0.18 = deep night). */
+  private dayNightMul = 1;
 
   constructor(scene: Scene, private readonly config: CalibrationConfig) {
     this.ambient = new HemisphericLight("ambient", new Vector3(0, 1, 0), scene);
@@ -56,6 +58,21 @@ export class Lighting {
     this.applyCalibration();
   }
 
+  /**
+   * Drive global sun/ambient from WorldClock.sunIntensity() (0..1).
+   * Underground / bunker keep mostly constant theme lighting.
+   */
+  applyDayNight(sunIntensity: number): void {
+    const s = Math.max(0, Math.min(1, sunIntensity));
+    const underground = this.locationTheme?.biome === "underground"
+      || this.locationTheme?.biome === "bunker";
+    // Night floor ~0.22 so the world is readable; noon ≈ 1.
+    const next = underground ? 0.55 + s * 0.25 : 0.22 + s * 0.78;
+    if (Math.abs(next - this.dayNightMul) < 0.008) return;
+    this.dayNightMul = next;
+    this.applyCalibration();
+  }
+
   applyCalibration(): void {
     const angle = this.config.lighting.directionalRotationDeg * Math.PI / 180;
     this.sun.direction.set(Math.sin(angle) * 0.72, -1, Math.cos(angle) * 0.72).normalize();
@@ -66,13 +83,40 @@ export class Lighting {
     );
     const themeMulSun = this.locationTheme?.sunIntensity ?? 1;
     const themeMulAmb = this.locationTheme?.ambientIntensity ?? 1;
-    this.sun.intensity = this.config.lighting.directionalIntensity * 0.9 * themeMulSun;
-    this.ambient.intensity = Math.min(1.2, (this.config.lighting.ambientIntensity + 0.2) * themeMulAmb);
+    const day = this.dayNightMul;
+    this.sun.intensity = this.config.lighting.directionalIntensity * 0.9 * themeMulSun * day;
+    this.ambient.intensity = Math.min(
+      1.2,
+      (this.config.lighting.ambientIntensity + 0.2) * themeMulAmb * (0.55 + day * 0.55),
+    );
+    // Cooler ambient feel at night without rewriting theme palette each frame.
+    if (this.locationTheme) {
+      const nightMix = 1 - day;
+      this.ambient.diffuse = Color3.Lerp(
+        this.locationTheme.ambient,
+        new Color3(0.35, 0.4, 0.55),
+        nightMix * 0.55,
+      );
+      this.ambient.groundColor = Color3.Lerp(
+        this.locationTheme.ambientGround,
+        new Color3(0.12, 0.14, 0.2),
+        nightMix * 0.65,
+      );
+      this.sun.diffuse = Color3.Lerp(
+        this.locationTheme.sun,
+        new Color3(0.45, 0.5, 0.7),
+        nightMix * 0.5,
+      );
+    }
     const requestedSoftness = this.config.lighting.shadowSoftness;
     const presetQuality = getVisualQualitySettings(this.config.visual.qualityPreset).shadowQuality;
     const calibratedQuality = requestedSoftness < 1.5 ? 0 : requestedSoftness < 2.5 ? 1 : 2;
     const quality = Math.min(presetQuality, calibratedQuality);
     this.shadows.filteringQuality = quality === 0 ? ShadowGenerator.QUALITY_LOW : quality === 1 ? ShadowGenerator.QUALITY_MEDIUM : ShadowGenerator.QUALITY_HIGH;
-    this.shadows.setDarkness(this.locationTheme?.biome === "underground" || this.locationTheme?.biome === "bunker" ? 0.28 : 0.12);
+    this.shadows.setDarkness(
+      this.locationTheme?.biome === "underground" || this.locationTheme?.biome === "bunker"
+        ? 0.28
+        : 0.1 + (1 - day) * 0.22,
+    );
   }
 }

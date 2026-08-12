@@ -11,6 +11,7 @@ import { InputController } from "../input/InputController";
 import { isUiTextFocusTarget } from "../input/uiTextFocus";
 import { Player } from "../player/Player";
 import { SneakState } from "../player/SneakState";
+import { PlayerNoiseSystem } from "../player/PlayerNoiseSystem";
 import { Lighting } from "../rendering/Lighting";
 import { HUD } from "../ui/HUD";
 import { World } from "../world/World";
@@ -37,6 +38,7 @@ import { EquipmentSystem } from "../equipment/EquipmentSystem";
 import { EquipmentVisualController } from "../equipment/EquipmentVisualController";
 import { spawnStarterGroundResources } from "../ground-loot/starterGroundResources";
 import { CraftingSystem } from "../crafting/CraftingSystem";
+import { BlueprintUnlockSystem, isBlueprintItemId } from "../crafting/BlueprintUnlocks";
 import { CraftingPanel } from "../ui/CraftingPanel";
 import { CombatTargetSystem } from "../combat/CombatTargetSystem";
 import { MeleeCombatSystem } from "../combat/MeleeCombatSystem";
@@ -44,10 +46,15 @@ import { CombatDummy } from "../combat/CombatDummy";
 import { CombatPresentation } from "../combat/CombatPresentation";
 import { COMBAT_CONFIG } from "../combat/combatConfig";
 import { EnemySystem } from "../enemies/EnemySystem";
-import { RoamingZombie } from "../enemies/RoamingZombie";
+import { RoamingZombie, combatRoleFor } from "../enemies/RoamingZombie";
 import { EnemyPresentation } from "../enemies/EnemyPresentation";
 import { PlayerDamageResolver } from "../combat/PlayerDamageResolver";
 import { enemySpawnSpecsFor, spawnPositionsForLocation } from "../enemies/LocationEnemyPools";
+import {
+  nightAcquireMul,
+  nightHearMul,
+  withNightSpawnPressure,
+} from "../enemies/NightGameplay";
 import { PlayerWeaponSlot } from "../equipment/PlayerWeaponSlot";
 import { WeaponEquipSystem } from "../equipment/WeaponEquipSystem";
 import { PlayerBackpackSlot } from "../equipment/PlayerBackpackSlot";
@@ -64,13 +71,60 @@ import { HungerPool, ThirstPool, EnergyPool } from "../survival/NeedPool";
 import { SURVIVAL_CONFIG } from "../survival/survivalConfig";
 import { ConsumableUseSystem } from "../consumables/ConsumableUseSystem";
 import { DeathBagSystem } from "../death/DeathBagSystem";
+import { DeathBagEntity } from "../death/DeathBagEntity";
 import { LocationManager } from "../locations/LocationManager";
 import type { LocationId } from "../locations/LocationRegistry";
 import { effectiveColdExposure } from "../locations/LocationRegistry";
-import { ExperiencePool, SkillTree } from "../progression/ExperiencePool";
-import { BuildingRegistry } from "../building/BuildingRegistry";
+import { ZoneSessionTimer } from "../locations/ZoneSessionTimer";
+import { ExperiencePool, SkillTree, type SkillId } from "../progression/ExperiencePool";
+import { playerMaxHealthFromSkills, tryBuySkill } from "../progression/SkillRules";
+import { SkillsPanel } from "../ui/SkillsPanel";
+import { JournalPanel } from "../ui/JournalPanel";
+import { AchievementsPanel } from "../ui/AchievementsPanel";
+import { QuestsPanel } from "../ui/QuestsPanel";
+import { journalCounts } from "../progression/JournalView";
+import { nextActiveQuestId, trackedQuestRow } from "../quests/QuestView";
+import { BuildingRegistry, BUILD_PIECES, type PlacedBuildPiece } from "../building/BuildingRegistry";
 import { BuildingPresentation } from "../building/BuildingPresentation";
-import { cursorGridFromPlayer } from "../building/buildConfig";
+import { cursorGridFromPlayer, gridToWorld } from "../building/buildConfig";
+import {
+  builtChestContainerId,
+  builtCraftInteractableId,
+  builtDoorInteractableId,
+  builtPowerInteractableId,
+  builtStationInteractableId,
+  CHEST_PIECE_CAPACITY,
+  FARM_BASE_IRRIGATION,
+  formatBaseUtilityHud,
+  isBuiltDoorInteractionId,
+  isBuiltPowerInteractionId,
+  isChestPiece,
+  isColdStoragePiece,
+  isCraftBenchPiece,
+  isDoorPiece,
+  isStandalonePowerPiece,
+  isStationPiece,
+  isWaterInfrastructurePiece,
+  pieceIdFromBuiltChestContainer,
+  pieceInstanceFromBuiltDoor,
+  pieceInstanceFromBuiltPower,
+  POWER_PIECE_SPECS,
+  powerDeviceIdForPiece,
+  STATION_PIECE_TO_KIND,
+} from "../building/BuiltPieceWiring";
+import {
+  SPOIL_RATE_CHEST,
+  SPOIL_RATE_FRIDGE_OFF,
+  SPOIL_RATE_FRIDGE_ON,
+  SPOIL_RATE_PLAYER,
+} from "../items/FoodSpoilage";
+import { SpoilageSystem } from "../inventory/SpoilageSystem";
+import {
+  CRAFT_BENCH_RANGE,
+  isCraftBenchInteractionId,
+  maxCraftBenchTierNear,
+} from "../crafting/CraftAccess";
+import { craftTierFromInteractionId } from "../crafting/CraftBenchTiers";
 import { BuildModePanel } from "../ui/BuildModePanel";
 import { GlobalMapPanel } from "../ui/GlobalMapPanel";
 import { LocalMapPanel } from "../ui/LocalMapPanel";
@@ -82,40 +136,97 @@ import { confirmDialog } from "../ui/ConfirmDialog";
 import { NotificationService } from "../notify/NotificationService";
 import { SAVE_SYSTEM, SAVE_VERSION, serializeStack, serializeInventorySlot, deserializeStack, deserializeStacks, type SaveBlob, type SerializedInventorySlot, type SerializedContainer } from "../save/SaveSystem";
 import { I18N } from "../i18n/I18n";
-import { achievementTitle, locationTitle } from "../i18n/contentApi";
+import { achievementTitle, locationTitle, itemName, questTitle } from "../i18n/contentApi";
 import { GAME_AUDIO } from "../audio/GameAudio";
 import { LanguageSelectScreen } from "../ui/LanguageSelectScreen";
 import { CHARACTER_PROFILE } from "../player/CharacterProfile";
 import { rollNamedLoot } from "../loot/LootTable";
+import { createInteractable, type Interactable } from "../interaction/Interactable";
+import { ContainerPanel } from "../ui/ContainerPanel";
 import { WorldContainerEntity } from "../containers/WorldContainer";
 import { HOME_HOUSE_ORIGIN } from "../world/TestLocation";
 import { StatusEffectSystem } from "../status/StatusEffectSystem";
-import { QuestSystem } from "../quests/QuestSystem";
+import { canInfectFromArchetype, infectionChanceFromHit } from "../status/InfectionRules";
+import { QuestSystem, QUEST_DEFS } from "../quests/QuestSystem";
 import { RangedCombatSystem } from "../combat/RangedCombat";
-import { WorkstationQueue } from "../workstations/WorkstationQueue";
+import { StationSystem } from "../workstations/StationSystem";
+import { StationPanel } from "../workstations/StationPanel";
+import type { WorkstationKind } from "../workstations/WorkstationQueue";
 import { AchievementSystem, ACHIEVEMENT_DEFS, type AchievementId } from "../progression/Achievements";
 import { WorldClock } from "../world/WorldClock";
 import { resolveCriticalHit } from "../combat/CriticalHit";
 import { ColdPool } from "../survival/ColdPool";
 import { FarmingSystem } from "../farming/FarmingSystem";
+import {
+  decideFarmInteract,
+  isFarmPlotInteractionId,
+  plotIdFromInteractable,
+} from "../farming/FarmAccess";
 import { VehicleSystem } from "../vehicle/VehicleSystem";
+import { VehiclePanel } from "../ui/VehiclePanel";
 import { MailboxSystem } from "../rewards/MailboxSystem";
+import { ContractPanel } from "../ui/ContractPanel";
+import { firstExploreMatch, lootProfileForContract } from "../contracts/ContractRules";
 import { ReputationSystem } from "../progression/ReputationSystem";
 import { JournalSystem } from "../progression/JournalSystem";
 import { NpcSystem, SURVIVOR_CAMP_NPCS } from "../npc/NpcSystem";
+import {
+  defaultDialogueNode,
+  npcCampOffset,
+  npcIdFromInteractable,
+  npcInteractableId,
+  npcsAtLocation,
+} from "../npc/NpcHub";
+import {
+  COURIER_PACKAGE_ID,
+  tryDeliverCourierPackage,
+  tryGrantCourierPackage,
+} from "../npc/CourierRun";
+import {
+  CARAVAN_DIALOGUE_ID,
+  caravanDisplayName,
+  caravanOffersFor,
+  eventTraderNpcId,
+  isBarterEventKind,
+} from "../npc/EventCaravan";
+import { NpcPanel } from "../ui/NpcPanel";
 import { LockSystem } from "../world/LockSystem";
+import {
+  LOCKED_SITES,
+  isLockSupportId,
+  lockIdFromContainerId,
+  lockSupportSite,
+} from "../world/LockedSites";
 import { BossBrain, WARDEN_PROFILE } from "../combat/BossBrain";
 import { HordeController } from "../combat/HordeController";
-import { WorldEventDirector } from "../world/WorldEventDirector";
+import {
+  HOME_GATE_DEFENSE,
+  homeDefenseSpawnPoint,
+  isHomeDefenseContractHint,
+} from "../combat/HomeDefense";
+import { WorldEventDirector, type WorldEventKind } from "../world/WorldEventDirector";
 import { RaidSystem } from "../raids/RaidSystem";
+import {
+  raidAnchorLocation,
+  raidReinforcementCount,
+  unclearedRaidAt,
+} from "../raids/RaidAnchors";
+import { eventAnchorLocation, unclaimedEventAt } from "../world/EventAnchors";
 import { PowerGrid } from "../base/PowerGrid";
 import { WaterSystem } from "../base/WaterSystem";
+import { composeRadioBriefing } from "../base/RadioIntel";
 import { validateContentRegistries } from "../debug/ContentValidator";
 import { formatContentSummary, debugSpawnItem } from "../debug/ContentBrowser";
 import { loreNotesForLocation } from "../content/LoreNotes";
 import { tierForLevel } from "../progression/ProgressionTiers";
 import { GameStatistics } from "../progression/GameStatistics";
-import { DungeonResetSystem } from "../world/DungeonReset";
+import { DungeonResetSystem, type DungeonId } from "../world/DungeonReset";
+import {
+  dungeonForLocation,
+  formatDungeonResetNames,
+  locksForDungeon,
+  playerInsideResetDungeon,
+} from "../world/DungeonAnchors";
 import { ContractSystem } from "../contracts/ContractSystem";
 import { inferStoryAct, getStoryAct } from "../quests/StoryActs";
 
@@ -149,6 +260,9 @@ export class Game {
   private readonly energy = new EnergyPool(SURVIVAL_CONFIG.energy.max, SURVIVAL_CONFIG.energy.initial);
   private readonly consumables: ConsumableUseSystem;
   private readonly deathBags = new DeathBagSystem();
+  private readonly deathBagEntities: DeathBagEntity[] = [];
+  private readonly zoneTimer = new ZoneSessionTimer();
+  private zoneForceExitLatched = false;
   private readonly locations: LocationManager;
   private readonly experience = new ExperiencePool();
   private readonly skills = new SkillTree();
@@ -158,7 +272,23 @@ export class Game {
   private readonly sneak = new SneakState();
   private readonly status = new StatusEffectSystem();
   private readonly quests = new QuestSystem();
-  private readonly campfireQueue = new WorkstationQueue("campfire");
+  private readonly stations = new StationSystem();
+  private readonly stationPanel: StationPanel;
+  private readonly vehiclePanel: VehiclePanel;
+  private readonly contractPanel: ContractPanel;
+  private readonly npcPanel: NpcPanel;
+  private readonly skillsPanel: SkillsPanel;
+  private readonly journalPanel: JournalPanel;
+  private readonly achievementsPanel: AchievementsPanel;
+  private readonly questsPanel: QuestsPanel;
+  private readonly containerPanel: ContainerPanel;
+  private homeBoardInteractable: Interactable | null = null;
+  private homeMailboxMounted = false;
+  private readonly campNpcInteractables = new Map<string, Interactable>();
+  private readonly eventTraderInteractables = new Map<string, Interactable>();
+  private readonly eventCaravanNpcIds = new Set<string>();
+  private readonly lockSupportInteractables = new Map<string, Interactable>();
+  private readonly builtStationInteractables = new Map<string, Interactable>();
   private readonly achievements = new AchievementSystem();
   private readonly worldClock = new WorldClock(480);
   private readonly cold = new ColdPool(100);
@@ -170,19 +300,26 @@ export class Game {
   private readonly npcs = new NpcSystem();
   private readonly locks = new LockSystem();
   private readonly horde = new HordeController();
+  private defenseSpawnSerial = 0;
+  private homeDefenseRunning = false;
   private readonly warden = new BossBrain(WARDEN_PROFILE);
   private readonly worldEvents = new WorldEventDirector();
   private readonly raids = new RaidSystem();
+  /** Active map-raid compound for the current location (null = normal pool). */
+  private activeRaidSiteId: string | null = null;
   private readonly powerGrid = new PowerGrid();
   private readonly water = new WaterSystem();
+  private readonly spoilage = new SpoilageSystem();
   private readonly stats = new GameStatistics();
+  private spoilageNotifyCooldown = 0;
   private readonly dungeonResets = new DungeonResetSystem();
   private readonly contracts = new ContractSystem();
   private greyhavenVisits = 0;
   private worldDayAccum = 0;
   private nearFire = false;
   private ranged: RangedCombatSystem | null = null;
-  private readonly craftingSystem = new CraftingSystem(this.inventory);
+  private readonly blueprints = new BlueprintUnlockSystem();
+  private readonly craftingSystem = new CraftingSystem(this.inventory, undefined, this.blueprints);
   private readonly combatTargets = new CombatTargetSystem();
   private readonly combatDummies: CombatDummy[] = [];
   private readonly equipmentVisual: EquipmentVisualController;
@@ -190,6 +327,10 @@ export class Game {
   private readonly enemyPresentation: EnemyPresentation;
   private readonly playerDamage: PlayerDamageResolver;
   private readonly enemies: EnemySystem;
+  private readonly playerNoise = new PlayerNoiseSystem();
+  private lastMeleeImpactCount = 0;
+  private wasThreatened = false;
+  private wasNight = false;
   private readonly combat: MeleeCombatSystem;
   private readonly inventoryPanel: InventoryPanel;
   private readonly craftingPanel: CraftingPanel;
@@ -253,7 +394,15 @@ export class Game {
     this.notify = new NotificationService(uiRoot);
     this.fullLoader = new FullLoader(uiRoot);
     this.locations = new LocationManager(this.energy);
-    this.consumables = new ConsumableUseSystem(this.inventory, this.player.health, this.hunger, this.thirst, this.quickSlots, this.status);
+    this.consumables = new ConsumableUseSystem(
+      this.inventory,
+      this.player.health,
+      this.hunger,
+      this.thirst,
+      this.quickSlots,
+      this.status,
+      this.cold,
+    );
     this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
     this.combatPresentation = new CombatPresentation(this.scene, this.engine, uiRoot);
     this.enemyPresentation = new EnemyPresentation(this.scene);
@@ -282,12 +431,17 @@ export class Game {
         remove: (enemy) => { this.collision.remove(this.enemyCollisionLabel(enemy)); },
       },
       {
-        onPlayerDamage: (_enemy, damage) => {
+        onPlayerDamage: (enemy, damage) => {
           this.combatPresentation.showDamage(this.player.position, damage.finalDamage, 1.9);
           this.pulseCameraShake(0.45);
           GAME_AUDIO.playPlayerHit();
           this.lastDeathCause = "Infected attack";
-          if (!damage.becameDefeated) this.applyCombatWound(damage.finalDamage);
+          if (!damage.becameDefeated) this.applyCombatWound(damage.finalDamage, enemy.archetypeId);
+          // Bashing near base walls also cracks them (home fort loop).
+          if (this.locations.currentId === "home" && damage.finalDamage > 0) {
+            const pos = enemy.getCombatPosition();
+            this.damageNearbyStructure(pos.x, pos.z, Math.max(6, Math.round(damage.finalDamage * 1.4)));
+          }
           if (damage.becameDefeated) this.enterPlayerDefeatedState();
         },
         onEnemyHit: (enemy) => { this.enemyPresentation.showHit(enemy); },
@@ -353,6 +507,9 @@ export class Game {
     );
     this.inventoryPanel.setItemActionHandlers({
       use: (slot, stack) => {
+        if (isBlueprintItemId(stack.itemId)) {
+          return this.tryLearnBlueprint(slot, stack);
+        }
         const result = this.consumables.useFromInventory(slot, stack);
         if (result.accepted) {
           this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
@@ -386,11 +543,155 @@ export class Game {
     this.craftingPanel = new CraftingPanel(uiRoot, this.inventory, this.craftingSystem, this.hud.craftingToggle, (message) => {
       this.inventoryPanel.showStatus(message);
       // Only surface real problems as toasts (panel already confirms crafts).
-      if (message.toLowerCase().includes("full") || message.toLowerCase().includes("need") || message.toLowerCase().includes("missing")) {
+      if (message.toLowerCase().includes("full") || message.toLowerCase().includes("need") || message.toLowerCase().includes("missing") || message.toLowerCase().includes("workbench") || message.toLowerCase().includes("верстак")) {
         this.notify.push(message, "warn");
       }
     }, (open) => { this.setCraftingOpen(open); }, (recipeId, outputItemId) => {
       this.onItemCrafted(recipeId, outputItemId);
+    }, () => this.isNearCraftBench());
+    this.stationPanel = new StationPanel(
+      uiRoot,
+      this.stations,
+      (processId, station) => {
+        const result = this.stations.tryStart(processId, station, this.inventory);
+        if (result.accepted) {
+          this.notify.push(I18N.t("notify.stationStarted"), "info");
+          this.queueAutosaveSoon();
+          this.stationPanel.refresh();
+        }
+        return { accepted: result.accepted, reason: result.reason };
+      },
+      (open) => {
+        this.applyGameplayPanelState(
+          open || this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.containerPanel.isOpen
+            || this.vehiclePanel.isOpen || this.contractPanel?.isOpen || this.npcPanel?.isOpen
+            || this.fidelity.isOpen || this.pauseMenu.isOpen || this.localMap.isOpen,
+        );
+      },
+    );
+    this.vehiclePanel = new VehiclePanel(
+      uiRoot,
+      this.vehicle,
+      () => {
+        this.onVehicleAssemblyChanged();
+        this.queueAutosaveSoon();
+        this.vehiclePanel.refresh();
+      },
+      (open) => {
+        this.applyGameplayPanelState(
+          open || this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.containerPanel.isOpen
+            || this.stationPanel.isOpen
+            || this.fidelity.isOpen || this.pauseMenu.isOpen || this.localMap.isOpen
+            || this.contractPanel.isOpen || this.npcPanel?.isOpen,
+        );
+      },
+    );
+    this.containerPanel = new ContainerPanel(uiRoot, {
+      onChanged: () => {
+        this.containerPanel.refresh();
+        this.queueAutosaveSoon();
+      },
+      onVisibility: (open) => {
+        this.applyGameplayPanelState(
+          open || this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.stationPanel.isOpen
+            || this.vehiclePanel.isOpen || this.contractPanel.isOpen || this.npcPanel?.isOpen
+            || this.fidelity.isOpen || this.pauseMenu.isOpen || this.localMap.isOpen,
+        );
+      },
+    });
+    this.contractPanel = new ContractPanel(
+      uiRoot,
+      this.contracts,
+      (id) => {
+        if (!this.contracts.accept(id)) return;
+        this.notify.push(I18N.t("notify.contractAccepted"), "success");
+        this.contractPanel.refresh();
+        this.maybeStartHomeDefense();
+        this.queueAutosaveSoon();
+      },
+      (id) => {
+        this.claimContractReward(id);
+      },
+      (open) => {
+        this.applyGameplayPanelState(
+          open || this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.containerPanel.isOpen
+            || this.stationPanel.isOpen || this.vehiclePanel.isOpen || this.npcPanel?.isOpen
+            || this.fidelity.isOpen || this.pauseMenu.isOpen || this.localMap.isOpen,
+        );
+      },
+    );
+    this.npcPanel = new NpcPanel(
+      uiRoot,
+      this.npcs,
+      (choiceId) => this.handleNpcChoice(choiceId),
+      (offerId) => this.handleNpcTrade(offerId),
+      (open) => {
+        this.applyGameplayPanelState(
+          open || this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.containerPanel.isOpen
+            || this.stationPanel.isOpen || this.vehiclePanel.isOpen || this.contractPanel.isOpen
+            || this.skillsPanel?.isOpen
+            || this.fidelity.isOpen || this.pauseMenu.isOpen || this.localMap.isOpen,
+        );
+      },
+    );
+    this.skillsPanel = new SkillsPanel(
+      uiRoot,
+      this.skills,
+      this.experience,
+      (id) => this.purchaseSkill(id),
+      (open) => {
+        this.applyGameplayPanelState(
+          open || this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.containerPanel.isOpen
+            || this.stationPanel.isOpen || this.vehiclePanel.isOpen || this.contractPanel.isOpen
+            || this.npcPanel.isOpen || this.journalPanel?.isOpen
+            || this.fidelity.isOpen || this.pauseMenu.isOpen || this.localMap.isOpen,
+        );
+      },
+    );
+    this.journalPanel = new JournalPanel(
+      uiRoot,
+      this.journal,
+      this.reputation,
+      (open) => {
+        this.applyGameplayPanelState(
+          open || this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.containerPanel.isOpen
+            || this.stationPanel.isOpen || this.vehiclePanel.isOpen || this.contractPanel.isOpen
+            || this.npcPanel.isOpen || this.skillsPanel.isOpen || this.achievementsPanel?.isOpen
+            || this.questsPanel?.isOpen
+            || this.fidelity.isOpen || this.pauseMenu.isOpen || this.localMap.isOpen,
+        );
+      },
+    );
+    this.achievementsPanel = new AchievementsPanel(
+      uiRoot,
+      this.achievements,
+      (open) => {
+        this.applyGameplayPanelState(
+          open || this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.containerPanel.isOpen
+            || this.stationPanel.isOpen || this.vehiclePanel.isOpen || this.contractPanel.isOpen
+            || this.npcPanel.isOpen || this.skillsPanel.isOpen || this.journalPanel.isOpen
+            || this.questsPanel?.isOpen
+            || this.fidelity.isOpen || this.pauseMenu.isOpen || this.localMap.isOpen,
+        );
+      },
+    );
+    this.questsPanel = new QuestsPanel(
+      uiRoot,
+      this.quests,
+      () => this.syncQuestHud(),
+      (open) => {
+        this.applyGameplayPanelState(
+          open || this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.containerPanel.isOpen
+            || this.stationPanel.isOpen || this.vehiclePanel.isOpen || this.contractPanel.isOpen
+            || this.npcPanel.isOpen || this.skillsPanel.isOpen || this.journalPanel.isOpen
+            || this.achievementsPanel.isOpen
+            || this.fidelity.isOpen || this.pauseMenu.isOpen || this.localMap.isOpen,
+        );
+      },
+    );
+    this.quests.subscribe(() => {
+      this.syncQuestHud();
+      if (this.questsPanel.isOpen) this.questsPanel.refresh();
     });
     this.buildingPresentation = new BuildingPresentation(this.scene, this.collision);
     this.buildPanel = new BuildModePanel(
@@ -489,6 +790,8 @@ export class Game {
       if (resource.resourceKind === "pine-tree") this.completeQuest("collect-pine-logs");
       if (resource.resourceKind === "limestone-rock") this.completeQuest("collect-limestone");
       this.queueAutosaveSoon();
+    }, () => {
+      this.playerNoise.emitBurst("harvest");
     });
     this.backpackSlot.subscribe((_prev, stack) => {
       if (stack) {
@@ -508,6 +811,7 @@ export class Game {
     this.raids.generate(1001, 2);
     this.raids.generate(1002, 3);
     this.raids.generate(1003, 4);
+    this.syncRaidLocationUnlocks();
     this.stats.beginSession();
     validateContentRegistries((msg) => {
       if (import.meta.env.DEV) console.warn(msg);
@@ -528,6 +832,14 @@ export class Game {
       text: "Need fiber, a pack, and eyes on the highway? Work with us.",
       choices: Object.freeze([
         Object.freeze({ id: "accept", label: "I'll help.", next: "jon-accept", startQuest: "collect-pine-logs", grantReputation: 5 }),
+        Object.freeze({
+          id: "courier",
+          label: "Courier run.",
+          next: "jon-courier",
+          startQuest: "deliver-package",
+          grantItem: "quest-package" as const,
+          grantReputation: 2,
+        }),
         Object.freeze({ id: "leave", label: "Later.", end: true }),
       ]),
     }));
@@ -535,6 +847,36 @@ export class Game {
       id: "jon-accept",
       text: "Good. Return when you've stocked timber.",
       choices: Object.freeze([Object.freeze({ id: "ok", label: "Understood.", end: true })]),
+    }));
+    this.npcs.registerDialogue(Object.freeze({
+      id: "jon-courier",
+      text: "Sealed package for Mira. Don't open it — just hand it over.",
+      choices: Object.freeze([Object.freeze({ id: "ok", label: "On it.", end: true })]),
+    }));
+    this.npcs.registerDialogue(Object.freeze({
+      id: "mira-hello",
+      text: "Trading today. Fiber for bandages, scrap for rounds.",
+      choices: Object.freeze([
+        Object.freeze({ id: "browse", label: "Show wares.", end: true }),
+        Object.freeze({ id: "leave", label: "Later.", end: true }),
+      ]),
+    }));
+    this.npcs.registerDialogue(Object.freeze({
+      id: "mira-courier",
+      text: "That sealed package — for me?",
+      choices: Object.freeze([
+        Object.freeze({
+          id: "deliver",
+          label: "Deliver it.",
+          end: true,
+          consumeItem: "quest-package" as const,
+          completeQuest: "deliver-package",
+          grantReputation: 8,
+          grantTokens: 2,
+        }),
+        Object.freeze({ id: "browse", label: "Show wares first.", end: true }),
+        Object.freeze({ id: "leave", label: "Not yet.", end: true }),
+      ]),
     }));
     this.npcs.setOffers("trader-mira", Object.freeze([
       Object.freeze({
@@ -549,6 +891,14 @@ export class Game {
         currencyCost: 0,
       }),
     ]));
+    this.npcs.registerDialogue(Object.freeze({
+      id: CARAVAN_DIALOGUE_ID,
+      text: "Caravan's packing up soon. Browse while stock lasts.",
+      choices: Object.freeze([
+        Object.freeze({ id: "browse", label: "Show wares.", end: true }),
+        Object.freeze({ id: "leave", label: "Maybe later.", end: true }),
+      ]),
+    }));
     this.locks.register({ id: "motel-room-7", kind: "key", requiredKey: "rusted-key", locked: true });
     this.locks.register({ id: "factory-warehouse", kind: "power", locked: true, powered: false });
     this.locks.register({ id: "bunker-armory", kind: "access-card", requiredKey: "security-badge", locked: true });
@@ -634,10 +984,12 @@ export class Game {
         else {
           this.resetSessionForNewGame();
           this.grantStarterInventory();
+          this.beginZoneVisitForCurrentLocation();
         }
       } else {
         this.resetSessionForNewGame();
         this.grantStarterInventory();
+        this.beginZoneVisitForCurrentLocation();
       }
       this.gameStarted = true;
       // Dead save: keep death screen — do not re-strip (would wipe a restored loadout / already-empty corpse).
@@ -685,6 +1037,8 @@ export class Game {
       this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
       this.hud.setStatusEffects(this.status.ids());
       this.mainMenu.refresh();
+      this.syncDeathBagWorldPresence();
+      this.hud.setZoneTimer(this.zoneTimer.remaining);
     } catch (error) {
       console.error("[beginPlay]", error);
       this.saveHydrating = false;
@@ -713,8 +1067,11 @@ export class Game {
     this.player.stopMovement();
     this.experience.load({ level: 1, xp: 0, skillPoints: 0 });
     this.skills.load({});
+    this.syncSkillEffects();
     this.quests.load({});
     this.achievements.load([]);
+    this.blueprints.load([]);
+    this.syncQuestHud();
     this.farming.load([]);
     this.mailbox.load([]);
     this.reputation.load({});
@@ -732,15 +1089,30 @@ export class Game {
     });
     this.npcs.load({ tokens: 0 });
     this.raids.load([]);
+    this.activeRaidSiteId = null;
+    this.raids.generate(1001, 2);
+    this.raids.generate(1002, 3);
+    this.raids.generate(1003, 4);
+    this.syncRaidLocationUnlocks();
     this.contracts.load(undefined);
     this.powerGrid.resetToDefaults();
     this.water.load(undefined);
+    this.spoilage.clear();
     this.vehicle.load(undefined);
     this.dungeonResets.load(undefined);
     this.worldEvents.load([]);
+    for (const id of [...this.eventCaravanNpcIds]) this.despawnEventCaravan(id);
     this.deathBags.clear();
     this.status.clear();
-    this.campfireQueue.load(undefined);
+    this.stations.clear();
+    this.stationPanel.close();
+    this.vehiclePanel.close();
+    this.contractPanel.close();
+    this.npcPanel.close();
+    this.skillsPanel.close();
+    this.journalPanel.close();
+    this.achievementsPanel.close();
+    this.questsPanel.close();
     this.locks.load([
       { id: "motel-room-7", locked: true },
       { id: "factory-warehouse", locked: true, powered: false },
@@ -760,6 +1132,7 @@ export class Game {
     });
     this.locations.forceSet("home");
     this.worldClock.load(0.32);
+    this.wasNight = this.worldClock.isNight;
     this.sessionPlaytimeSec = 0;
     this.totalPlaytimeSec = 0;
     this.worldDayAccum = 0;
@@ -767,6 +1140,9 @@ export class Game {
     this.deathHandled = false;
     this.sneak.setActive(false);
     this.hud.setSneakActive(false);
+    this.zoneTimer.clear();
+    this.hud.setZoneTimer(null);
+    this.zoneForceExitLatched = false;
     this.inventoryPanel.close();
     this.craftingPanel.close();
     this.mapPanel.close();
@@ -774,6 +1150,7 @@ export class Game {
     this.camera.resetFraming();
     this.building.clear();
     this.buildingPresentation.sync(this.building);
+    this.syncBaseUtilities();
     this.clearWorldLootAndContainers();
     this.seedWorldLootDefaults();
   }
@@ -852,7 +1229,13 @@ export class Game {
     }
     this.worldClock.tick(frameDelta);
     this.worldDayAccum += frameDelta / 480;
+    this.hud.setWorldClock(this.worldClock.hourLabel, this.worldClock.isNight);
+    if (this.worldClock.isNight && !this.wasNight && this.player.health.alive) {
+      this.notify.push(I18N.t("notify.nightfall"), "warn");
+    }
+    this.wasNight = this.worldClock.isNight;
     this.worldEvents.tick(this.worldDayAccum);
+    this.syncEventCaravans();
     this.contracts.tick(this.worldDayAccum);
     const survivedDay = Math.floor(this.worldDayAccum);
     if (survivedDay >= 1) this.notifyAchievement("survive-day-1");
@@ -860,14 +1243,18 @@ export class Game {
     if (survivedDay >= 50) this.notifyAchievement("survive-day-50");
     const resets = this.dungeonResets.tick(this.worldDayAccum);
     if (resets.length > 0) {
-      this.notify.push(I18N.t("notify.dungeonReset", { names: resets.join(", ") }), "info");
+      this.applyDungeonResets(resets);
     }
     this.powerGrid.tick(frameDelta, this.worldClock.sunIntensity());
     this.water.tick(frameDelta, this.powerGrid.net >= 0 || this.powerGrid.storage > 1);
+    this.lighting.applyDayNight(this.worldClock.sunIntensity());
+    this.syncLanternPresentation();
+    this.syncBaseUtilityHud();
     if (frameDelta > 0 && this.player.health.alive) this.stats.tickPlaytime(frameDelta);
     this.quickSlots[0].tick(frameDelta);
     this.quickSlots[1].tick(frameDelta);
     this.tickSurvival(frameDelta);
+    this.tickZoneVisit(frameDelta);
     this.autosaveTimer += frameDelta;
     if (this.deferredSaveTimer > 0) {
       this.deferredSaveTimer -= frameDelta;
@@ -922,14 +1309,37 @@ export class Game {
       }
       this.player.update(delta, movement, this.camera.screenRight, this.camera.screenUp, this.sneak.isSneaking, speedMul);
       this.combat.update(delta);
+      if (this.combat.impactCount > this.lastMeleeImpactCount) {
+        this.lastMeleeImpactCount = this.combat.impactCount;
+        this.playerNoise.emitBurst("melee");
+      }
       if ((attackPressed || attackHeld) && this.combat.state === "ready") this.combat.requestAttack();
       this.tryLeaveLocationByEdge();
     }
+    const locomoting = movement.length() > 0.08 && this.player.health.alive
+      && !this.combat.movementCommitted && !this.harvesting.active;
+    this.playerNoise.setLocomotion({
+      moving: locomoting,
+      sneaking: this.sneak.isSneaking,
+      sprinting,
+    });
+    this.playerNoise.tick(frameDelta);
     this.combatTargets.update(this.player.position);
     this.enemies.update(frameDelta, {
       sneaking: this.sneak.isSneaking,
       sprinting,
+      noiseRadius: this.playerNoise.hearRadius,
+      noiseLevel: this.playerNoise.level,
+      acquireRangeMul: nightAcquireMul(this.worldClock.isNight),
+      hearRangeMul: nightHearMul(this.worldClock.isNight),
     });
+    const threat = this.enemies.peakThreatLevel();
+    const aggro = this.enemies.aggressiveCount();
+    this.hud.setThreatLevel(threat, aggro);
+    if (aggro > 0 && this.player.health.alive && !this.wasThreatened) {
+      this.notify.push(I18N.t("notify.threatDetected"), "warn");
+    }
+    this.wasThreatened = aggro > 0;
     this.combatTargets.update(this.player.position);
     this.world.update(frameDelta);
     this.interaction.update(frameDelta, this.player.position, this.player.facingYaw);
@@ -958,7 +1368,29 @@ export class Game {
               this.player.requestFacing(targetPosition);
             });
             if (interactionAccepted && selected instanceof WorldContainerEntity) {
-              this.lootContainerPrompt(selected);
+              if (!this.tryAccessLockedContainer(selected)) {
+                // Locked and missing key/power — stay closed.
+              } else if (selected.accessMode === "storage") {
+                this.inventoryPanel.close();
+                this.craftingPanel.close();
+                this.stationPanel.close();
+                this.vehiclePanel.close();
+                this.contractPanel.close();
+                this.npcPanel.close();
+                this.containerPanel.open(selected, this.inventory);
+              } else {
+                this.lootContainerPrompt(selected);
+              }
+            } else if (interactionAccepted && selected instanceof DeathBagEntity) {
+              this.lootDeathBag(selected.bagId);
+            } else if (interactionAccepted && selected?.interactionType === "station") {
+              this.openStationForInteractable(selected.interactionId);
+            } else if (interactionAccepted && selected?.interactionType === "npc") {
+              this.openNpcForInteractable(selected.interactionId);
+            } else if (interactionAccepted && selected?.interactionType === "door") {
+              this.interactBuiltDoor(selected.interactionId);
+            } else if (interactionAccepted && selected?.interactionType === "farm-plot") {
+              this.interactFarmPlot(selected.interactionId);
             }
           }
         }
@@ -990,6 +1422,9 @@ export class Game {
           const p = enemy.getCombatPosition();
           return Object.freeze({ kind: "enemy" as const, x: p.x, z: p.z, yaw: enemy.facingYaw });
         }),
+        ...this.deathBags.bagsAt(this.locations.currentId).map((bag) => (
+          Object.freeze({ kind: "death-bag" as const, x: bag.x, z: bag.z })
+        )),
       ]),
     });
     this.hud.updateMinimap(minimapFrame);
@@ -1002,12 +1437,27 @@ export class Game {
       this.hud.setGroundLootActionContext(ITEM_REGISTRY.get(target.stack.itemId), target.stack.quantity);
     } else if (target instanceof WorldContainerEntity) {
       this.hud.setPrimaryActionContext("generic");
+    } else if (target instanceof DeathBagEntity) {
+      this.hud.setPrimaryActionContext("generic");
+    } else if (target?.interactionType === "station") {
+      if (isBuiltPowerInteractionId(target.interactionId)) {
+        this.updatePowerHudContext(target.interactionId);
+      } else {
+        this.hud.setPrimaryActionContext("generic");
+      }
+    } else if (target?.interactionType === "npc") {
+      this.hud.setPrimaryActionContext("generic");
+    } else if (target?.interactionType === "door") {
+      this.updateDoorHudContext(target.interactionId);
+    } else if (target?.interactionType === "farm-plot") {
+      this.updateFarmHudContext(target.interactionId);
     } else this.hud.setPrimaryActionContext(target ? "generic" : "none");
     this.camera.update(frameDelta, this.player.position);
     this.groundLoot.update(frameDelta);
     this.resultFeedback.update(frameDelta);
     this.combatPresentation.update(frameDelta, combatTarget);
     this.enemyPresentation.update(frameDelta, this.enemies.agents);
+    if (this.stationPanel.isOpen) this.stationPanel.tick();
     if (this.inventoryPanel.isOpen) {
       this.inventoryPanel.updateLiveFrame({
         currentHealth: this.player.health.currentHealth,
@@ -1030,12 +1480,17 @@ export class Game {
     this.thirst.tickDrain(SURVIVAL_CONFIG.thirst.drainPerSecond, frameDelta);
     this.energy.tickRegen(SURVIVAL_CONFIG.energy.regenPerSecond * this.skills.energyRegenMultiplier(), frameDelta);
     this.ranged?.tick(frameDelta);
-    this.campfireQueue.setFrozen(this.fidelity.motionFrozen);
-    this.campfireQueue.tick(frameDelta);
+    this.stations.setFrozen(this.fidelity.motionFrozen);
+    const stationDone = this.stations.tick(frameDelta);
+    for (const done of stationDone) {
+      this.deliverStationOutput(done.stack, done.processId);
+    }
     this.worldClock.setFrozen(this.fidelity.motionFrozen);
     this.worldClock.tick(frameDelta);
     this.farming.tick(frameDelta);
-    this.horde.tick(frameDelta);
+    this.world.syncFarmBeds(this.farming.all);
+    this.tickFoodSpoilage(frameDelta);
+    this.tickHomeDefense(frameDelta);
     let warmth = 0;
     for (const slot of this.equipment.getSlots()) {
       const stack = slot.stack;
@@ -1052,6 +1507,7 @@ export class Game {
       this.player.health.applyDamage(coldDamage);
       if (this.player.health.dead) this.enterPlayerDefeatedState();
     }
+    this.hud.setColdExposure(this.cold.ratio);
     const statusTick = this.status.tick(frameDelta);
     if (statusTick.healthDelta > 0) this.player.health.heal(statusTick.healthDelta);
     else if (statusTick.healthDelta < 0) {
@@ -1069,10 +1525,176 @@ export class Game {
     }
   }
 
+  private tickFoodSpoilage(dt: number): void {
+    if (dt <= 0 || !this.gameStarted || !this.player.health.alive) return;
+    this.spoilageNotifyCooldown = Math.max(0, this.spoilageNotifyCooldown - dt);
+    let spoiled = this.spoilage.tickPlayer(this.inventory, dt, SPOIL_RATE_PLAYER);
+    for (const container of this.worldContainers) {
+      if (container.accessMode !== "storage") continue;
+      spoiled += this.spoilage.tickContainer(container, dt, this.spoilRateForContainer(container.interactionId));
+    }
+    if (spoiled > 0 && this.spoilageNotifyCooldown <= 0) {
+      this.notify.push(I18N.t("notify.foodSpoiled"), "warn");
+      this.spoilageNotifyCooldown = 12;
+    }
+  }
+
+  private spoilRateForContainer(containerId: string): number {
+    const instanceId = pieceIdFromBuiltChestContainer(containerId);
+    if (!instanceId) return SPOIL_RATE_CHEST;
+    const piece = this.building.all.find((p) => p.id === instanceId);
+    if (!piece || !isColdStoragePiece(piece.pieceId)) return SPOIL_RATE_CHEST;
+    const powered = this.powerGrid.isPowered(powerDeviceIdForPiece(instanceId));
+    // Cold-box is always "enabled" as a consumer when placed (see syncBuildDevice defaults).
+    return powered ? SPOIL_RATE_FRIDGE_ON : SPOIL_RATE_FRIDGE_OFF;
+  }
+
+  private tickZoneVisit(frameDelta: number): void {
+    if (!this.gameStarted || this.player.health.dead || this.mapPanel.isOpen) {
+      this.hud.setZoneTimer(this.zoneTimer.remaining);
+      return;
+    }
+    if (this.fidelity.motionFrozen || frameDelta <= 0) {
+      this.hud.setZoneTimer(this.zoneTimer.remaining);
+      return;
+    }
+    const tick = this.zoneTimer.tick(frameDelta);
+    this.hud.setZoneTimer(tick.remaining);
+    if (tick.warn === "half") this.notify.push(I18N.t("notify.zoneTimeHalf"), "info");
+    if (tick.warn === "minute") this.notify.push(I18N.t("notify.zoneTimeMinute"), "warn");
+    if (tick.expired && !this.zoneForceExitLatched) {
+      this.zoneForceExitLatched = true;
+      this.forceExitZoneForTimer();
+    }
+  }
+
+  /** LDOE-style: zone clock hits zero → kick to overworld (south edge transit). */
+  private forceExitZoneForTimer(): void {
+    this.inventoryPanel.close();
+    this.craftingPanel.close();
+    this.localMap.close();
+    this.setBuildMode(false);
+    this.combat.cancelAttack();
+    this.harvesting.cancel();
+    this.player.stopMovement();
+    this.notify.push(I18N.t("notify.zoneTimeUp"), "error");
+    // Snapshot harvest so returning later keeps progress; enemies respawn on re-enter.
+    this.loadedHarvestResources = this.world.serializeHarvestState();
+    this.persistSave(false);
+    this.mapPanel.openFromEdge(this.locations.currentId, "s");
+    this.zoneTimer.clear();
+    this.hud.setZoneTimer(null);
+  }
+
+  private beginZoneVisitForCurrentLocation(): void {
+    this.zoneForceExitLatched = false;
+    this.zoneTimer.start(this.locations.currentDefinition);
+    this.hud.setZoneTimer(this.zoneTimer.remaining);
+  }
+
   private syncHudNeeds(): void {
     this.hud.setNeeds(this.hunger.ratio, this.thirst.ratio, this.energy.ratio);
     const xpRatio = this.experience.currentXp / Math.max(1, this.experience.xpToNextLevel);
     this.hud.setLevel(this.experience.currentLevel, xpRatio);
+    this.syncQuestHud();
+  }
+
+  private syncQuestHud(): void {
+    const row = trackedQuestRow(this.quests);
+    if (!row) {
+      this.hud.setQuestTracker(null);
+      return;
+    }
+    this.hud.setQuestTracker({
+      title: questTitle(row.id, row.title),
+      progress: row.progress,
+      target: row.target,
+      completed: row.completed,
+    });
+  }
+
+  private syncBaseUtilityHud(): void {
+    if (this.locations.currentId !== "home" || !this.gameStarted) {
+      this.hud.setBaseUtility(null);
+      return;
+    }
+    const view = formatBaseUtilityHud({
+      production: this.powerGrid.production,
+      consumption: this.powerGrid.consumption,
+      storage: this.powerGrid.storage,
+      batteryCapacity: this.powerGrid.batteryCapacity,
+      cleanWater: this.water.cleanWater,
+      cleanCapacity: this.water.cleanCapacity,
+      dirtyWater: this.water.dirtyWater,
+      dirtyCapacity: this.water.dirtyCapacity,
+      pumpOn: this.water.pumpOn,
+      purifierOn: this.water.purifierOn,
+      hasCollector: this.water.hasCollector,
+    });
+    this.hud.setBaseUtility(view);
+  }
+
+  /** Lit only when lantern is enabled AND the grid can actually supply it. */
+  private syncLanternPresentation(): void {
+    if (!this.gameStarted) return;
+    const lit = new Map<string, boolean>();
+    for (const piece of this.building.all) {
+      if (piece.pieceId !== "lantern-post") continue;
+      lit.set(piece.id, this.powerGrid.isPowered(powerDeviceIdForPiece(piece.id)));
+    }
+    this.buildingPresentation.syncLanternLights(lit);
+  }
+
+  private updatePowerHudContext(interactionId: string): void {
+    const instanceId = pieceInstanceFromBuiltPower(interactionId);
+    if (!instanceId) {
+      this.hud.setPrimaryActionContext("generic");
+      return;
+    }
+    const device = this.powerGrid.getDevice(powerDeviceIdForPiece(instanceId));
+    if (!device) {
+      this.hud.setPrimaryActionContext("generic");
+      return;
+    }
+    let label = I18N.t("hud.interact");
+    if (device.kind === "generator" || device.kind === "advanced-generator") {
+      if (device.fueled !== true) label = I18N.t("hud.utilityFuel");
+      else label = device.enabled ? I18N.t("hud.utilityOff") : I18N.t("hud.utilityOn");
+    } else if (device.kind === "radio") {
+      label = device.enabled ? I18N.t("hud.utilityOff") : I18N.t("hud.utilityOn");
+    } else if (device.kind === "lamp" || device.kind === "floodlight") {
+      label = device.enabled ? I18N.t("hud.utilityOff") : I18N.t("hud.utilityOn");
+    } else {
+      label = device.enabled ? I18N.t("hud.utilityOff") : I18N.t("hud.utilityOn");
+    }
+    this.hud.setFarmPlotActionContext(label, null);
+  }
+
+  private updateDoorHudContext(interactionId: string): void {
+    const instanceId = pieceInstanceFromBuiltDoor(interactionId);
+    if (!instanceId) {
+      this.hud.setPrimaryActionContext("generic");
+      return;
+    }
+    const open = this.building.isPassageOpen(instanceId);
+    this.hud.setFarmPlotActionContext(
+      open ? I18N.t("hud.doorClose") : I18N.t("hud.doorOpen"),
+      null,
+    );
+  }
+
+  private interactBuiltDoor(interactionId: string): void {
+    if (!isBuiltDoorInteractionId(interactionId)) return;
+    const instanceId = pieceInstanceFromBuiltDoor(interactionId);
+    if (!instanceId) return;
+    const next = this.building.togglePassage(instanceId);
+    if (next === null) return;
+    this.buildingPresentation.sync(this.building);
+    this.notify.push(
+      next ? I18N.t("notify.doorOpened") : I18N.t("notify.doorClosed"),
+      "info",
+    );
+    this.queueAutosaveSoon();
   }
 
   private syncQuickHud(): void {
@@ -1190,7 +1812,21 @@ export class Game {
       const hasAny = ["furniture", "structure", "floor"].some((layer) =>
         this.building.pieceAt(cursor.gx, cursor.gz, layer as "furniture" | "structure" | "floor"),
       );
-      this.buildingPresentation.setGhost(true, cursor.gx, cursor.gz, this.building.currentRotation, hasAny, this.building.selected);
+      this.buildingPresentation.setGhost(true, cursor.gx, cursor.gz, this.building.currentRotation, hasAny, this.building.selected, "demolish");
+      return;
+    }
+    if (this.building.isRepairMode) {
+      const target = this.building.repairTargetAt(cursor.gx, cursor.gz);
+      const needs = target ? target.hp < target.maxHp : false;
+      this.buildingPresentation.setGhost(
+        true,
+        cursor.gx,
+        cursor.gz,
+        this.building.currentRotation,
+        needs,
+        target?.pieceId ?? this.building.selected,
+        "repair",
+      );
       return;
     }
     const valid = this.building.canPlace(cursor.gx, cursor.gz) && this.building.canAfford(this.inventory);
@@ -1201,7 +1837,23 @@ export class Game {
       this.building.currentRotation,
       valid,
       this.building.selected,
+      "place",
     );
+  }
+
+  private damageNearbyStructure(worldX: number, worldZ: number, amount: number): void {
+    const target = this.building.nearestStructure(worldX, worldZ, 4.2);
+    if (!target) return;
+    const result = this.building.damagePiece(target.id, amount);
+    if (result.destroyed && result.piece) {
+      this.unregisterBuiltPieceInteractable(result.piece);
+      this.syncBaseUtilities();
+      this.notify.push(I18N.t("notify.structureDestroyed"), "warn");
+    } else if (result.piece) {
+      // Throttle spammy “damaged” toasts via chance.
+      if (Math.random() < 0.22) this.notify.push(I18N.t("notify.structureDamaged"), "warn");
+    }
+    this.buildingPresentation.sync(this.building);
   }
 
   private tryBuildAction(): void {
@@ -1217,9 +1869,27 @@ export class Game {
         this.notify.push(I18N.t("notify.nothingToRemove"), "warn");
         return;
       }
+      this.unregisterBuiltPieceInteractable(removed);
+      this.syncBaseUtilities();
       this.buildingPresentation.sync(this.building);
       this.buildPanel.refresh(this.inventory);
       this.refreshBuildGhost();
+      this.queueAutosaveSoon();
+      return;
+    }
+    if (this.building.isRepairMode) {
+      const result = this.building.tryRepairAt(this.inventory, cursor.gx, cursor.gz);
+      if (!result.ok) {
+        if (result.reason === "none") this.notify.push(I18N.t("notify.nothingToRepair"), "warn");
+        else if (result.reason === "full") this.notify.push(I18N.t("notify.alreadyRepaired"), "info");
+        else this.notify.push(I18N.t("notify.repairNeedMats"), "warn");
+        return;
+      }
+      this.notify.push(I18N.t("notify.structureRepaired"), "success");
+      this.buildingPresentation.sync(this.building);
+      this.buildPanel.refresh(this.inventory);
+      this.refreshBuildGhost();
+      this.queueAutosaveSoon();
       return;
     }
     const result = this.building.placeWithCost(this.inventory, cursor.gx, cursor.gz);
@@ -1227,6 +1897,8 @@ export class Game {
       this.notify.push(this.buildFailMessage(result.reason), "warn");
       return;
     }
+    this.registerBuiltPieceInteractable(result.piece);
+    this.syncBaseUtilities();
     this.buildingPresentation.sync(this.building);
     this.buildPanel.refresh(this.inventory);
     this.refreshBuildGhost();
@@ -1235,6 +1907,290 @@ export class Game {
     if (result.piece.pieceId === "floor-l1" || result.piece.layer === "floor") this.completeQuest("build-floor");
     if (result.piece.pieceId === "chest-small" || result.piece.pieceId.includes("chest")) this.completeQuest("build-chest");
     if (result.piece.layer === "structure") this.completeQuest("build-wall");
+  }
+
+  private registerBuiltPieceInteractable(piece: PlacedBuildPiece): void {
+    // Process stations take priority over pure craft tables for interaction routing.
+    if (isStationPiece(piece.pieceId)) {
+      if (this.builtStationInteractables.has(piece.id)) return;
+      const pos = gridToWorld(piece.gridX, piece.gridZ);
+      const id = `${builtStationInteractableId(piece.id)}:${piece.pieceId}`;
+      const tagged = createInteractable({
+        id,
+        type: "station",
+        position: () => Object.freeze({ x: pos.x, y: 0, z: pos.z }),
+        radius: () => 0.95,
+        enabled: () => true,
+      });
+      this.builtStationInteractables.set(piece.id, tagged);
+      this.world.addInteractable(tagged);
+      return;
+    }
+    if (isCraftBenchPiece(piece.pieceId)) {
+      if (this.builtStationInteractables.has(piece.id)) return;
+      const pos = gridToWorld(piece.gridX, piece.gridZ);
+      const id = builtCraftInteractableId(piece.id, piece.pieceId);
+      const tagged = createInteractable({
+        id,
+        type: "station",
+        position: () => Object.freeze({ x: pos.x, y: 0, z: pos.z }),
+        radius: () => 0.95,
+        enabled: () => true,
+      });
+      this.builtStationInteractables.set(piece.id, tagged);
+      this.world.addInteractable(tagged);
+      return;
+    }
+    if (isStandalonePowerPiece(piece.pieceId)) {
+      if (this.builtStationInteractables.has(piece.id)) return;
+      const pos = gridToWorld(piece.gridX, piece.gridZ);
+      const id = builtPowerInteractableId(piece.id, piece.pieceId);
+      const tagged = createInteractable({
+        id,
+        type: "station",
+        position: () => Object.freeze({ x: pos.x, y: 0, z: pos.z }),
+        radius: () => 0.95,
+        enabled: () => true,
+      });
+      this.builtStationInteractables.set(piece.id, tagged);
+      this.world.addInteractable(tagged);
+      return;
+    }
+    if (isDoorPiece(piece.pieceId)) {
+      if (this.builtStationInteractables.has(piece.id)) return;
+      const pos = gridToWorld(piece.gridX, piece.gridZ);
+      const id = builtDoorInteractableId(piece.id, piece.pieceId);
+      const tagged = createInteractable({
+        id,
+        type: "door",
+        position: () => Object.freeze({ x: pos.x, y: 0, z: pos.z }),
+        radius: () => 1.05,
+        enabled: () => true,
+      });
+      this.builtStationInteractables.set(piece.id, tagged);
+      this.world.addInteractable(tagged);
+      return;
+    }
+    if (!isChestPiece(piece.pieceId)) return;
+    const capacity = CHEST_PIECE_CAPACITY[piece.pieceId] ?? 8;
+    const id = builtChestContainerId(piece.id);
+    if (this.worldContainers.some((c) => c.interactionId === id)) return;
+    const title = BUILD_PIECES.find((p) => p.id === piece.pieceId)?.title ?? "Chest";
+    const pos = gridToWorld(piece.gridX, piece.gridZ);
+    const entity = new WorldContainerEntity(
+      id,
+      title,
+      Object.freeze({ x: pos.x, y: 0, z: pos.z }),
+      capacity,
+      [],
+      "storage",
+    );
+    this.worldContainers.push(entity);
+    this.world.addInteractable(entity);
+  }
+
+  private unregisterBuiltPieceInteractable(piece: PlacedBuildPiece): void {
+    const station = this.builtStationInteractables.get(piece.id);
+    if (station) {
+      this.world.removeInteractable(station);
+      this.builtStationInteractables.delete(piece.id);
+    }
+    if (isChestPiece(piece.pieceId)) {
+      const id = builtChestContainerId(piece.id);
+      const index = this.worldContainers.findIndex((c) => c.interactionId === id);
+      if (index < 0) return;
+      const entity = this.worldContainers[index]!;
+      // Dump remaining stacks into player inv / mailbox when chest is demolished.
+      for (let i = 0; i < entity.inventory.slotCount; i += 1) {
+        const stack = entity.inventory.take(i);
+        if (!stack) continue;
+        if (!this.inventory.tryInsert(stack).accepted) {
+          this.mailbox.deliver(stack, this.inventory);
+        }
+      }
+      this.world.removeInteractable(entity);
+      this.worldContainers.splice(index, 1);
+      if (this.containerPanel.currentContainerId === id) this.containerPanel.close();
+    }
+  }
+
+  /** Rebuild station interactables from placed pieces; ensure chests exist for each chest piece. */
+  private syncBuiltPieceInteractables(): void {
+    for (const ix of this.builtStationInteractables.values()) {
+      this.world.removeInteractable(ix);
+    }
+    this.builtStationInteractables.clear();
+    for (const piece of this.building.all) {
+      this.registerBuiltPieceInteractable(piece);
+    }
+    this.syncBaseUtilities();
+  }
+
+  /**
+   * Link placed generators/lamps/furnace draws + water infrastructure to power/water systems.
+   */
+  private syncBaseUtilities(): void {
+    const keep = new Set<string>();
+    let hasWater = false;
+    for (const piece of this.building.all) {
+      if (isWaterInfrastructurePiece(piece.pieceId)) hasWater = true;
+      const spec = POWER_PIECE_SPECS[piece.pieceId];
+      if (!spec) continue;
+      const id = powerDeviceIdForPiece(piece.id);
+      keep.add(id);
+      this.powerGrid.syncBuildDevice({
+        id,
+        kind: spec.kind,
+        label: spec.label,
+        production: spec.production,
+        consumption: spec.consumption,
+        priority: spec.priority,
+        enabled: !spec.needsFuel,
+        fueled: spec.needsFuel ? false : undefined,
+      });
+    }
+    this.powerGrid.pruneBuildDevicesExcept(keep);
+    this.water.setCollector(hasWater);
+    this.water.setPump(hasWater);
+    this.water.setPurifier(hasWater);
+  }
+
+  private interactPowerUtility(interactionId: string): void {
+    if (!isBuiltPowerInteractionId(interactionId)) return;
+    const instanceId = pieceInstanceFromBuiltPower(interactionId);
+    if (!instanceId) return;
+    const deviceId = powerDeviceIdForPiece(instanceId);
+    const device = this.powerGrid.getDevice(deviceId);
+    if (!device) {
+      this.syncBaseUtilities();
+    }
+    const live = this.powerGrid.getDevice(deviceId);
+    if (!live) return;
+
+    let fuelConsumed = false;
+    if (
+      (live.kind === "generator" || live.kind === "advanced-generator")
+      && live.fueled !== true
+    ) {
+      if (!this.tryConsumeInventoryItem("charcoal")) {
+        this.notify.push(I18N.t("notify.genNeedFuel"), "warn");
+        return;
+      }
+      fuelConsumed = true;
+    }
+
+    const result = this.powerGrid.tryInteractDevice(deviceId, fuelConsumed);
+    if (!result.ok) {
+      if (result.message === "need-fuel") this.notify.push(I18N.t("notify.genNeedFuel"), "warn");
+      return;
+    }
+    switch (result.message) {
+      case "fueled":
+        this.notify.push(I18N.t("notify.genFueled"), "success");
+        break;
+      case "on": {
+        if (live.kind === "radio") {
+          if (!this.powerGrid.isPowered(deviceId)) {
+            this.notify.push(I18N.t("notify.radioNoPower"), "warn");
+          } else {
+            this.notify.push(I18N.t("notify.radioOn"), "info");
+            this.pushRadioBriefing();
+          }
+          break;
+        }
+        const isLamp = live.kind === "lamp" || live.kind === "floodlight";
+        if (isLamp && !this.powerGrid.isPowered(deviceId)) {
+          this.notify.push(I18N.t("notify.lampNoPower"), "warn");
+        } else {
+          this.notify.push(isLamp ? I18N.t("notify.lampOn") : I18N.t("notify.genOn"), "info");
+        }
+        break;
+      }
+      case "off":
+        if (live.kind === "radio") {
+          this.notify.push(I18N.t("notify.radioOff"), "info");
+          break;
+        }
+        this.notify.push(
+          live.kind === "lamp" || live.kind === "floodlight"
+            ? I18N.t("notify.lampOff")
+            : I18N.t("notify.genOff"),
+          "info",
+        );
+        break;
+      default:
+        break;
+    }
+    this.syncLanternPresentation();
+    this.queueAutosaveSoon();
+  }
+
+  /** Home radio scan: list open world events + uncleared raid compounds. */
+  private pushRadioBriefing(): void {
+    const briefing = composeRadioBriefing(
+      this.worldEvents.events.map((e) => ({
+        title: e.title,
+        danger: e.danger,
+        claimed: e.claimed,
+        locationTitle: locationTitle(eventAnchorLocation(e)),
+      })),
+      this.raids.list().map((r) => ({
+        title: r.title,
+        threat: r.threat,
+        cleared: r.cleared,
+      })),
+    );
+    if (briefing.empty) {
+      this.notify.push(I18N.t("notify.radioScanClear"), "info");
+      return;
+    }
+    this.notify.push(I18N.t("notify.radioScan"), "info");
+    for (const line of briefing.lines) {
+      if (line.kind === "event") {
+        this.notify.push(
+          line.where
+            ? I18N.t("notify.radioEventAt", { title: line.title, danger: line.level, where: line.where })
+            : I18N.t("notify.radioEvent", { title: line.title, danger: line.level }),
+          line.level >= 4 ? "warn" : "info",
+        );
+      } else {
+        this.notify.push(
+          I18N.t("notify.radioRaid", { title: line.title, threat: line.level }),
+          "warn",
+        );
+      }
+    }
+  }
+
+  private tryLearnBlueprint(slotIndex: number, expected: import("../items/ItemSystem").ItemStack): boolean {
+    const stack = this.inventory.getSlot(slotIndex).stack;
+    if (!stack || stack !== expected) return false;
+    if (!isBlueprintItemId(stack.itemId)) return false;
+    if (this.blueprints.has(stack.itemId)) {
+      this.notify.push(I18N.t("notify.blueprintKnown", {
+        name: itemName(ITEM_REGISTRY.get(stack.itemId)),
+      }), "warn");
+      return false;
+    }
+    if (!this.blueprints.tryLearn(stack.itemId)) return false;
+    if (stack.quantity <= 1) this.inventory.exchangeWholeStack(slotIndex, stack, null);
+    else this.inventory.exchangeWholeStack(slotIndex, stack, createItemStack(stack.itemId, stack.quantity - 1));
+    this.notify.push(I18N.t("notify.blueprintLearned", {
+      name: itemName(ITEM_REGISTRY.get(stack.itemId)),
+    }), "success");
+    if (this.craftingPanel.isOpen) this.craftingPanel.refresh();
+    this.queueAutosaveSoon();
+    return true;
+  }
+
+  private tryConsumeInventoryItem(itemId: import("../items/ItemId").ItemId): boolean {
+    const slot = this.inventory.findFirstSlotByItemId(itemId);
+    if (slot === null) return false;
+    const stack = this.inventory.getSlot(slot).stack;
+    if (!stack) return false;
+    if (stack.quantity <= 1) this.inventory.exchangeWholeStack(slot, stack, null);
+    else this.inventory.exchangeWholeStack(slot, stack, createItemStack(itemId, stack.quantity - 1));
+    return true;
   }
 
   private onItemCrafted(recipeId: string, outputItemId: string): void {
@@ -1286,6 +2242,9 @@ export class Game {
     if (result.completedNow) {
       this.experience.addXp(result.rewardXp);
       this.notify.push(I18N.t("notify.questComplete", { xp: result.rewardXp }), "success");
+      if (this.quests.trackedId === id) {
+        this.quests.setTracked(nextActiveQuestId(this.quests));
+      }
       this.syncHudNeeds();
     }
   }
@@ -1311,6 +2270,19 @@ export class Game {
     if (edge === "e") this.player.visual.root.position.x = pull;
     if (edge === "w") this.player.visual.root.position.x = -pull;
     this.mapPanel.openFromEdge(this.locations.currentId, edge);
+  }
+
+  /** Assembly complete / load → unlock overworld vehicle travel mode. */
+  private syncVehicleTravelUnlock(): void {
+    if (this.vehicle.hasAnyVehicle) this.locations.unlockVehicle();
+  }
+
+  private onVehicleAssemblyChanged(): void {
+    const already = this.locations.hasVehicle;
+    this.syncVehicleTravelUnlock();
+    if (!already && this.vehicle.hasAnyVehicle) {
+      this.notify.push(I18N.t("notify.vehicleAssembled"), "success");
+    }
   }
 
   private enterLocationFromMap(id: LocationId): void {
@@ -1358,6 +2330,7 @@ export class Game {
       if (!this.journal.hasNote(note.id)) {
         this.journal.addNote(note.id, `${note.title}: ${note.text}`);
         this.notify.push(I18N.t("notify.journal", { title: note.title }), "info");
+        if (journalCounts(this.journal).notes >= 5) this.notifyAchievement("journal-archivist");
       }
     }
     this.experience.addXp(5);
@@ -1372,11 +2345,18 @@ export class Game {
     if (id !== "home") this.notifyAchievement("explorer");
     if (id === "old-highway") this.notifyAchievement("road-explorer");
     if (id === "survivor-camp") {
-      this.npcs.beginDialogue("quest-jon", "jon-hello");
       this.reputation.add("frontier-survivors", 2);
+      this.maybeUnlockFactionAlly();
+      this.notify.push(I18N.t("notify.campHub"), "info");
     }
-    if (id === "ironbound-fort") this.reputation.add("ironbound-collective", 3);
-    if (id === "wayfarer-post") this.reputation.add("wayfarer-network", 3);
+    if (id === "ironbound-fort") {
+      this.reputation.add("ironbound-collective", 3);
+      this.maybeUnlockFactionAlly();
+    }
+    if (id === "wayfarer-post") {
+      this.reputation.add("wayfarer-network", 3);
+      this.maybeUnlockFactionAlly();
+    }
     if (id.startsWith("greyhaven") || id.startsWith("metro") || id === "city-sewers") {
       this.greyhavenVisits += 1;
       this.notifyAchievement("city-walker");
@@ -1396,27 +2376,53 @@ export class Game {
       this.warden.acquire();
       this.notify.push(I18N.t("notify.bossStirs", { name: this.warden.profile.displayName }), "warn");
     }
-    if (id === "ash-jackal-outpost") {
-      const raid = this.raids.list()[0];
-      if (raid && !raid.cleared) this.notify.push(I18N.t("notify.raidNearby", { title: raid.title }), "warn");
+    const openRaid = unclearedRaidAt(this.raids.list(), id);
+    if (openRaid) {
+      this.notify.push(I18N.t("notify.raidObjective", { title: openRaid.title }), "warn");
     }
-    const evt = this.worldEvents.events[0];
-    if (evt && !evt.claimed) this.notify.push(I18N.t("notify.worldEvent", { title: evt.title }), "info");
-    // Auto-resolve low-danger event when traveling into resource zones during active events.
-    if (evt && !evt.claimed && evt.danger <= 2 && id !== "home") {
-      const claim = this.worldEvents.claim(evt.id);
+    const exploreHit = firstExploreMatch(this.contracts.activeContracts, id);
+    if (exploreHit) {
+      const done = this.contracts.complete(exploreHit.id);
+      if (done) {
+        this.notify.push(I18N.t("notify.contractReady", { title: done.title }), "success");
+      }
+    }
+    const siteEvent = unclaimedEventAt(this.worldEvents.events, id);
+    if (siteEvent) {
+      this.notify.push(
+        I18N.t("notify.worldEventAt", { title: siteEvent.title, where: locationTitle(id) }),
+        siteEvent.danger >= 4 ? "warn" : "info",
+      );
+      const claim = this.worldEvents.claim(siteEvent.id);
       if (claim.accepted) {
-        const reward = rollNamedLoot(claim.lootProfile, claim.seed * 9973);
-        for (const stack of reward) {
-          if (!this.inventory.tryInsert(stack).accepted) this.mailbox.deliver(stack, this.inventory);
+        if (isBarterEventKind(siteEvent.kind)) {
+          this.spawnEventCaravan(siteEvent);
+          this.completeQuest("claim-world-event");
+          this.notifyAchievement("world-event-hunter");
+          this.notify.push(I18N.t("notify.caravanOpen", { title: siteEvent.title }), "success");
+          const traderId = eventTraderNpcId(siteEvent.id);
+          this.npcPanel.open(traderId, this.inventory, "trade");
+        } else {
+          const reward = rollNamedLoot(claim.lootProfile, claim.seed * 9973);
+          for (const stack of reward) {
+            if (!this.inventory.tryInsert(stack).accepted) this.mailbox.deliver(stack, this.inventory);
+          }
+          this.completeQuest("claim-world-event");
+          this.notifyAchievement("world-event-hunter");
+          this.notify.push(I18N.t("notify.claimedEvent", { title: siteEvent.title }), "success");
         }
-        this.completeQuest("claim-world-event");
-        this.notifyAchievement("world-event-hunter");
-        this.notify.push(I18N.t("notify.claimedEvent", { title: evt.title }), "success");
       }
     }
     this.persistSave(false);
     this.respawnLocationEnemies(id);
+    this.syncDeathBagWorldPresence();
+    this.syncHomeServiceInteractables();
+    this.ensureCampNpcInteractables();
+    this.syncEventCaravans();
+    this.ensureLockedSitePresence();
+    if (id !== "home") this.stopHomeDefenseEncounter();
+    else this.maybeStartHomeDefense();
+    this.beginZoneVisitForCurrentLocation();
     this.syncHudNeeds();
   }
 
@@ -1434,12 +2440,380 @@ export class Game {
     if (moved <= 0) this.notify.push(I18N.t("notify.cannotLoot"), "warn");
   }
 
+  private lootDeathBag(bagId: string): void {
+    const result = this.deathBags.lootInto(bagId, this.inventory);
+    if (result.inserted <= 0 && result.remaining > 0) {
+      this.notify.push(I18N.t("notify.inventoryFull"), "warn");
+      return;
+    }
+    if (result.gone) {
+      this.notify.push(I18N.t("notify.lootDeathBag"), "success");
+    } else {
+      this.notify.push(I18N.t("notify.lootDeathBagPartial"), "warn");
+    }
+    this.syncDeathBagWorldPresence();
+    this.syncHeldWeaponVisual();
+    this.equipmentVisual.resync();
+    this.queueAutosaveSoon();
+  }
+
+  private openStationForInteractable(interactionId: string): void {
+    if (isBuiltPowerInteractionId(interactionId)) {
+      this.interactPowerUtility(interactionId);
+      return;
+    }
+    if (isLockSupportId(interactionId)) {
+      this.interactLockSupport(interactionId);
+      return;
+    }
+    if (interactionId === "home-contract-board" || interactionId.includes("contract-board")) {
+      this.inventoryPanel.close();
+      this.stationPanel.close();
+      this.containerPanel.close();
+      this.craftingPanel.close();
+      this.vehiclePanel.close();
+      this.npcPanel.close();
+      this.mapPanel.close();
+      this.localMap.close();
+      this.contracts.ensureBoard(this.worldDayAccum);
+      this.contractPanel.open();
+      return;
+    }
+    // Assembly bench → vehicle bay (blueprints still via B near any craft table).
+    if (interactionId.includes("assembly-bench")) {
+      this.inventoryPanel.close();
+      this.stationPanel.close();
+      this.containerPanel.close();
+      this.craftingPanel.close();
+      this.contractPanel.close();
+      this.npcPanel.close();
+      this.mapPanel.close();
+      this.localMap.close();
+      this.vehiclePanel.open(this.inventory);
+      return;
+    }
+    if (isCraftBenchInteractionId(interactionId) && !interactionId.includes("metalwork")) {
+      this.inventoryPanel.close();
+      this.stationPanel.close();
+      this.containerPanel.close();
+      this.vehiclePanel.close();
+      this.contractPanel.close();
+      this.npcPanel.close();
+      this.mapPanel.close();
+      this.localMap.close();
+      this.syncCraftBenchTier();
+      this.craftingPanel.open();
+      return;
+    }
+    let kind: WorkstationKind | null = null;
+    // Built pieces encode catalog id after colon: built-station-build-3:furnace
+    const taggedPiece = interactionId.includes(":")
+      ? interactionId.slice(interactionId.lastIndexOf(":") + 1)
+      : null;
+    if (taggedPiece && taggedPiece in STATION_PIECE_TO_KIND) {
+      kind = STATION_PIECE_TO_KIND[taggedPiece]!;
+    } else if (interactionId.startsWith("campfire") || interactionId.includes("campfire")) {
+      kind = "campfire";
+    } else if (interactionId.startsWith("chopping") || interactionId.includes("woodwork")) {
+      kind = "woodworking";
+    } else if (interactionId.startsWith("furnace") || interactionId.includes("furnace")) {
+      kind = "furnace";
+    } else if (interactionId.includes("metalwork")) {
+      kind = "metalwork";
+    } else if (interactionId.includes("chemistry")) {
+      kind = "chemistry";
+    } else if (interactionId.includes("water-collector") || interactionId.includes("water")) {
+      // Prefer explicit collector piece; avoid matching random ids with "water" alone if none tagged.
+      if (interactionId.includes("water-collector") || interactionId.includes(":water")) {
+        kind = "water";
+      }
+    }
+    if (!kind && (interactionId.includes("composter") || interactionId.includes(":composter"))) {
+      kind = "composter";
+    }
+    if (!kind && (interactionId.includes("recycler") || interactionId.includes(":recycler"))) {
+      kind = "recycler";
+    }
+    if (!kind) return;
+    // Furnace catalog piece must exist when opening smelt via non-furnace surfaces,
+    // but standing at a built furnace always works.
+    if (kind === "furnace" && !interactionId.includes("furnace") && !this.hasBuiltStation("furnace")) {
+      this.notify.push(I18N.t("notify.stationNeedBuild"), "warn");
+      return;
+    }
+    if (kind === "metalwork" && !interactionId.includes("metalwork") && !this.hasBuiltStation("metalwork-bench")) {
+      this.notify.push(I18N.t("notify.stationNeedMetalwork"), "warn");
+      return;
+    }
+    if (kind === "chemistry" && !interactionId.includes("chemistry") && !this.hasBuiltStation("chemistry-station")) {
+      this.notify.push(I18N.t("notify.stationNeedChemistry"), "warn");
+      return;
+    }
+    if (kind === "water" && !interactionId.includes("water") && !this.hasBuiltStation("water-collector")) {
+      this.notify.push(I18N.t("notify.stationNeedWater"), "warn");
+      return;
+    }
+    if (kind === "composter" && !interactionId.includes("composter") && !this.hasBuiltStation("composter")) {
+      this.notify.push(I18N.t("notify.stationNeedComposter"), "warn");
+      return;
+    }
+    if (kind === "recycler" && !interactionId.includes("recycler") && !this.hasBuiltStation("recycler")) {
+      this.notify.push(I18N.t("notify.stationNeedRecycler"), "warn");
+      return;
+    }
+    this.inventoryPanel.close();
+    this.craftingPanel.close();
+    this.containerPanel.close();
+    this.vehiclePanel.close();
+    this.contractPanel.close();
+    this.npcPanel.close();
+    this.mapPanel.close();
+    this.localMap.close();
+    this.stationPanel.open(kind, this.inventory, {
+      furnaceUnlocked: this.hasBuiltStation("furnace") || kind === "furnace",
+      metalworkUnlocked: this.hasBuiltStation("metalwork-bench") || kind === "metalwork",
+      chemistryUnlocked: this.hasBuiltStation("chemistry-station") || kind === "chemistry",
+      waterUnlocked: this.hasBuiltStation("water-collector") || kind === "water",
+      composterUnlocked: this.hasBuiltStation("composter") || kind === "composter",
+      recyclerUnlocked: this.hasBuiltStation("recycler") || kind === "recycler",
+    });
+  }
+
+  /** Stand next to home workbench or a built assembly/metal table. */
+  private isNearCraftBench(): boolean {
+    const tier = this.getMaxNearCraftTier();
+    if (tier < 0) return false;
+    this.craftingSystem.setActiveBenchTier(tier);
+    return true;
+  }
+
+  private getMaxNearCraftTier(): number {
+    const benches: { x: number; z: number; enabled: boolean; tier: number }[] = [];
+    for (const ix of this.world.interactables) {
+      if (!isCraftBenchInteractionId(ix.interactionId)) continue;
+      if (!ix.isInteractionEnabled()) continue;
+      const p = ix.getInteractionPosition();
+      benches.push({
+        x: p.x,
+        z: p.z,
+        enabled: true,
+        tier: craftTierFromInteractionId(ix.interactionId),
+      });
+    }
+    return maxCraftBenchTierNear({
+      playerX: this.player.position.x,
+      playerZ: this.player.position.z,
+      range: CRAFT_BENCH_RANGE,
+      benches,
+    });
+  }
+
+  private syncCraftBenchTier(): void {
+    const tier = this.getMaxNearCraftTier();
+    if (tier >= 0) this.craftingSystem.setActiveBenchTier(tier);
+  }
+
+  /** Live primary-action label for farm beds (plant / water / grow % / harvest). */
+  private updateFarmHudContext(interactionId: string): void {
+    const plotId = plotIdFromInteractable(interactionId);
+    if (!plotId) {
+      this.hud.setPrimaryActionContext("generic");
+      return;
+    }
+    this.farming.ensurePlot(plotId);
+    const plot = this.farming.getPlot(plotId);
+    if (!plot) {
+      this.hud.setPrimaryActionContext("generic");
+      return;
+    }
+    const decision = decideFarmInteract(plot, this.inventory, this.farmInteractOptions());
+    let label = I18N.t("hud.interact");
+    let growth: number | null = null;
+    switch (decision.kind) {
+      case "plant":
+        label = I18N.t("hud.farmPlant");
+        break;
+      case "water":
+        label = I18N.t("hud.farmWater");
+        break;
+      case "fertilize":
+        label = I18N.t("hud.farmFertilize");
+        break;
+      case "harvest":
+        label = I18N.t("hud.farmHarvest");
+        break;
+      default:
+        if (decision.state === "empty") label = I18N.t("hud.farmPlant");
+        else {
+          label = I18N.t("hud.farmGrow");
+          growth = decision.growthPct;
+        }
+        break;
+    }
+    this.hud.setFarmPlotActionContext(label, growth);
+  }
+
+  private farmInteractOptions(): {
+    preferredQuickSeeds: readonly (import("../items/ItemId").ItemId | null | undefined)[];
+    baseCanIrrigate: boolean;
+  } {
+    return {
+      preferredQuickSeeds: Object.freeze([
+        this.quickSlots[0].current?.itemId,
+        this.quickSlots[1].current?.itemId,
+      ]),
+      baseCanIrrigate: this.water.cleanWater >= FARM_BASE_IRRIGATION,
+    };
+  }
+
+  private hasBuiltStation(pieceId: string): boolean {
+    return this.building.all.some((p) => p.pieceId === pieceId);
+  }
+
+  /** E on garden bed: plant → water → fertilize → harvest (context-sensitive). */
+  private interactFarmPlot(interactionId: string): void {
+    if (!isFarmPlotInteractionId(interactionId)) return;
+    const plotId = plotIdFromInteractable(interactionId);
+    if (!plotId) return;
+    this.farming.ensurePlot(plotId);
+    const plot = this.farming.getPlot(plotId);
+    if (!plot) return;
+    const decision = decideFarmInteract(plot, this.inventory, this.farmInteractOptions());
+
+    if (decision.blocked === "need-seed") {
+      this.notify.push(I18N.t("notify.farmNeedSeed"), "warn");
+      return;
+    }
+    if (decision.blocked === "need-water") {
+      this.notify.push(I18N.t("notify.farmNeedWater"), "warn");
+      return;
+    }
+
+    if (decision.kind === "plant" && decision.seedId) {
+      if (!this.farming.plant(plotId, decision.seedId, this.inventory)) {
+        this.notify.push(I18N.t("notify.farmNeedSeed"), "warn");
+        return;
+      }
+      this.notify.push(I18N.t("notify.farmPlanted", { name: itemName(decision.seedId) }), "success");
+      this.world.syncFarmBeds(this.farming.all);
+      this.queueAutosaveSoon();
+      return;
+    }
+
+    if (decision.kind === "water") {
+      const hasBottleWater = this.inventory.totalQuantity("clean-water") > 0
+        || this.inventory.totalQuantity("water-bottle") > 0
+        || this.inventory.totalQuantity("rain-water") > 0;
+      if (hasBottleWater) {
+        if (!this.farming.water(plotId, this.inventory)) {
+          this.notify.push(I18N.t("notify.farmNeedWater"), "warn");
+          return;
+        }
+      } else if (
+        this.water.irrigate(FARM_BASE_IRRIGATION)
+        && this.farming.water(plotId, this.inventory, { fromBaseTank: true })
+      ) {
+        // base tank irrigation
+      } else {
+        this.notify.push(I18N.t("notify.farmNeedWater"), "warn");
+        return;
+      }
+      this.notify.push(I18N.t("notify.farmWatered"), "success");
+      this.world.syncFarmBeds(this.farming.all);
+      this.queueAutosaveSoon();
+      return;
+    }
+
+    if (decision.kind === "fertilize") {
+      if (!this.farming.fertilize(plotId, this.inventory)) {
+        this.notify.push(I18N.t("notify.farmGrowing", { pct: String(decision.growthPct) }), "info");
+        return;
+      }
+      this.notify.push(I18N.t("notify.farmFertilized"), "success");
+      this.world.syncFarmBeds(this.farming.all);
+      this.queueAutosaveSoon();
+      return;
+    }
+
+    if (decision.kind === "harvest") {
+      const seedId = plot.seedId;
+      if (!this.farming.harvest(plotId, this.inventory)) {
+        this.notify.push(I18N.t("notify.inventoryFull"), "warn");
+        return;
+      }
+      this.notify.push(I18N.t("notify.farmHarvest"), "success");
+      this.completeQuest("farm-harvest");
+      if (seedId) this.journal.discoverItem(seedId);
+      this.world.syncFarmBeds(this.farming.all);
+      this.queueAutosaveSoon();
+      return;
+    }
+
+    // status
+    if (decision.state === "empty") {
+      this.notify.push(I18N.t("notify.farmNeedSeed"), "info");
+    } else {
+      this.notify.push(I18N.t("notify.farmGrowing", { pct: String(decision.growthPct) }), "info");
+    }
+  }
+
+  private deliverStationOutput(stack: import("../items/ItemSystem").ItemStack, processId: string): void {
+    if (this.inventory.tryInsert(stack).accepted) {
+      this.notify.push(I18N.t("notify.stationDone", {
+        name: itemName(stack.itemId),
+      }), "success");
+    } else {
+      this.mailbox.deliver(stack, this.inventory);
+      this.notify.push(I18N.t("notify.stationMailbox", {
+        name: itemName(stack.itemId),
+      }), "warn");
+    }
+    if (processId.startsWith("campfire:") && !processId.includes("charcoal")) {
+      this.completeQuest("cook-meal");
+      this.notifyAchievement("first-cook");
+    }
+    if (processId.includes("iron") || processId.includes("scrap")) {
+      this.completeQuest("smelt-iron");
+    }
+    this.stats.recordCraft();
+    this.journal.discoverItem(stack.itemId);
+    this.stationPanel.refresh();
+    this.queueAutosaveSoon();
+  }
+
+  /** Spawn corpse bag props for the current location only (LDoE-style recover trip). */
+  private syncDeathBagWorldPresence(): void {
+    for (const entity of this.deathBagEntities) {
+      this.world.removeInteractable(entity);
+      entity.dispose();
+    }
+    this.deathBagEntities.length = 0;
+    for (const bag of this.deathBags.bagsAt(this.locations.currentId)) {
+      const entity = new DeathBagEntity(this.scene, bag.id, bag.x, bag.z);
+      this.deathBagEntities.push(entity);
+      this.world.addInteractable(entity);
+    }
+  }
+
   private onEnemyKilled(enemy: RoamingZombie): void {
     const archetype = enemy.archetype;
     this.experience.addXp(archetype.xpReward);
     this.stats.recordEnemyKill(enemy.role === "boss");
     this.completeQuest("kill-zombie");
     this.completeQuest("kill-infected-10");
+    this.journal.discoverEnemy(enemy.archetypeId);
+    if (enemy.role === "boss") {
+      const dungeon = dungeonForLocation(this.locations.currentId);
+      if (dungeon) {
+        this.dungeonResets.markBossDefeated(dungeon);
+        this.notify.push(I18N.t("notify.bossDown", { name: enemy.displayName }), "success");
+        this.queueAutosaveSoon();
+      }
+      if (enemy.archetypeId === "the-warden") this.notifyAchievement("warden-defeated");
+      if (enemy.archetypeId === "metro-leviathan") this.notifyAchievement("metro-boss");
+      if (enemy.archetypeId === "marrow-warden") this.notifyAchievement("hospital-boss");
+      if (enemy.archetypeId === "helix-sovereign") this.notifyAchievement("blacksite-boss");
+    }
     this.notifyAchievement("first-kill");
     const kills = this.stats.snapshot().enemiesKilled;
     if (kills >= 50) this.notifyAchievement("kills-50");
@@ -1490,7 +2864,93 @@ export class Game {
       this.notify.push(I18N.t("notify.contractReady", { title: raidDone.title }), "success");
       this.completeQuest("frontier-favor");
     }
+    if (enemy.combatId.startsWith("defense-") && this.homeDefenseRunning) {
+      this.horde.onEnemyDefeated();
+      if (this.horde.state === "complete") this.finishHomeDefenseVictory();
+    }
+    this.tryCompleteActiveRaid();
     this.syncHudNeeds();
+  }
+
+  private tickHomeDefense(frameDelta: number): void {
+    if (!this.homeDefenseRunning || this.locations.currentId !== "home") return;
+    const batch = this.horde.tick(frameDelta);
+    for (const arch of batch) {
+      this.spawnHomeDefenseEnemy(arch);
+    }
+    if (this.horde.state === "complete") {
+      this.finishHomeDefenseVictory();
+    }
+  }
+
+  private spawnHomeDefenseEnemy(archetypeId: import("../enemies/EnemyArchetypes").EnemyArchetypeId): void {
+    const pos = homeDefenseSpawnPoint(this.defenseSpawnSerial++);
+    const id = `defense-${archetypeId}-${String(this.defenseSpawnSerial).padStart(3, "0")}`;
+    const enemy = new RoamingZombie(id, pos, archetypeId);
+    this.enemies.register(enemy);
+    this.collision.addCircle(pos.x, pos.z, enemy.archetype.collisionRadius, this.enemyCollisionLabel(enemy));
+    for (const mesh of this.enemyPresentation.spawn(enemy)) this.lighting.addCaster(mesh);
+  }
+
+  /** Start Hold-the-Gate waves when a home defend contract is active at Home. */
+  private maybeStartHomeDefense(): void {
+    if (this.locations.currentId !== "home") return;
+    if (this.homeDefenseRunning || this.horde.active) return;
+    const job = this.contracts.activeContracts.find(
+      (c) => c.kind === "defend" && !c.completed && isHomeDefenseContractHint(c.targetLocationHint),
+    );
+    if (!job) return;
+    this.defenseSpawnSerial = 0;
+    this.homeDefenseRunning = true;
+    this.horde.start(HOME_GATE_DEFENSE);
+    this.notify.push(I18N.t("notify.defenseStart", { title: job.title }), "warn");
+  }
+
+  private stopHomeDefenseEncounter(): void {
+    this.homeDefenseRunning = false;
+    this.horde.reset();
+  }
+
+  private finishHomeDefenseVictory(): void {
+    if (!this.homeDefenseRunning) return;
+    this.homeDefenseRunning = false;
+    this.horde.reset();
+    const done = this.contracts.completeByKind("defend");
+    if (done) {
+      this.notify.push(I18N.t("notify.defenseCleared", { title: done.title }), "success");
+      this.notify.push(I18N.t("notify.contractReady", { title: done.title }), "success");
+    } else {
+      this.notify.push(I18N.t("notify.defenseCleared", { title: "Home" }), "success");
+    }
+    this.queueAutosaveSoon();
+  }
+
+  /** When the last hostile at an open raid site dies — clear compound + loot. */
+  private tryCompleteActiveRaid(): void {
+    if (!this.activeRaidSiteId) return;
+    if (this.enemies.liveCount > 0) return;
+    const raidId = this.activeRaidSiteId;
+    const site = this.raids.list().find((r) => r.id === raidId);
+    if (!site || site.cleared) {
+      this.activeRaidSiteId = null;
+      return;
+    }
+    if (!this.raids.markCleared(raidId)) return;
+    this.activeRaidSiteId = null;
+    this.stats.recordRaidClear();
+    this.notifyAchievement("raid-clearer");
+    this.completeQuest("clear-raid");
+    const raidContract = this.contracts.completeByKind("raid");
+    if (raidContract) {
+      this.notify.push(I18N.t("notify.contractReady", { title: raidContract.title }), "success");
+    }
+    const loot = rollNamedLoot(site.lootProfile, site.seed * 1337);
+    for (const stack of loot) {
+      if (!this.inventory.tryInsert(stack).accepted) this.mailbox.deliver(stack, this.inventory);
+    }
+    this.experience.addXp(25 + site.threat * 12);
+    this.notify.push(I18N.t("notify.raidCleared", { title: site.title }), "success");
+    this.queueAutosaveSoon();
   }
 
   private spawnStarterMaterialsAndContainers(): void {
@@ -1509,6 +2969,16 @@ export class Game {
       this.world.removeInteractable(container);
     }
     this.worldContainers.length = 0;
+    for (const ix of this.builtStationInteractables.values()) {
+      this.world.removeInteractable(ix);
+    }
+    this.builtStationInteractables.clear();
+    this.containerPanel.close();
+    for (const entity of this.deathBagEntities) {
+      this.world.removeInteractable(entity);
+      entity.dispose();
+    }
+    this.deathBagEntities.length = 0;
   }
 
   private spawnStarterGroundMats(): void {
@@ -1539,16 +3009,379 @@ export class Game {
     );
     this.worldContainers.push(crate);
     this.world.addInteractable(crate);
+    this.ensureHomeServiceInteractables();
+    this.ensureCampNpcInteractables();
+    this.ensureLockedSitePresence();
+  }
+
+  /** Mailbox storage + contract bulletin (home only). */
+  private ensureHomeServiceInteractables(): void {
+    // Mailbox is Interactable-only (serialized via blob.mailbox, not worldContainers).
+    if (!this.homeMailboxMounted) {
+      this.world.addInteractable(this.mailbox.entity);
+      this.homeMailboxMounted = true;
+    }
+    this.mailbox.entity.setActive(this.locations.currentId === "home");
+
+    if (!this.homeBoardInteractable) {
+      this.homeBoardInteractable = createInteractable({
+        id: "home-contract-board",
+        type: "station",
+        position: () => Object.freeze({
+          x: HOME_HOUSE_ORIGIN.x - 2.2,
+          y: 0,
+          z: HOME_HOUSE_ORIGIN.z + 1.4,
+        }),
+        radius: () => 0.95,
+        enabled: () => this.locations.currentId === "home" && this.gameStarted,
+      });
+      this.world.addInteractable(this.homeBoardInteractable);
+    }
+  }
+
+  private syncHomeServiceInteractables(): void {
+    this.mailbox.entity.setActive(this.locations.currentId === "home" && this.gameStarted);
+  }
+
+  /** Jon / Mira talk+trade points at survivor-camp. */
+  private ensureCampNpcInteractables(): void {
+    for (const def of npcsAtLocation(SURVIVOR_CAMP_NPCS, "survivor-camp")) {
+      const id = npcInteractableId(def.id);
+      if (this.campNpcInteractables.has(id)) continue;
+      const offset = npcCampOffset(def.id);
+      const entity = createInteractable({
+        id,
+        type: "npc",
+        position: () => Object.freeze({ x: offset.x, y: 0, z: offset.z }),
+        radius: () => 1.05,
+        enabled: () => this.locations.currentId === "survivor-camp" && this.gameStarted,
+      });
+      this.campNpcInteractables.set(id, entity);
+      this.world.addInteractable(entity);
+    }
+  }
+
+  /** Register / refresh a claimed barter event as a temporary trader NPC. */
+  private spawnEventCaravan(event: { id: string; kind: WorldEventKind; seed: number }): void {
+    if (!isBarterEventKind(event.kind)) return;
+    const npcId = eventTraderNpcId(event.id);
+    const locationId = eventAnchorLocation(event);
+    this.npcs.registerNpc(Object.freeze({
+      id: npcId,
+      name: caravanDisplayName(event.kind),
+      role: "trader" as const,
+      locationId,
+    }));
+    this.npcs.setOffers(npcId, caravanOffersFor(event.kind, event.seed));
+    this.eventCaravanNpcIds.add(npcId);
+    this.ensureEventTraderInteractable(npcId, locationId);
+  }
+
+  private ensureEventTraderInteractable(npcId: string, locationId: string): void {
+    const id = npcInteractableId(npcId);
+    if (this.eventTraderInteractables.has(id)) return;
+    const offset = npcCampOffset(npcId);
+    const entity = createInteractable({
+      id,
+      type: "npc",
+      position: () => Object.freeze({ x: offset.x, y: 0, z: offset.z }),
+      radius: () => 1.1,
+      enabled: () => this.locations.currentId === locationId
+        && this.gameStarted
+        && this.eventCaravanNpcIds.has(npcId),
+    });
+    this.eventTraderInteractables.set(id, entity);
+    this.world.addInteractable(entity);
+  }
+
+  /**
+   * Keep caravan NPCs in sync with claimed barter events that are still live.
+   * Call after event tick / travel / load.
+   */
+  private syncEventCaravans(): void {
+    const live = new Set<string>();
+    for (const event of this.worldEvents.events) {
+      if (!event.claimed || !isBarterEventKind(event.kind)) continue;
+      if (event.expiresAtWorldDay <= this.worldDayAccum) continue;
+      const npcId = eventTraderNpcId(event.id);
+      live.add(npcId);
+      if (!this.eventCaravanNpcIds.has(npcId)) {
+        this.spawnEventCaravan(event);
+      }
+    }
+    for (const npcId of [...this.eventCaravanNpcIds]) {
+      if (live.has(npcId)) continue;
+      this.despawnEventCaravan(npcId);
+    }
+  }
+
+  private despawnEventCaravan(npcId: string): void {
+    this.eventCaravanNpcIds.delete(npcId);
+    this.npcs.unregisterNpc(npcId);
+    if (this.npcPanel.isOpen && this.npcPanel.currentNpcId === npcId) {
+      this.npcPanel.close();
+      this.notify.push(I18N.t("notify.caravanGone"), "info");
+    }
+    this.eventTraderInteractables.delete(npcInteractableId(npcId));
+  }
+
+  /** Locked site chests + key desks / breakers for motel, factory, bunker. */
+  private ensureLockedSitePresence(): void {
+    const here = this.locations.currentId;
+    const live = this.gameStarted;
+    for (const site of LOCKED_SITES) {
+      const atSite = live && here === site.locationId;
+      let chest = this.worldContainers.find((c) => c.interactionId === site.containerId);
+      if (!chest) {
+        const loot = rollNamedLoot(site.lootProfile, site.lockId.length * 911 + site.capacity * 17);
+        chest = new WorldContainerEntity(
+          site.containerId,
+          site.title,
+          Object.freeze({ x: site.x, y: 0, z: site.z }),
+          site.capacity,
+          loot,
+          "take-all",
+        );
+        this.worldContainers.push(chest);
+        this.world.addInteractable(chest);
+      }
+      chest.setActive(atSite);
+
+      const support = site.support;
+      if (!support) continue;
+      if (support.kind === "key-stash") {
+        let desk = this.worldContainers.find((c) => c.interactionId === support.id);
+        if (!desk) {
+          const initial = support.keyItem ? [createItemStack(support.keyItem, 1)] : [];
+          desk = new WorldContainerEntity(
+            support.id,
+            support.title ?? "Desk",
+            Object.freeze({ x: support.x, y: 0, z: support.z }),
+            4,
+            initial,
+            "take-all",
+          );
+          this.worldContainers.push(desk);
+          this.world.addInteractable(desk);
+        }
+        desk.setActive(atSite);
+      } else if (support.kind === "breaker") {
+        if (!this.lockSupportInteractables.has(support.id)) {
+          const entity = createInteractable({
+            id: support.id,
+            type: "station",
+            position: () => Object.freeze({ x: support.x, y: 0, z: support.z }),
+            radius: () => 0.95,
+            enabled: () => this.locations.currentId === site.locationId && this.gameStarted,
+          });
+          this.lockSupportInteractables.set(support.id, entity);
+          this.world.addInteractable(entity);
+        }
+      }
+    }
+  }
+
+  /** Returns false when the container stays locked. */
+  private tryAccessLockedContainer(container: WorldContainerEntity): boolean {
+    const lockId = lockIdFromContainerId(container.interactionId);
+    if (!lockId) return true;
+    if (!this.locks.isLocked(lockId)) return true;
+    const result = this.locks.tryUnlockWithInventory(lockId, this.inventory);
+    if (!result.ok) {
+      this.notifyLockFailure(result.reason, lockId);
+      return false;
+    }
+    this.notify.push(I18N.t("notify.lockOpened"), "success");
+    this.queueAutosaveSoon();
+    return true;
+  }
+
+  private interactLockSupport(interactionId: string): void {
+    const site = lockSupportSite(interactionId);
+    if (!site?.support || site.support.kind !== "breaker") return;
+    this.locks.setPowered(site.lockId, true);
+    this.notify.push(I18N.t("notify.lockPowered"), "info");
+    if (this.locks.isLocked(site.lockId)) {
+      const unlocked = this.locks.tryUnlockWithInventory(site.lockId, this.inventory);
+      if (unlocked.ok) this.notify.push(I18N.t("notify.lockOpened"), "success");
+    }
+    this.queueAutosaveSoon();
+  }
+
+  private notifyLockFailure(reason: string | null, lockId: string): void {
+    const lock = this.locks.get(lockId);
+    if (reason === "need-key" && lock?.requiredKey) {
+      this.notify.push(I18N.t("notify.lockNeedKey", { name: itemName(lock.requiredKey) }), "warn");
+      return;
+    }
+    if (reason === "no-power") {
+      this.notify.push(I18N.t("notify.lockNeedPower"), "warn");
+      return;
+    }
+    this.notify.push(I18N.t("notify.lockBlocked"), "warn");
+  }
+
+  private openNpcForInteractable(interactionId: string): void {
+    const npcId = npcIdFromInteractable(interactionId);
+    if (!npcId || !this.npcs.getNpc(npcId)) return;
+    this.inventoryPanel.close();
+    this.craftingPanel.close();
+    this.containerPanel.close();
+    this.stationPanel.close();
+    this.vehiclePanel.close();
+    this.contractPanel.close();
+    this.mapPanel.close();
+    this.localMap.close();
+    const node = defaultDialogueNode(npcId, this.inventory);
+    if (node) this.npcs.beginDialogue(npcId, node);
+    const prefer: "talk" | "trade" = this.npcs.getNpc(npcId)?.role === "trader" && !node
+      ? "trade"
+      : "talk";
+    this.npcPanel.open(npcId, this.inventory, prefer);
+  }
+
+  private handleNpcChoice(choiceId: string): void {
+    const peek = this.npcs.peekChoice(choiceId);
+    if (!peek) return;
+
+    if (peek.consumeItem === COURIER_PACKAGE_ID) {
+      const delivered = tryDeliverCourierPackage(this.inventory);
+      if (!delivered.ok) {
+        this.notify.push(I18N.t("notify.courierNoPackage"), "warn");
+        return;
+      }
+    } else if (peek.consumeItem) {
+      const slot = this.inventory.findFirstSlotByItemId(peek.consumeItem);
+      if (slot === null) {
+        this.notify.push(I18N.t("notify.courierNoPackage"), "warn");
+        return;
+      }
+      const stack = this.inventory.getSlot(slot).stack;
+      if (stack) this.inventory.exchangeWholeStack(slot, stack, null);
+    }
+
+    if (peek.grantItem === COURIER_PACKAGE_ID) {
+      const granted = tryGrantCourierPackage(this.inventory);
+      if (!granted.ok) {
+        this.notify.push(
+          granted.reason === "already-carrying"
+            ? I18N.t("notify.courierAlready")
+            : I18N.t("notify.inventoryFull"),
+          "warn",
+        );
+        return;
+      }
+      this.notify.push(I18N.t("notify.courierGranted"), "success");
+    } else if (peek.grantItem) {
+      if (!this.inventory.tryInsert(createItemStack(peek.grantItem, 1)).accepted) {
+        this.notify.push(I18N.t("notify.inventoryFull"), "warn");
+        return;
+      }
+    }
+
+    const result = this.npcs.choose(choiceId);
+    if (result.reputation > 0) {
+      this.reputation.add("frontier-survivors", result.reputation);
+      this.maybeUnlockFactionAlly();
+    }
+    if (result.grantTokens > 0) {
+      this.npcs.addTokens(result.grantTokens);
+    }
+    if (result.startQuest) {
+      const questId = result.startQuest as Parameters<QuestSystem["setTracked"]>[0];
+      this.quests.setTracked(questId);
+      const def = QUEST_DEFS.find((q) => q.id === questId);
+      this.notify.push(I18N.t("notify.npcQuest", { title: def?.title ?? questId }), "success");
+    }
+    if (result.completeQuest) {
+      this.completeQuest(result.completeQuest as Parameters<QuestSystem["advance"]>[0]);
+      if (result.consumeItem === COURIER_PACKAGE_ID) {
+        this.notify.push(I18N.t("notify.courierDelivered"), "success");
+      }
+    }
+    const npcId = this.npcPanel.currentNpcId;
+    if (result.ended && choiceId === "browse" && npcId) {
+      this.npcPanel.open(npcId, this.inventory, "trade");
+      return;
+    }
+    this.npcPanel.refresh();
+    this.queueAutosaveSoon();
+  }
+
+  private handleNpcTrade(offerId: string): void {
+    const npcId = this.npcPanel.currentNpcId;
+    if (!npcId) return;
+    const offer = this.npcs.listOffers(npcId).find((o) => o.id === offerId);
+    const result = this.npcs.tryBarter(npcId, offerId, this.inventory);
+    if (!result.accepted) {
+      this.notify.push(I18N.t("notify.npcTradeFail", { reason: result.reason ?? "blocked" }), "warn");
+      this.npcPanel.refresh();
+      return;
+    }
+    const name = offer ? itemName(offer.offer.itemId) : offerId;
+    this.notify.push(I18N.t("notify.npcTradeOk", { name }), "success");
+    this.npcPanel.refresh();
+    this.queueAutosaveSoon();
+  }
+
+  private purchaseSkill(id: SkillId): void {
+    const result = tryBuySkill(this.skills, this.experience, id);
+    if (!result.ok) {
+      this.notify.push(
+        result.reason === "max-rank" ? I18N.t("skills.maxed") : I18N.t("notify.noSkillPoints"),
+        "warn",
+      );
+      this.skillsPanel.refresh();
+      return;
+    }
+    this.syncSkillEffects();
+    this.notify.push(I18N.t("notify.skillBought", { name: I18N.t(`skill.${id}` as "skill.max-hp") }), "success");
+    this.skillsPanel.refresh();
+    this.queueAutosaveSoon();
+  }
+
+  /** Apply vitality max HP + harvest swing speed from the skill tree. */
+  private syncSkillEffects(): void {
+    const maxHp = playerMaxHealthFromSkills(this.skills);
+    if (this.player.health.maxHealth !== maxHp) {
+      this.player.health.setMaxHealth(maxHp);
+    }
+    this.harvesting.setSpeedMultiplier(this.skills.harvestSpeedMultiplier());
+    this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
+  }
+
+  private claimContractReward(id: string): void {
+    const c = this.contracts.claim(id);
+    if (!c) {
+      this.notify.push(I18N.t("notify.contractNotReady"), "warn");
+      return;
+    }
+    this.experience.addXp(c.rewardXp);
+    this.reputation.add(c.factionId, c.rewardReputation);
+    this.maybeUnlockFactionAlly();
+    const loot = rollNamedLoot(lootProfileForContract(c), Date.now() + c.id.length * 97);
+    for (const stack of loot) {
+      if (!this.inventory.tryInsert(stack).accepted) this.mailbox.deliver(stack, this.inventory);
+    }
+    this.notify.push(I18N.t("notify.contractClaimed", { title: c.title, xp: c.rewardXp }), "success");
+    this.contractPanel.refresh();
+    this.queueAutosaveSoon();
   }
 
   private restoreWorldContainers(entries: readonly SerializedContainer[]): void {
     for (const entry of entries) {
+      // Mailbox is save-domain separate (blob.mailbox).
+      if (entry.id === "home-mailbox") continue;
+      const mode = entry.accessMode === "storage" || entry.id.startsWith("built-chest-")
+        ? "storage"
+        : "take-all";
       const entity = new WorldContainerEntity(
         entry.id,
         entry.title || "Container",
         Object.freeze({ x: entry.x, y: entry.y ?? 0, z: entry.z }),
         Math.max(1, entry.capacity || 8),
         [],
+        mode,
       );
       const slots = entry.slots ?? [];
       for (let i = 0; i < entity.inventory.slotCount; i += 1) {
@@ -1628,12 +3461,30 @@ export class Game {
   private respawnLocationEnemies(locationId: LocationId): void {
     this.clearLocationEnemies();
     this.setHomeOnlyDummies(locationId === "home");
-    const specs = enemySpawnSpecsFor(locationId);
-    const total = specs.reduce((n, s) => n + s.count, 0);
+
+    const raid = unclearedRaidAt(this.raids.list(), locationId);
+    if (raid) {
+      this.activeRaidSiteId = raid.id;
+      this.spawnRaidCompoundWave(raid, locationId);
+      return;
+    }
+    this.activeRaidSiteId = null;
+
+    const specs = withNightSpawnPressure(
+      enemySpawnSpecsFor(locationId),
+      this.worldClock.isNight,
+      locationId,
+    );
+    const dungeon = dungeonForLocation(locationId);
+    const bossCleared = dungeon ? this.dungeonResets.getState(dungeon)?.bossDefeated === true : false;
+    const filtered = bossCleared
+      ? specs.filter((s) => combatRoleFor(s.archetypeId) !== "boss")
+      : specs;
+    const total = filtered.reduce((n, s) => n + s.count, 0);
     if (total === 0) return;
     const positions = spawnPositionsForLocation(total, locationId);
     let index = 0;
-    for (const spec of specs) {
+    for (const spec of filtered) {
       for (let i = 0; i < spec.count; i += 1) {
         const position = positions[index] ?? { x: 8, y: 0, z: 8 };
         const id = `${spec.archetypeId}-${locationId}-${String(index + 1).padStart(2, "0")}`;
@@ -1643,6 +3494,73 @@ export class Game {
         for (const mesh of this.enemyPresentation.spawn(enemy)) this.lighting.addCaster(mesh);
         index += 1;
       }
+    }
+  }
+
+  /** Relock chests, refill loot, respawn if the player is inside the cycling dungeon. */
+  private applyDungeonResets(resetIds: readonly DungeonId[]): void {
+    this.notify.push(
+      I18N.t("notify.dungeonReset", { names: formatDungeonResetNames(resetIds) }),
+      "warn",
+    );
+    for (const id of resetIds) {
+      for (const lockId of locksForDungeon(id)) {
+        this.locks.relock(lockId);
+        this.refillLockedChestForLock(lockId, id);
+      }
+      if (id === "bunker-echo") {
+        this.warden.reset();
+      }
+    }
+    if (playerInsideResetDungeon(this.locations.currentId, resetIds)) {
+      this.notify.push(I18N.t("notify.dungeonResetHere"), "warn");
+      this.respawnLocationEnemies(this.locations.currentId);
+      this.syncDeathBagWorldPresence();
+    }
+    this.queueAutosaveSoon();
+  }
+
+  private refillLockedChestForLock(lockId: string, dungeonId: DungeonId): void {
+    const site = LOCKED_SITES.find((s) => s.lockId === lockId);
+    if (!site) return;
+    const chest = this.worldContainers.find((c) => c.interactionId === site.containerId);
+    if (!chest) return;
+    const wave = this.dungeonResets.getState(dungeonId)?.lootWave ?? 1;
+    for (let i = 0; i < chest.inventory.slotCount; i += 1) {
+      if (chest.inventory.getSlot(i)) chest.inventory.place(i, null);
+    }
+    const loot = rollNamedLoot(site.lootProfile, lockId.length * 911 + wave * 1301 + site.capacity * 17);
+    for (const stack of loot) {
+      chest.inventory.tryInsert(stack);
+    }
+  }
+
+  /** Dense hostile wave for an open map raid compound. */
+  private spawnRaidCompoundWave(
+    raid: import("../raids/RaidSystem").RaidSite,
+    locationId: LocationId,
+  ): void {
+    const count = raidReinforcementCount(raid);
+    const positions = spawnPositionsForLocation(count, locationId);
+    const roster: import("../enemies/EnemyArchetypes").EnemyArchetypeId[] = raid.hasLeader
+      ? ["marauder-melee", "marauder-scout", "marauder-ranged", "marauder-heavy", "bandit-leader", "ash-jackal"]
+      : ["marauder-melee", "marauder-scout", "marauder-ranged", "ash-jackal", "industrial-raider"];
+    for (let i = 0; i < count; i += 1) {
+      const position = positions[i] ?? { x: 6 + (i % 4), y: 0, z: 6 + Math.floor(i / 4) };
+      const arch = roster[i % roster.length]!;
+      const id = `raid-${raid.id}-${arch}-${String(i + 1).padStart(2, "0")}`;
+      const enemy = new RoamingZombie(id, position, arch);
+      this.enemies.register(enemy);
+      this.collision.addCircle(position.x, position.z, enemy.archetype.collisionRadius, this.enemyCollisionLabel(enemy));
+      for (const mesh of this.enemyPresentation.spawn(enemy)) this.lighting.addCaster(mesh);
+    }
+  }
+
+  /** Ensure raid pin locations are walkable on the overworld map. */
+  private syncRaidLocationUnlocks(): void {
+    for (const site of this.raids.list()) {
+      if (site.cleared) continue;
+      this.locations.unlock(raidAnchorLocation(site));
     }
   }
 
@@ -1694,7 +3612,17 @@ export class Game {
     this.inventoryPanel.close();
     this.craftingPanel.close();
     this.mapPanel.close();
+    this.stationPanel.close();
+    this.vehiclePanel.close();
+    this.contractPanel.close();
+    this.npcPanel.close();
+    this.skillsPanel.close();
+    this.journalPanel.close();
+    this.achievementsPanel.close();
+    this.questsPanel.close();
+    this.containerPanel.close();
     this.deathBags.captureAndStrip({
+      locationId: this.locations.currentId,
       x: this.player.position.x,
       z: this.player.position.z,
       inventory: this.inventory,
@@ -1704,19 +3632,10 @@ export class Game {
       quicks: this.quickSlots,
       utility: this.utilitySlot,
     });
-    // Drop bag as ground loot for first stack + leave rest lootable via deathBags.lootInto when interacting near bag marker
-    const bag = this.deathBags.all[this.deathBags.all.length - 1];
-    if (bag) {
-      for (const stack of bag.stacks.slice(0, 3)) {
-        this.groundLoot.placeAuthoredStack(
-          createItemStack(stack.itemId, stack.quantity, stack.currentDurability !== undefined ? { currentDurability: stack.currentDurability } : undefined),
-          Object.freeze({ x: bag.x + (Math.random() - 0.5) * 0.6, y: 0, z: bag.z + (Math.random() - 0.5) * 0.6 }),
-          `${bag.id}:${stack.itemId}:${stack.quantity}`,
-        );
-      }
-    }
+    this.syncDeathBagWorldPresence();
     this.syncHeldWeaponVisual();
     this.syncQuickHud();
+    this.equipmentVisual.resync();
     this.applyGameplayPanelState(true);
     this.deathScreen.open({
       locationName: locationTitle(this.locations.currentId),
@@ -1740,6 +3659,7 @@ export class Game {
     this.nearFire = true;
     this.respawnLocationEnemies("home");
     this.deathHandled = false;
+    this.beginZoneVisitForCurrentLocation();
     this.sneak.setActive(false);
     this.hud.setSneakActive(false);
     this.status.clear();
@@ -1748,6 +3668,13 @@ export class Game {
     this.hud.setPlayerHealth(this.player.health.currentHealth, this.player.health.maxHealth);
     this.syncHudNeeds();
     this.notify.push(I18N.t("notify.respawned"), "success");
+    // Hint where the gear still is (LDoE recovery trip).
+    const elsewhere = this.deathBags.all.find((b) => b.locationId !== "home");
+    if (elsewhere) {
+      this.notify.push(I18N.t("notify.deathBagHere", { location: locationTitle(elsewhere.locationId) }), "warn");
+    }
+    this.syncDeathBagWorldPresence();
+    this.persistSave(false);
   }
 
   private setInventoryOpen(open: boolean): void {
@@ -1822,7 +3749,7 @@ export class Game {
   }
 
 
-  private applyCombatWound(finalDamage: number): void {
+  private applyCombatWound(finalDamage: number, archetypeId?: string): void {
     const bleedChance = finalDamage >= 12 ? 0.42 : finalDamage >= 6 ? 0.28 : 0.14;
     if (Math.random() < bleedChance) {
       const wasNew = this.status.apply("bleeding");
@@ -1833,16 +3760,37 @@ export class Game {
       const wasNew = this.status.apply("slow");
       if (wasNew) this.notify.push(I18N.t("notify.slowed"), "info");
     }
+    if (archetypeId) {
+      const infectious = canInfectFromArchetype(archetypeId);
+      const infectChance = infectionChanceFromHit(finalDamage, infectious);
+      if (infectChance > 0 && Math.random() < infectChance) {
+        const wasNew = this.status.apply("infection");
+        if (wasNew) this.notify.push(I18N.t("notify.infection"), "warn");
+      }
+    }
     this.hud.setStatusEffects(this.status.ids());
   }
 
-  private feedbackConsumable(result: { clearedBleeding?: boolean; appliedRegen?: boolean }): void {
+  private feedbackConsumable(result: {
+    clearedBleeding?: boolean;
+    clearedInfection?: boolean;
+    appliedRegen?: boolean;
+    warmthCleared?: number;
+  }): void {
     if (result.clearedBleeding) {
       GAME_AUDIO.playHeal();
       this.notify.push(I18N.t("notify.woundTreated"), "success");
     }
+    if (result.clearedInfection) {
+      GAME_AUDIO.playHeal();
+      this.notify.push(I18N.t("notify.infectionCleared"), "success");
+    }
     if (result.appliedRegen) {
       this.notify.push(I18N.t("notify.regenerating"), "info");
+    }
+    if ((result.warmthCleared ?? 0) > 0) {
+      this.notify.push(I18N.t("notify.warmedUp"), "success");
+      this.hud.setColdExposure(this.cold.ratio);
     }
     this.hud.setStatusEffects(this.status.ids());
   }
@@ -1851,6 +3799,16 @@ export class Game {
     if (!this.achievements.tryUnlock(id)) return;
     const def = ACHIEVEMENT_DEFS.find((d) => d.id === id);
     this.notify.push(I18N.t("notify.achievement", { title: achievementTitle(id, def?.title ?? id) }), "success");
+    if (this.achievementsPanel.isOpen) this.achievementsPanel.refresh();
+  }
+
+  private maybeUnlockFactionAlly(): void {
+    for (const def of this.reputation.defs()) {
+      if (this.reputation.tier(def.id) === "ally") {
+        this.notifyAchievement("faction-ally");
+        return;
+      }
+    }
   }
 
   private travelReasonMessage(reason: string | null | undefined): string {
@@ -1898,7 +3856,9 @@ export class Game {
       .filter((s) => s.stack)
       .map((s) => serializeInventorySlot(s.index, s.stack!));
     const pos = this.player.position;
-    const containers: SerializedContainer[] = this.worldContainers.map((container) => {
+    const containers: SerializedContainer[] = this.worldContainers
+      .filter((container) => container.interactionId !== "home-mailbox")
+      .map((container) => {
       const p = container.getInteractionPosition();
       const slots = container.inventory.getSlots().map((s) => (s.stack ? serializeStack(s.stack) : null));
       return Object.freeze({
@@ -1909,6 +3869,7 @@ export class Game {
         z: p.z,
         capacity: container.inventory.slotCount,
         active: container.isInteractionEnabled(),
+        accessMode: container.accessMode,
         slots: Object.freeze(slots),
       });
     });
@@ -1943,10 +3904,12 @@ export class Game {
       locations: this.locations.serialize(),
       quests: this.quests.serialize(),
       achievements: this.achievements.serialize(),
+      learnedBlueprints: this.blueprints.serialize(),
       farming: this.farming.serialize(),
       building: this.building.serialize(),
       power: this.powerGrid.serialize(),
       water: this.water.serialize(),
+      spoilage: this.spoilage.serialize(),
       mailbox: this.mailbox.serialize() as SaveBlob["mailbox"],
       worldClock: this.worldClock.serialize(),
       worldDayAccum: this.worldDayAccum,
@@ -1969,8 +3932,10 @@ export class Game {
       statusEffects: this.status.serialize(),
       locks: this.locks.serialize(),
       greyhavenVisits: this.greyhavenVisits,
-      campfireQueue: this.campfireQueue.serialize(),
+      campfireQueue: this.stations.queueOf("campfire").serialize(),
+      stations: this.stations.serialize(),
       sneakActive: this.sneak.isSneaking,
+      zoneVisitRemaining: this.zoneTimer.serialize(),
       harvestResources: this.world.serializeHarvestState(),
     }) as unknown as SaveBlob;
   }
@@ -2059,13 +4024,14 @@ export class Game {
     }
     this.syncHeldWeaponVisual();
 
+    this.experience.load(blob.xp);
+    this.skills.load(blob.skills ?? {});
+    this.syncSkillEffects();
     this.player.health.setCurrent(blob.health);
     this.hunger.set(blob.hunger);
     this.thirst.set(blob.thirst);
     this.energy.set(blob.energy);
     if (typeof blob.cold === "number") this.cold.set(blob.cold);
-    this.experience.load(blob.xp);
-    this.skills.load(blob.skills ?? {});
 
     if (blob.locations) this.locations.load(blob.locations as Partial<ReturnType<LocationManager["serialize"]>>);
     this.locations.forceSet(blob.locationId);
@@ -2082,6 +4048,7 @@ export class Game {
 
     if (blob.quests) this.quests.load(blob.quests as { tracked?: string; progress?: Record<string, number>; completed?: string[] });
     if (blob.achievements) this.achievements.load(blob.achievements);
+    this.blueprints.load(blob.learnedBlueprints);
     if (blob.farming) this.farming.load(blob.farming as Parameters<FarmingSystem["load"]>[0]);
     if (blob.building) {
       this.building.load(blob.building as Parameters<BuildingRegistry["load"]>[0]);
@@ -2094,9 +4061,11 @@ export class Game {
     else this.powerGrid.resetToDefaults();
     if (blob.water) this.water.load(blob.water as { dirty?: number; clean?: number; pump?: boolean; purifier?: boolean });
     else this.water.load(undefined);
+    this.spoilage.load(blob.spoilage);
     if (blob.mailbox) this.mailbox.load(blob.mailbox);
     else this.mailbox.load([]);
     if (typeof blob.worldClock === "number") this.worldClock.load(blob.worldClock);
+    this.wasNight = this.worldClock.isNight;
     if (typeof blob.worldDayAccum === "number") this.worldDayAccum = blob.worldDayAccum;
     if (blob.stats) this.stats.load(blob.stats);
     if (blob.journal) this.journal.load(blob.journal);
@@ -2106,17 +4075,36 @@ export class Game {
     if (blob.npcs) this.npcs.load(blob.npcs);
     else this.npcs.load({ tokens: 0 });
     if (blob.raids) this.raids.load(blob.raids as Parameters<RaidSystem["load"]>[0]);
-    else this.raids.load([]);
+    else {
+      this.raids.load([]);
+      this.raids.generate(1001, 2);
+      this.raids.generate(1002, 3);
+      this.raids.generate(1003, 4);
+    }
+    this.syncRaidLocationUnlocks();
+    this.activeRaidSiteId = null;
     if (blob.contracts) this.contracts.load(blob.contracts as { active?: import("../contracts/ContractSystem").ContractDef[]; nextId?: number; lastRefreshDay?: number });
     else this.contracts.load(undefined);
 
     this.vehicle.load(blob.vehicle as Parameters<VehicleSystem["load"]>[0]);
+    this.syncVehicleTravelUnlock();
     this.dungeonResets.load(blob.dungeonResets as Parameters<DungeonResetSystem["load"]>[0]);
     this.worldEvents.load((blob.worldEvents ?? []) as Parameters<WorldEventDirector["load"]>[0]);
+    this.syncEventCaravans();
     this.deathBags.load(blob.deathBags);
     this.status.load(blob.statusEffects as Parameters<StatusEffectSystem["load"]>[0]);
     this.locks.load(blob.locks);
-    this.campfireQueue.load(blob.campfireQueue);
+    this.stations.load({
+      campfire: blob.stations?.campfire,
+      woodworking: blob.stations?.woodworking,
+      furnace: blob.stations?.furnace,
+      metalwork: blob.stations?.metalwork,
+      chemistry: blob.stations?.chemistry,
+      water: blob.stations?.water,
+      composter: blob.stations?.composter,
+      recycler: blob.stations?.recycler,
+      legacyCampfire: blob.campfireQueue,
+    });
     this.greyhavenVisits = Math.max(0, Math.floor(blob.greyhavenVisits ?? 0));
     if (blob.sneakActive) {
       this.sneak.setActive(true);
@@ -2125,6 +4113,16 @@ export class Game {
       this.sneak.setActive(false);
       this.hud.setSneakActive(false);
     }
+
+    // Zone visit clock: restore exact remaining when present; otherwise start a fresh budget.
+    if (blob.zoneVisitRemaining !== undefined) {
+      this.zoneTimer.load(blob.zoneVisitRemaining);
+      this.zoneForceExitLatched = blob.zoneVisitRemaining === 0;
+    } else {
+      this.zoneTimer.start(this.locations.currentDefinition);
+      this.zoneForceExitLatched = false;
+    }
+    this.hud.setZoneTimer(this.zoneTimer.remaining);
 
     // Ground piles + chests — empty arrays are intentional (player looted everything).
     // Only missing/undefined fields re-seed starter world loot for pre-v3 saves.
@@ -2144,6 +4142,11 @@ export class Game {
     } else {
       this.spawnStarterSupplyCrate();
     }
+    this.ensureHomeServiceInteractables();
+    this.ensureCampNpcInteractables();
+    this.ensureLockedSitePresence();
+    // Station props for placed furniture (chests come from worldContainers).
+    this.syncBuiltPieceInteractables();
 
     const theme = this.world.applyLocationVisual(blob.locationId);
     this.lighting.applyLocationTheme(theme);
@@ -2161,6 +4164,7 @@ export class Game {
     this.hud.setStatusEffects(this.status.ids());
     this.camera.clearShake();
     this.camera.snapTo(this.player.position);
+    this.syncDeathBagWorldPresence();
   }
 
   /**
@@ -2221,10 +4225,22 @@ export class Game {
     if (event.code === "Escape" && !event.repeat) {
       event.preventDefault();
       if (this.deathScreen.isOpen) return;
-      if (this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.mapPanel.isOpen) {
+      if (this.inventoryPanel.isOpen || this.craftingPanel.isOpen || this.mapPanel.isOpen
+        || this.stationPanel.isOpen || this.containerPanel.isOpen || this.vehiclePanel.isOpen
+        || this.contractPanel.isOpen || this.npcPanel.isOpen || this.skillsPanel.isOpen
+        || this.journalPanel.isOpen || this.achievementsPanel.isOpen || this.questsPanel.isOpen) {
         this.inventoryPanel.close();
         this.craftingPanel.close();
         this.mapPanel.close();
+        this.stationPanel.close();
+        this.containerPanel.close();
+        this.vehiclePanel.close();
+        this.contractPanel.close();
+        this.npcPanel.close();
+        this.skillsPanel.close();
+        this.journalPanel.close();
+        this.achievementsPanel.close();
+        this.questsPanel.close();
         return;
       }
       this.pauseMenu.toggle();
@@ -2269,22 +4285,75 @@ export class Game {
     }
     if (event.code === "KeyK" && !event.repeat) {
       event.preventDefault();
-      // Spend skill point into Vitality if available (production skill spend path).
-      if (this.skills.tryPurchase("max-hp", this.experience)) {
-        this.notify.push(I18N.t("notify.skillVitality"), "success");
-      } else this.notify.push(I18N.t("notify.noSkillPoints"), "warn");
+      if (this.player.health.dead) return;
+      this.inventoryPanel.close();
+      this.craftingPanel.close();
+      this.mapPanel.close();
+      this.stationPanel.close();
+      this.vehiclePanel.close();
+      this.contractPanel.close();
+      this.npcPanel.close();
+      this.containerPanel.close();
+      this.journalPanel.close();
+      this.achievementsPanel.close();
+      this.questsPanel.close();
+      this.skillsPanel.toggle();
+      return;
+    }
+    if (event.code === "KeyJ" && !event.repeat) {
+      event.preventDefault();
+      if (this.player.health.dead) return;
+      this.inventoryPanel.close();
+      this.craftingPanel.close();
+      this.mapPanel.close();
+      this.stationPanel.close();
+      this.vehiclePanel.close();
+      this.contractPanel.close();
+      this.npcPanel.close();
+      this.containerPanel.close();
+      this.skillsPanel.close();
+      this.achievementsPanel.close();
+      this.questsPanel.close();
+      this.journalPanel.toggle();
+      return;
+    }
+    if (event.code === "KeyY" && !event.repeat) {
+      event.preventDefault();
+      if (this.player.health.dead) return;
+      this.inventoryPanel.close();
+      this.craftingPanel.close();
+      this.mapPanel.close();
+      this.stationPanel.close();
+      this.vehiclePanel.close();
+      this.contractPanel.close();
+      this.npcPanel.close();
+      this.containerPanel.close();
+      this.skillsPanel.close();
+      this.journalPanel.close();
+      this.questsPanel.close();
+      this.achievementsPanel.toggle();
+      return;
+    }
+    if (event.code === "KeyQ" && !event.repeat) {
+      event.preventDefault();
+      if (this.player.health.dead) return;
+      this.inventoryPanel.close();
+      this.craftingPanel.close();
+      this.mapPanel.close();
+      this.stationPanel.close();
+      this.vehiclePanel.close();
+      this.contractPanel.close();
+      this.npcPanel.close();
+      this.containerPanel.close();
+      this.skillsPanel.close();
+      this.journalPanel.close();
+      this.achievementsPanel.close();
+      this.questsPanel.toggle();
       return;
     }
     if (event.code === "Digit1" && !event.repeat) { event.preventDefault(); this.useQuickSlot(0); return; }
     if (event.code === "Digit2" && !event.repeat) { event.preventDefault(); this.useQuickSlot(1); return; }
     if (event.code === "KeyU" && !event.repeat) { event.preventDefault(); this.toggleUtilityTorch(); return; }
-    if (event.code === "KeyK" && !event.repeat && event.shiftKey) {
-      // debug grant bandage
-      event.preventDefault();
-      this.inventory.tryInsert(createItemStack("bandage", 1));
-      this.notify.push("DEBUG +bandage", "info");
-      return;
-    }
     if (event.code === "F1") { event.preventDefault(); this.calibration.toggle(); }
     if (event.code === "F2") { event.preventDefault(); this.debug.toggle(); }
     if (event.code === "F3") {

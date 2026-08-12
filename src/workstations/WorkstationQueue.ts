@@ -5,7 +5,7 @@ export interface QueueEntry {
   progress: number;
 }
 
-export type WorkstationKind = "campfire" | "woodworking" | "furnace" | "recycler";
+export type WorkstationKind = "campfire" | "woodworking" | "furnace" | "metalwork" | "chemistry" | "water" | "composter" | "recycler";
 
 /**
  * Single-queue timed recipe foundation for stations.

@@ -55,6 +55,58 @@ export class PowerGrid {
     return p;
   }
 
+  getDevice(id: string): PowerDevice | null {
+    return this.devices.get(id) ?? null;
+  }
+
+  /** Upsert build-linked power device; preserve player enabled/fueled when possible. */
+  syncBuildDevice(device: PowerDevice): void {
+    const existing = this.devices.get(device.id);
+    this.devices.set(device.id, {
+      id: device.id,
+      kind: device.kind,
+      label: device.label,
+      production: device.production,
+      consumption: device.consumption,
+      priority: device.priority,
+      enabled: existing?.enabled ?? device.enabled,
+      fueled: existing?.fueled ?? device.fueled,
+    });
+  }
+
+  removeDeviceIfPresent(id: string): void {
+    this.devices.delete(id);
+  }
+
+  /** Drop all build-power-* devices not in keep set. */
+  pruneBuildDevicesExcept(keepIds: ReadonlySet<string>): void {
+    for (const id of [...this.devices.keys()]) {
+      if (!id.startsWith("build-power-")) continue;
+      if (!keepIds.has(id)) this.devices.delete(id);
+    }
+  }
+
+  /** Toggle fuel/power for generators; lamps just flip enabled. */
+  tryInteractDevice(id: string, fuelConsumed: boolean): {
+    ok: boolean;
+    message: "need-fuel" | "fueled" | "on" | "off" | "missing";
+  } {
+    const d = this.devices.get(id);
+    if (!d) return { ok: false, message: "missing" };
+    if (d.kind === "generator" || d.kind === "advanced-generator") {
+      if (d.fueled !== true) {
+        if (!fuelConsumed) return { ok: false, message: "need-fuel" };
+        d.fueled = true;
+        d.enabled = true;
+        return { ok: true, message: "fueled" };
+      }
+      d.enabled = !d.enabled;
+      return { ok: true, message: d.enabled ? "on" : "off" };
+    }
+    d.enabled = !d.enabled;
+    return { ok: true, message: d.enabled ? "on" : "off" };
+  }
+
   get consumption(): number {
     let c = 0;
     for (const d of this.devices.values()) {

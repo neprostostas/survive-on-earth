@@ -69,7 +69,7 @@ export interface SkillDef {
 export const SKILL_DEFS: readonly SkillDef[] = Object.freeze([
   Object.freeze({ id: "max-hp" as const, title: "Vitality", description: "+10 max HP per rank", maxRank: 5 }),
   Object.freeze({ id: "move-speed" as const, title: "Swift", description: "+3% move speed per rank", maxRank: 5 }),
-  Object.freeze({ id: "harvest-speed" as const, title: "Forager", description: "Faster harvest cadence (hook)", maxRank: 5 }),
+  Object.freeze({ id: "harvest-speed" as const, title: "Forager", description: "+6% harvest swing speed per rank", maxRank: 5 }),
   Object.freeze({ id: "melee-damage" as const, title: "Brawler", description: "+4% melee damage per rank", maxRank: 5 }),
   Object.freeze({ id: "energy-regen" as const, title: "Endurance", description: "+10% energy regen per rank", maxRank: 5 }),
 ]);
@@ -103,6 +103,11 @@ export class SkillTree {
 
   energyRegenMultiplier(): number {
     return 1 + this.getRank("energy-regen") * 0.1;
+  }
+
+  /** Swing duration divisor — higher = faster swings. */
+  harvestSpeedMultiplier(): number {
+    return 1 + this.getRank("harvest-speed") * 0.06;
   }
 
   serialize(): Record<string, number> {

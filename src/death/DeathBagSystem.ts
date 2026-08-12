@@ -8,17 +8,28 @@ import type { PlayerBackpackSlot } from "../equipment/PlayerBackpackSlot.ts";
 import type { PlayerQuickSlot } from "../equipment/PlayerQuickSlot.ts";
 import type { PlayerUtilitySlot } from "../equipment/PlayerUtilitySlot.ts";
 import type { EquipmentSlotId } from "../equipment/EquipmentTypes.ts";
+import type { LocationId } from "../locations/LocationRegistry.ts";
 
 export interface DeathBagSnapshot {
   readonly id: string;
+  readonly locationId: LocationId;
   readonly x: number;
   readonly z: number;
   readonly stacks: readonly ItemStack[];
   readonly createdAt: number;
 }
 
+export interface SerializedDeathBag {
+  readonly id: string;
+  readonly locationId: LocationId;
+  readonly x: number;
+  readonly z: number;
+  readonly createdAt: number;
+  readonly stacks: readonly { itemId: ItemId; quantity: number; currentDurability?: number }[];
+}
+
 /**
- * Captures carried + equipped loadout into a session corpse bag.
+ * Captures carried + equipped loadout into a corpse bag tied to a location.
  * Player domains are stripped after snapshot (stack identities conserved in bag as clones).
  */
 export class DeathBagSystem {
@@ -27,7 +38,12 @@ export class DeathBagSystem {
 
   get all(): readonly DeathBagSnapshot[] { return this.bags; }
 
+  bagsAt(locationId: LocationId): readonly DeathBagSnapshot[] {
+    return Object.freeze(this.bags.filter((b) => b.locationId === locationId));
+  }
+
   captureAndStrip(params: {
+    readonly locationId: LocationId;
     readonly x: number;
     readonly z: number;
     readonly inventory: PlayerInventory;
@@ -70,6 +86,7 @@ export class DeathBagSystem {
 
     const bag: DeathBagSnapshot = Object.freeze({
       id: `death-bag-${this.nextId++}`,
+      locationId: params.locationId,
       x: params.x,
       z: params.z,
       stacks: Object.freeze(stacks),
@@ -79,9 +96,9 @@ export class DeathBagSystem {
     return bag;
   }
 
-  lootInto(bagId: string, inventory: PlayerInventory): { inserted: number; remaining: number } {
+  lootInto(bagId: string, inventory: PlayerInventory): { inserted: number; remaining: number; gone: boolean } {
     const index = this.bags.findIndex((b) => b.id === bagId);
-    if (index < 0) return { inserted: 0, remaining: 0 };
+    if (index < 0) return { inserted: 0, remaining: 0, gone: true };
     const bag = this.bags[index]!;
     const remainingStacks: ItemStack[] = [];
     let inserted = 0;
@@ -98,11 +115,11 @@ export class DeathBagSystem {
     }
     if (remainingStacks.length === 0) {
       this.bags = this.bags.filter((b) => b.id !== bagId);
-    } else {
-      const next = Object.freeze({ ...bag, stacks: Object.freeze(remainingStacks) });
-      this.bags = this.bags.map((b) => (b.id === bagId ? next : b));
+      return { inserted, remaining: 0, gone: true };
     }
-    return { inserted, remaining: remainingStacks.length };
+    const next = Object.freeze({ ...bag, stacks: Object.freeze(remainingStacks) });
+    this.bags = this.bags.map((b) => (b.id === bagId ? next : b));
+    return { inserted, remaining: remainingStacks.length, gone: false };
   }
 
   clear(): void {
@@ -110,28 +127,25 @@ export class DeathBagSystem {
     this.nextId = 1;
   }
 
-  serialize(): readonly {
-    id: string;
-    x: number;
-    z: number;
-    createdAt: number;
-    stacks: readonly { itemId: ItemId; quantity: number; currentDurability?: number }[];
-  }[] {
+  serialize(): readonly SerializedDeathBag[] {
     return Object.freeze(this.bags.map((bag) => Object.freeze({
       id: bag.id,
+      locationId: bag.locationId,
       x: bag.x,
       z: bag.z,
       createdAt: bag.createdAt,
-      stacks: Object.freeze(bag.stacks.map((s) => Object.freeze({
-        itemId: s.itemId,
-        quantity: s.quantity,
-        currentDurability: s.currentDurability,
-      }))),
+      stacks: Object.freeze(bag.stacks.map((s) => {
+        if (s.currentDurability !== undefined) {
+          return Object.freeze({ itemId: s.itemId, quantity: s.quantity, currentDurability: s.currentDurability });
+        }
+        return Object.freeze({ itemId: s.itemId, quantity: s.quantity });
+      })),
     })));
   }
 
   load(rows: readonly {
     id: string;
+    locationId?: string;
     x: number;
     z: number;
     createdAt?: number;
@@ -151,10 +165,14 @@ export class DeathBagSystem {
           ));
         } catch { /* skip invalid */ }
       }
+      if (stacks.length === 0) continue;
       const match = /^death-bag-(\d+)$/.exec(row.id);
       if (match) this.nextId = Math.max(this.nextId, Number(match[1]) + 1);
+      // Pre-locationId saves: treat as current session defaults → home so bags stay recoverable at base.
+      const locationId = (row.locationId as LocationId | undefined) ?? "home";
       this.bags.push(Object.freeze({
         id: row.id,
+        locationId,
         x: row.x,
         z: row.z,
         createdAt: row.createdAt ?? Date.now(),

@@ -1,6 +1,16 @@
 /**
  * Base water network: tank storage, purifier queue, pump consumption via power grid abstract.
+ *
+ * Dual fill path (LDoE-ish):
+ * - Water collector placed → slow passive dirty rain, no power required.
+ * - Collector + powered pump → faster dirty intake.
+ * - Powered purifier → dirty → clean tank units.
  */
+
+/** Dirty units / sec from catchment alone (no electricity). */
+export const COLLECTOR_PASSIVE_DIRTY_PER_SEC = 0.1;
+/** Dirty units / sec when pump is on and grid can supply power. */
+export const COLLECTOR_PUMP_DIRTY_PER_SEC = 0.4;
 
 export class WaterSystem {
   private dirty = 0;
@@ -9,6 +19,7 @@ export class WaterSystem {
   private readonly cleanCap = 120;
   private purifyProgress = 0;
   private purifyRatePerSec = 0.15;
+  private collectorActive = false;
   private pumpEnabled = false;
   private purifierEnabled = false;
 
@@ -16,9 +27,12 @@ export class WaterSystem {
   get cleanWater(): number { return this.clean; }
   get dirtyCapacity(): number { return this.dirtyCap; }
   get cleanCapacity(): number { return this.cleanCap; }
+  get hasCollector(): boolean { return this.collectorActive; }
   get pumpOn(): boolean { return this.pumpEnabled; }
   get purifierOn(): boolean { return this.purifierEnabled; }
 
+  /** True when a water-collector piece is present at home. */
+  setCollector(on: boolean): void { this.collectorActive = on; }
   setPump(on: boolean): void { this.pumpEnabled = on; }
   setPurifier(on: boolean): void { this.purifierEnabled = on; }
 
@@ -45,9 +59,14 @@ export class WaterSystem {
    */
   tick(dt: number, powered: boolean): void {
     if (dt <= 0) return;
-    if (this.pumpEnabled && powered) {
-      this.dirty = Math.min(this.dirtyCap, this.dirty + 0.4 * dt);
+
+    if (this.collectorActive) {
+      this.addDirty(COLLECTOR_PASSIVE_DIRTY_PER_SEC * dt);
+      if (this.pumpEnabled && powered) {
+        this.addDirty(COLLECTOR_PUMP_DIRTY_PER_SEC * dt);
+      }
     }
+
     if (this.purifierEnabled && powered && this.dirty >= 1 && this.clean < this.cleanCap) {
       this.purifyProgress += this.purifyRatePerSec * dt;
       while (this.purifyProgress >= 1 && this.dirty >= 1 && this.clean < this.cleanCap) {

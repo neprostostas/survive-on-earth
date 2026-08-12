@@ -11,7 +11,12 @@ import { createRock, type RockObject } from "./objects/Rock";
 import { createTree, type TreeObject } from "./objects/Tree";
 import { createWall, type WallObject } from "./objects/Wall";
 import { createCrate, type CrateObject } from "./objects/Crate";
+import { createWorkbench, type WorkbenchObject } from "./objects/Workbench";
+import { createChoppingStump, type ChoppingStumpObject } from "./objects/ChoppingStump";
+import { createFarmBed, type FarmBedObject } from "./objects/FarmBed";
 import { CampfireObject } from "./objects/Campfire";
+import type { FarmPlot } from "../farming/FarmingSystem";
+import { farmPlotInteractableId } from "../farming/FarmAccess";
 import { ProceduralTextureFactory } from "../rendering/ProceduralTextureFactory";
 import { GroundSurface } from "./detail/GroundSurface";
 import { GroundClutter } from "./detail/GroundClutter";
@@ -48,6 +53,9 @@ export class TestLocation {
   private readonly harvestEffects: HarvestImpactEffects;
   private crate!: CrateObject;
   private campfire!: CampfireObject;
+  private workbench!: WorkbenchObject;
+  private choppingStump!: ChoppingStumpObject;
+  private readonly farmBeds: FarmBedObject[] = [];
   private visualTime = 0;
   private readonly homeDecorRoot: TransformNode;
   /** Prop packs keyed by locationId — never share meshes across sites. */
@@ -63,6 +71,10 @@ export class TestLocation {
   private homeCrateZ = 1.2;
   private homeCampX = -4;
   private homeCampZ = 4;
+  private homeWorkbenchX = -5.5;
+  private homeWorkbenchZ = 4.8;
+  private homeStumpX = -2.6;
+  private homeStumpZ = 4.6;
 
   constructor(
     private readonly scene: Scene,
@@ -93,6 +105,10 @@ export class TestLocation {
     this.homeCrateZ = this.crate.root.position.z;
     this.homeCampX = this.campfire.root.position.x;
     this.homeCampZ = this.campfire.root.position.z;
+    this.homeWorkbenchX = this.workbench.root.position.x;
+    this.homeWorkbenchZ = this.workbench.root.position.z;
+    this.homeStumpX = this.choppingStump.root.position.x;
+    this.homeStumpZ = this.choppingStump.root.position.z;
   }
 
   /**
@@ -114,6 +130,11 @@ export class TestLocation {
     }
     this.homeDecorRoot.setEnabled(theme.showHomeDecor);
     this.campfire.root.setEnabled(theme.showCampfire);
+    this.workbench.root.setEnabled(theme.showCampfire && locationId === "home");
+    this.choppingStump.root.setEnabled(theme.showCampfire && locationId === "home");
+    for (const bed of this.farmBeds) {
+      bed.setEnabled(theme.showHomeDecor && locationId === "home");
+    }
     this.crate.root.setEnabled(theme.showCrate && locationId === "home");
 
     this.relayoutNaturalObjects(locationId, theme);
@@ -163,6 +184,8 @@ export class TestLocation {
       });
       this.crate.root.position.set(this.homeCrateX, 0, this.homeCrateZ);
       this.campfire.root.position.set(this.homeCampX, 0, this.homeCampZ);
+      this.workbench.root.position.set(this.homeWorkbenchX, 0, this.homeWorkbenchZ);
+      this.choppingStump.root.position.set(this.homeStumpX, 0, this.homeStumpZ);
       return;
     }
 
@@ -209,6 +232,7 @@ export class TestLocation {
     if (theme.showCampfire) {
       const p = placeAway();
       this.campfire.root.position.set(p.x, 0, p.z);
+      this.workbench.root.position.set(p.x - 1.5, 0, p.z + 0.8);
     }
   }
 
@@ -258,7 +282,31 @@ export class TestLocation {
     if (this.campfire.root.isEnabled()) {
       markers.push(Object.freeze({ kind: "campfire", x: this.campfire.root.position.x, z: this.campfire.root.position.z }));
     }
+    if (this.workbench.root.isEnabled()) {
+      markers.push(Object.freeze({ kind: "workbench", x: this.workbench.root.position.x, z: this.workbench.root.position.z }));
+    }
+    if (this.choppingStump.root.isEnabled()) {
+      markers.push(Object.freeze({ kind: "stump", x: this.choppingStump.root.position.x, z: this.choppingStump.root.position.z }));
+    }
+    for (const bed of this.farmBeds) {
+      if (!bed.root.isEnabled()) continue;
+      markers.push(Object.freeze({ kind: "farm" as const, x: bed.root.position.x, z: bed.root.position.z }));
+    }
     return Object.freeze(markers);
+  }
+
+  /** Match decorative beds to domain farm plots (call each frame or after interact). */
+  syncFarmBeds(plots: readonly FarmPlot[]): void {
+    const byId = new Map(plots.map((p) => [p.id, p]));
+    for (const bed of this.farmBeds) {
+      const plot = byId.get(bed.plotId);
+      if (!plot) {
+        bed.applyState("empty", 0, false, false);
+        continue;
+      }
+      const growth01 = plot.growthNeeded > 0 ? plot.growth / plot.growthNeeded : 0;
+      bed.applyState(plot.state, growth01, plot.fertilized, plot.hydrated);
+    }
   }
 
   removeResourceCollision(resourceId: string): void { this.collision.remove(resourceId); }
@@ -491,6 +539,48 @@ export class TestLocation {
       radius: () => 0.72,
       enabled: () => !this.campfire.root.isDisposed() && this.campfire.root.isEnabled(),
     }));
+    // Visible chopping stump — woodworking without placing a bench yet.
+    const stumpX = this.campfire.root.position.x + 1.4;
+    const stumpZ = this.campfire.root.position.z + 0.6;
+    this.choppingStump = createChoppingStump(this.scene, this.materials, stumpX, stumpZ);
+    this.homeStumpX = stumpX;
+    this.homeStumpZ = stumpZ;
+    this.interactables.push(createInteractable({
+      id: "chopping-stump-01",
+      type: "station",
+      position: () => this.choppingStump.root.position,
+      radius: () => 0.7,
+      enabled: () => !this.choppingStump.root.isDisposed() && this.choppingStump.root.isEnabled(),
+    }));
+    // Visible starter bench — blueprints access before a full Assembly Bench is built (LDOE loop).
+    const wbX = this.campfire.root.position.x - 1.5;
+    const wbZ = this.campfire.root.position.z + 0.8;
+    this.workbench = createWorkbench(this.scene, this.materials, wbX, wbZ);
+    this.homeWorkbenchX = wbX;
+    this.homeWorkbenchZ = wbZ;
+    this.interactables.push(createInteractable({
+      id: "home-workbench-01",
+      type: "station",
+      position: () => this.workbench.root.position,
+      radius: () => 0.85,
+      enabled: () => !this.workbench.root.isDisposed() && this.workbench.root.isEnabled(),
+    }));
+    // Home garden plots (soil beds west of path / near decor farm patch).
+    const farmLayout: { id: string; x: number; z: number }[] = [
+      { id: "home-plot-1", x: -6, z: -1.4 },
+      { id: "home-plot-2", x: -6.1, z: 0.7 },
+    ];
+    for (const def of farmLayout) {
+      const bed = createFarmBed(this.scene, this.materials, def.id, def.x, def.z);
+      this.farmBeds.push(bed);
+      this.interactables.push(createInteractable({
+        id: farmPlotInteractableId(def.id),
+        type: "farm-plot",
+        position: () => bed.root.position,
+        radius: () => 0.95,
+        enabled: () => !bed.root.isDisposed() && bed.root.isEnabled(),
+      }));
+    }
   }
 
   private rebuildCollisions(): void {
@@ -525,6 +615,16 @@ export class TestLocation {
     }
     if (this.campfire.root.isEnabled()) {
       this.collision.addCircle(this.campfire.root.position.x, this.campfire.root.position.z, 0.72, "campfire");
+    }
+    if (this.workbench.root.isEnabled()) {
+      this.collision.addBox(this.workbench.root.position.x, this.workbench.root.position.z, 0.85, 0.45, "workbench");
+    }
+    if (this.choppingStump.root.isEnabled()) {
+      this.collision.addCircle(this.choppingStump.root.position.x, this.choppingStump.root.position.z, 0.55, "chopping-stump");
+    }
+    for (const bed of this.farmBeds) {
+      if (!bed.root.isEnabled()) continue;
+      this.collision.addBox(bed.root.position.x, bed.root.position.z, 0.75, 0.5, bed.plotId);
     }
     // Landmark soft collision offset unique per location
     if (this.currentTheme.biome !== "home") {

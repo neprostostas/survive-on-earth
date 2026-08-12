@@ -14,6 +14,8 @@ import {
 } from "../locations/MapLayout";
 import type { ActiveWorldEvent } from "../world/WorldEventDirector";
 import type { RaidSite } from "../raids/RaidSystem";
+import { raidMapPins } from "../raids/RaidAnchors";
+import { eventMapPins } from "../world/EventAnchors";
 import type { StoryActDef } from "../quests/StoryActs";
 import type { Vector2 } from "@babylonjs/core/Maths/math.vector";
 
@@ -266,12 +268,25 @@ export class GlobalMapPanel {
     if (!el) return;
     const parts: string[] = [];
     const act = this.intel.act?.();
-    if (act) parts.push(`<span class="map-intel-act">${act.title}</span>`);
+    if (act) parts.push(`<span class="map-intel-act">${escapeHtml(act.title)}</span>`);
     const events = this.intel.events?.() ?? [];
     for (const e of events.slice(0, 2)) {
-      if (!e.claimed) parts.push(`Event: ${e.title}`);
+      if (e.claimed) continue;
+      const pin = eventMapPins([e])[0];
+      const where = pin ? locationTitle(pin.locationId) : "";
+      parts.push(
+        where
+          ? `${I18N.t("map.event")}: ${escapeHtml(e.title)} · ${escapeHtml(where)}`
+          : `${I18N.t("map.event")}: ${escapeHtml(e.title)}`,
+      );
     }
-    el.innerHTML = parts.map((p) => `<div class="map-intel-row">${p}</div>`).join("");
+    const raids = this.intel.raids?.() ?? [];
+    for (const r of raids.slice(0, 3)) {
+      if (!r.cleared) parts.push(`${I18N.t("map.raid")}: ${escapeHtml(r.title)} · T${r.threat}`);
+    }
+    el.innerHTML = parts.length
+      ? parts.map((p) => `<div class="map-intel-row">${p}</div>`).join("")
+      : `<div class="map-intel-row map-intel-empty">${I18N.t("map.intelEmpty")}</div>`;
   }
 
   private renderNodes(): void {
@@ -312,6 +327,50 @@ export class GlobalMapPanel {
         this.refreshEnterState();
       });
       host.append(btn);
+    }
+    // Open raid compound markers (linked to location pins).
+    for (const raidPin of raidMapPins(this.intel.raids?.() ?? [])) {
+      const locId = raidPin.locationId;
+      const el = document.createElement("div");
+      el.className = "overworld-raid-marker";
+      el.style.left = `${raidPin.x * 100}%`;
+      el.style.top = `${raidPin.y * 100}%`;
+      el.title = `${I18N.t("map.raid")}: ${raidPin.title} (T${raidPin.threat})`;
+      el.innerHTML = `<span class="overworld-raid-dot"></span><span class="overworld-raid-label">T${raidPin.threat}</span>`;
+      el.addEventListener("click", () => {
+        if (!this.locations.isUnlocked(locId)) {
+          this.locations.unlock(locId);
+        }
+        this.playerX = raidPin.x;
+        this.playerY = raidPin.y;
+        this.updateNearest();
+        this.paintPlayer();
+        this.refreshEnterState();
+        this.infoEl.textContent = `${I18N.t("map.raid")}: ${raidPin.title} · ${locationTitle(locId)}`;
+      });
+      host.append(el);
+    }
+    // Active world-event markers (anchor location + soft unlock on click).
+    for (const evtPin of eventMapPins(this.intel.events?.() ?? [])) {
+      const locId = evtPin.locationId;
+      const el = document.createElement("div");
+      el.className = "overworld-event-marker" + (evtPin.danger >= 4 ? " is-hot" : "");
+      el.style.left = `${evtPin.x * 100}%`;
+      el.style.top = `${evtPin.y * 100}%`;
+      el.title = `${I18N.t("map.event")}: ${evtPin.title} (D${evtPin.danger})`;
+      el.innerHTML = `<span class="overworld-event-dot"></span><span class="overworld-event-label">D${evtPin.danger}</span>`;
+      el.addEventListener("click", () => {
+        if (!this.locations.isUnlocked(locId)) {
+          this.locations.unlock(locId);
+        }
+        this.playerX = evtPin.x;
+        this.playerY = evtPin.y;
+        this.updateNearest();
+        this.paintPlayer();
+        this.refreshEnterState();
+        this.infoEl.textContent = `${I18N.t("map.event")}: ${evtPin.title} · ${locationTitle(locId)}`;
+      });
+      host.append(el);
     }
   }
 
@@ -374,6 +433,14 @@ export class GlobalMapPanel {
 
 function clamp01(v: number): number {
   return Math.max(0.02, Math.min(0.98, v));
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 // silence unused

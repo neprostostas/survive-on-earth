@@ -3,11 +3,15 @@ import { ITEM_REGISTRY, createItemStack } from "../items/ItemSystem.ts";
 import type { PlayerInventory } from "../inventory/PlayerInventory.ts";
 import {
   BUILD_CONFIG,
+  gridToWorld,
   layerForCategory,
   tabForCategory,
   type BuildLayer,
   type BuildTab,
 } from "./buildConfig.ts";
+import { isDamaged, repairCostFor } from "./BuildingRepair.ts";
+export { isDamaged, missingHpRatio, repairCostFor, repairHealAmount } from "./BuildingRepair.ts";
+export type { RepairCostLine } from "./BuildingRepair.ts";
 
 export interface BuildPieceDef {
   readonly id: string;
@@ -235,6 +239,18 @@ export const BUILD_PIECES: readonly BuildPieceDef[] = Object.freeze([
     maxHp: 50,
   }),
   Object.freeze({
+    id: "camp-generator",
+    title: "Camp Generator",
+    category: "station" as const,
+    cost: Object.freeze([
+      { itemId: "scrap-metal" as const, quantity: 8 },
+      { itemId: "iron-bar" as const, quantity: 3 },
+      { itemId: "wire" as const, quantity: 4 },
+      { itemId: "bolts" as const, quantity: 4 },
+    ]),
+    maxHp: 100,
+  }),
+  Object.freeze({
     id: "composter",
     title: "Composter",
     category: "station" as const,
@@ -243,6 +259,17 @@ export const BUILD_PIECES: readonly BuildPieceDef[] = Object.freeze([
       { itemId: "nails" as const, quantity: 4 },
     ]),
     maxHp: 45,
+  }),
+  Object.freeze({
+    id: "recycler",
+    title: "Recycler",
+    category: "station" as const,
+    cost: Object.freeze([
+      { itemId: "scrap-metal" as const, quantity: 6 },
+      { itemId: "iron-bar" as const, quantity: 2 },
+      { itemId: "bolts" as const, quantity: 4 },
+    ]),
+    maxHp: 85,
   }),
   Object.freeze({
     id: "weapon-rack",
@@ -265,6 +292,30 @@ export const BUILD_PIECES: readonly BuildPieceDef[] = Object.freeze([
     ]),
     maxHp: 50,
   }),
+  Object.freeze({
+    id: "cold-box",
+    title: "Cold Box",
+    category: "furniture" as const,
+    cost: Object.freeze([
+      { itemId: "scrap-metal" as const, quantity: 6 },
+      { itemId: "iron-bar" as const, quantity: 3 },
+      { itemId: "wire" as const, quantity: 2 },
+      { itemId: "bolts" as const, quantity: 4 },
+    ]),
+    maxHp: 90,
+  }),
+  Object.freeze({
+    id: "base-radio",
+    title: "Base Radio",
+    category: "furniture" as const,
+    cost: Object.freeze([
+      { itemId: "scrap-metal" as const, quantity: 3 },
+      { itemId: "wire" as const, quantity: 3 },
+      { itemId: "plastic" as const, quantity: 2 },
+      { itemId: "screws" as const, quantity: 2 },
+    ]),
+    maxHp: 45,
+  }),
 ]);
 
 export interface PlacedBuildPiece {
@@ -277,6 +328,8 @@ export interface PlacedBuildPiece {
   readonly maxHp: number;
   readonly level: number;
   readonly layer: BuildLayer;
+  /** Doors/gates: player-toggle open passage (default closed). */
+  readonly isOpen?: boolean;
 }
 
 export type PlaceBlockReason =
@@ -326,6 +379,11 @@ function getDef(pieceId: string): BuildPieceDef | undefined {
   return BUILD_PIECES.find((p) => p.id === pieceId);
 }
 
+export function isPassagePieceId(pieceId: string): boolean {
+  const def = getDef(pieceId);
+  return def?.category === "door";
+}
+
 /**
  * LDOE-style grid base builder domain (Home only).
  * Floors first; walls/doors/furniture on floor cells; Build vs Furniture tabs.
@@ -338,6 +396,7 @@ export class BuildingRegistry {
   private rotation: 0 | 90 | 180 | 270 = 0;
   private activeTab: BuildTab = "build";
   private demolishMode = false;
+  private repairMode = false;
 
   get isBuildMode(): boolean { return this.modeOpen; }
   get selected(): string | null { return this.selectedPieceId; }
@@ -345,11 +404,13 @@ export class BuildingRegistry {
   get all(): readonly PlacedBuildPiece[] { return this.pieces; }
   get tab(): BuildTab { return this.activeTab; }
   get isDemolishMode(): boolean { return this.demolishMode; }
+  get isRepairMode(): boolean { return this.repairMode; }
 
   open(): void { this.modeOpen = true; }
   close(): void {
     this.modeOpen = false;
     this.demolishMode = false;
+    this.repairMode = false;
   }
   toggle(): void {
     if (this.modeOpen) this.close();
@@ -359,6 +420,7 @@ export class BuildingRegistry {
   setTab(tab: BuildTab): void {
     this.activeTab = tab;
     this.demolishMode = false;
+    this.repairMode = false;
     // Auto-select first piece in tab if current is wrong tab
     const current = this.selectedPieceId ? getDef(this.selectedPieceId) : null;
     if (!current || tabForCategory(current.category) !== tab) {
@@ -369,6 +431,12 @@ export class BuildingRegistry {
 
   setDemolishMode(on: boolean): void {
     this.demolishMode = on;
+    if (on) this.repairMode = false;
+  }
+
+  setRepairMode(on: boolean): void {
+    this.repairMode = on;
+    if (on) this.demolishMode = false;
   }
 
   select(pieceId: string): void {
@@ -377,6 +445,7 @@ export class BuildingRegistry {
     this.selectedPieceId = pieceId;
     this.activeTab = tabForCategory(def.category);
     this.demolishMode = false;
+    this.repairMode = false;
   }
 
   rotate(): void {
@@ -515,28 +584,134 @@ export class BuildingRegistry {
       maxHp: def.maxHp,
       level: 1,
       layer: layerForCategory(def.category),
+      ...(def.category === "door" ? { isOpen: false as const } : {}),
     });
   }
 
-  damage(id: string, amount: number): boolean {
-    const index = this.pieces.findIndex((p) => p.id === id);
-    if (index < 0) return false;
-    const current = this.pieces[index];
+  /** Topmost piece under cursor (furniture → structure → floor). */
+  topPieceAt(gridX: number, gridZ: number): PlacedBuildPiece | null {
+    const order: BuildLayer[] = ["furniture", "structure", "floor"];
+    for (const layer of order) {
+      const piece = this.pieceAt(gridX, gridZ, layer);
+      if (piece) return piece;
+    }
+    return null;
+  }
+
+  /** Open/close door or gate. Returns new isOpen, or null if not a passage piece. */
+  togglePassage(instanceId: string): boolean | null {
+    const current = this.pieces.find((p) => p.id === instanceId);
+    if (!current || !isPassagePieceId(current.pieceId)) return null;
+    const isOpen = current.isOpen !== true;
+    this.pieces = this.pieces.map((p) =>
+      (p.id === instanceId ? Object.freeze({ ...p, isOpen }) : p));
+    return isOpen;
+  }
+
+  isPassageOpen(instanceId: string): boolean {
+    const p = this.pieces.find((x) => x.id === instanceId);
+    return p?.isOpen === true;
+  }
+
+  /** Prefer damaged piece if any on the cell; else topmost. */
+  repairTargetAt(gridX: number, gridZ: number): PlacedBuildPiece | null {
+    const order: BuildLayer[] = ["furniture", "structure", "floor"];
+    let damaged: PlacedBuildPiece | null = null;
+    let top: PlacedBuildPiece | null = null;
+    for (const layer of order) {
+      const piece = this.pieceAt(gridX, gridZ, layer);
+      if (!piece) continue;
+      if (!top) top = piece;
+      if (piece.hp < piece.maxHp) {
+        damaged = piece;
+        break;
+      }
+    }
+    return damaged ?? top;
+  }
+
+  /** Nearest non-floor structure/furniture to world XZ within maxDist. */
+  nearestStructure(worldX: number, worldZ: number, maxDist: number): PlacedBuildPiece | null {
+    let best: PlacedBuildPiece | null = null;
+    let bestD = maxDist;
+    for (const piece of this.pieces) {
+      if (piece.layer === "floor") continue;
+      const p = gridToWorld(piece.gridX, piece.gridZ);
+      const d = Math.hypot(p.x - worldX, p.z - worldZ);
+      if (d < bestD) {
+        bestD = d;
+        best = piece;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Apply damage. Returns destroyed piece snapshot when HP hit 0, else the updated piece, or null if missing.
+   */
+  damagePiece(id: string, amount: number): { destroyed: boolean; piece: PlacedBuildPiece | null } {
+    const current = this.pieces.find((p) => p.id === id);
+    if (!current || amount <= 0) return { destroyed: false, piece: current ?? null };
     const hp = Math.max(0, current.hp - amount);
     if (hp <= 0) {
       this.pieces = this.pieces.filter((p) => p.id !== id);
-      return true;
+      return { destroyed: true, piece: current };
     }
-    this.pieces = this.pieces.map((p) => (p.id === id ? Object.freeze({ ...p, hp }) : p));
-    return true;
+    const next = Object.freeze({ ...current, hp });
+    this.pieces = this.pieces.map((p) => (p.id === id ? next : p));
+    return { destroyed: false, piece: next };
+  }
+
+  /** @deprecated use damagePiece */
+  damage(id: string, amount: number): boolean {
+    const r = this.damagePiece(id, amount);
+    return r.piece !== null || r.destroyed;
   }
 
   repair(id: string, amount: number): boolean {
     const current = this.pieces.find((p) => p.id === id);
-    if (!current) return false;
+    if (!current || amount <= 0) return false;
     const hp = Math.min(current.maxHp, current.hp + amount);
     this.pieces = this.pieces.map((p) => (p.id === id ? Object.freeze({ ...p, hp }) : p));
     return true;
+  }
+
+  /** Full heal after paying materials. */
+  repairFull(id: string): boolean {
+    const current = this.pieces.find((p) => p.id === id);
+    if (!current || current.hp >= current.maxHp) return false;
+    this.pieces = this.pieces.map((p) =>
+      (p.id === id ? Object.freeze({ ...p, hp: p.maxHp }) : p));
+    return true;
+  }
+
+  /**
+   * Repair damaged piece at cell (material cost ≈ missing HP fraction).
+   */
+  tryRepairAt(
+    inventory: PlayerInventory,
+    gridX: number,
+    gridZ: number,
+  ): {
+    ok: boolean;
+    reason: "none" | "full" | "need-materials" | null;
+    piece: PlacedBuildPiece | null;
+    cost: readonly { itemId: ItemId; quantity: number }[];
+  } {
+    const target = this.repairTargetAt(gridX, gridZ);
+    if (!target) return { ok: false, reason: "none", piece: null, cost: Object.freeze([]) };
+    if (!isDamaged(target)) {
+      return { ok: false, reason: "full", piece: target, cost: Object.freeze([]) };
+    }
+    const def = getDef(target.pieceId);
+    if (!def) return { ok: false, reason: "none", piece: null, cost: Object.freeze([]) };
+    const cost = repairCostFor(target, def);
+    if (!tryConsumeCost(inventory, cost)) {
+      return { ok: false, reason: "need-materials", piece: target, cost };
+    }
+    this.repairFull(target.id);
+    const fixed = this.pieces.find((p) => p.id === target.id) ?? null;
+    return { ok: true, reason: null, piece: fixed, cost };
   }
 
   serialize(): readonly PlacedBuildPiece[] { return this.pieces; }
@@ -544,11 +719,13 @@ export class BuildingRegistry {
   load(pieces: readonly PlacedBuildPiece[]): void {
     this.pieces = pieces.map((p) => {
       const def = getDef(p.pieceId);
+      const isDoor = def?.category === "door";
       return Object.freeze({
         ...p,
         maxHp: p.maxHp ?? def?.maxHp ?? 80,
         level: p.level ?? 1,
         layer: p.layer ?? (def ? layerForCategory(def.category) : "floor"),
+        ...(isDoor ? { isOpen: p.isOpen === true } : { isOpen: undefined }),
       });
     });
     this.nextId = pieces.reduce((max, p) => Math.max(max, Number(p.id.replace(/\D/g, "")) || 0), 0) + 1;

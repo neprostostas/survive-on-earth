@@ -263,6 +263,8 @@ export const BOSS_COMPONENT_LOOT: LootTable = Object.freeze({
     Object.freeze({ itemId: "hardened-alloy" as const, weight: 2, minQuantity: 1, maxQuantity: 1 }),
     Object.freeze({ itemId: "precision-mechanism" as const, weight: 2, minQuantity: 1, maxQuantity: 1 }),
     Object.freeze({ itemId: "blueprint-weapon" as const, weight: 1, minQuantity: 1, maxQuantity: 1 }),
+    Object.freeze({ itemId: "blueprint-tool" as const, weight: 1, minQuantity: 1, maxQuantity: 1 }),
+    Object.freeze({ itemId: "blueprint-station" as const, weight: 1, minQuantity: 1, maxQuantity: 1 }),
   ]),
 });
 

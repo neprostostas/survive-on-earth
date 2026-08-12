@@ -25,6 +25,7 @@ export class HarvestingSystem {
     lastResourceDepleted: null,
     unavailableFeedback: 0,
   };
+  private speedMul = 1;
 
   constructor(
     private readonly config: CalibrationConfig,
@@ -33,10 +34,17 @@ export class HarvestingSystem {
     private readonly interaction: InteractionSystem,
     private readonly resultSink: ResourceResultSink,
     private readonly onResourceDepleted: (resource: HarvestableResource) => void,
+    /** Fired on each successful tool impact (noise / FX hooks). */
+    private readonly onSwingImpact: (() => void) | null = null,
   ) {}
 
   get state(): Readonly<HarvestingDebugState> { return this.debugState; }
   get active(): boolean { return this.session.active; }
+
+  /** >1 shortens swing duration (Forager ranks). */
+  setSpeedMultiplier(mul: number): void {
+    this.speedMul = Number.isFinite(mul) && mul > 0 ? mul : 1;
+  }
 
   update(delta: number, action: PrimaryActionState, movement: Readonly<Vector2>, playerPosition: Readonly<Vector3>): boolean {
     this.debugState.unavailableFeedback = Math.max(0, this.debugState.unavailableFeedback - delta * 2.8);
@@ -95,6 +103,7 @@ export class HarvestingSystem {
         }
         target.playImpact(playerPosition, this.config.harvesting.hitReactionStrength, this.config.harvesting.particleIntensity);
         this.interaction.acknowledge(target);
+        this.onSwingImpact?.();
         if (result.depleted) {
           const resourceYield = target.claimYield();
           if (!resourceYield) throw new Error(`Depleted resource did not provide a one-shot yield: ${target.resourceId}`);
@@ -131,12 +140,14 @@ export class HarvestingSystem {
   }
 
   private timingFor(tool: "hatchet" | "pickaxe" | "hand"): SwingTiming {
+    const mul = this.speedMul;
     if (tool === "hand") {
-      return { duration: 0.55, impactNormalizedTime: 0.55 };
+      return { duration: 0.55 / mul, impactNormalizedTime: 0.55 };
     }
-    return tool === "hatchet"
+    const base = tool === "hatchet"
       ? { duration: this.config.harvesting.hatchetSwingDuration, impactNormalizedTime: this.config.harvesting.hatchetImpactTiming }
       : { duration: this.config.harvesting.pickaxeSwingDuration, impactNormalizedTime: this.config.harvesting.pickaxeImpactTiming };
+    return { duration: base.duration / mul, impactNormalizedTime: base.impactNormalizedTime };
   }
 
   private syncDebug(resource: HarvestableResource | null, actionHeld: boolean): void {

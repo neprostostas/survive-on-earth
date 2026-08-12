@@ -1,5 +1,7 @@
 import type { CraftingSystem } from "../crafting/CraftingSystem";
 import type { CraftingCategory, CraftingRecipeDefinition, CraftingRecipeId } from "../crafting/CraftingTypes";
+import { craftTierLabel } from "../crafting/CraftBenchTiers";
+import { isBlueprintItemId } from "../crafting/BlueprintUnlocks";
 import type { PlayerInventory } from "../inventory/PlayerInventory";
 import { ITEM_REGISTRY } from "../items/ItemSystem";
 import { ITEM_ICONS } from "./itemIcons";
@@ -41,12 +43,14 @@ export class CraftingPanel {
   private readonly gridEl: HTMLElement;
   private readonly detailEl: HTMLElement;
   private readonly searchInput: HTMLInputElement;
+  private readonly readyOnlyToggle: HTMLInputElement;
   private readonly emptyFilter: HTMLElement;
   private readonly cells = new Map<CraftingRecipeId, HTMLButtonElement>();
   private openState = false;
   private category: CraftingCategory = "all";
   private selectedId: CraftingRecipeId | null = null;
   private searchQuery = "";
+  private readyOnly = false;
   private readonly localLoader = new LocalLoader();
 
   constructor(
@@ -57,6 +61,8 @@ export class CraftingPanel {
     private readonly showStatus: (message: string) => void,
     private readonly onVisibilityChange: (open: boolean) => void,
     private readonly onCrafted?: (recipeId: CraftingRecipeId, outputItemId: string) => void,
+    /** When provided, opening is blocked unless this returns true (close always works). */
+    private readonly canOpen?: () => boolean,
   ) {
     this.overlay = document.createElement("section");
     this.overlay.className = "crafting-overlay";
@@ -75,6 +81,10 @@ export class CraftingPanel {
               </svg>
             </span>
             <input type="search" class="crafting-search-input" placeholder="Search blueprints…" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+          </label>
+          <label class="crafting-ready-filter">
+            <input type="checkbox" class="crafting-ready-only" />
+            <span data-role="craft-ready-label">Ready only</span>
           </label>
           <button class="crafting-close" type="button" aria-label="Close blueprints">×</button>
         </header>
@@ -112,8 +122,9 @@ export class CraftingPanel {
     const gridEl = this.overlay.querySelector<HTMLElement>(".crafting-grid");
     const detailEl = this.overlay.querySelector<HTMLElement>(".crafting-detail");
     const searchInput = this.overlay.querySelector<HTMLInputElement>(".crafting-search-input");
+    const readyOnlyToggle = this.overlay.querySelector<HTMLInputElement>(".crafting-ready-only");
     const emptyFilter = this.overlay.querySelector<HTMLElement>(".crafting-empty-filter");
-    if (!closeButton || !tabsEl || !gridEl || !detailEl || !searchInput || !emptyFilter) {
+    if (!closeButton || !tabsEl || !gridEl || !detailEl || !searchInput || !readyOnlyToggle || !emptyFilter) {
       throw new Error("Crafting UI failed to mount");
     }
     this.closeButton = closeButton;
@@ -121,6 +132,7 @@ export class CraftingPanel {
     this.gridEl = gridEl;
     this.detailEl = detailEl;
     this.searchInput = searchInput;
+    this.readyOnlyToggle = readyOnlyToggle;
     this.emptyFilter = emptyFilter;
     this.localLoader.attach(this.overlay.querySelector(".crafting-panel") ?? this.overlay);
 
@@ -172,6 +184,10 @@ export class CraftingPanel {
         this.render();
       }
     });
+    this.readyOnlyToggle.addEventListener("change", () => {
+      this.readyOnly = this.readyOnlyToggle.checked;
+      this.render();
+    });
 
     this.rebuildLocalizedSearch();
     this.applyCraftLocale();
@@ -193,8 +209,18 @@ export class CraftingPanel {
   open = (): void => { this.setOpen(true); };
   close = (): void => { this.setOpen(false); };
 
+  /** Re-evaluate craftable / blueprint locks while open. */
+  refresh(): void {
+    if (!this.openState) return;
+    this.render();
+  }
+
   private setOpen(open: boolean): void {
     if (open === this.openState) return;
+    if (open && this.canOpen && !this.canOpen()) {
+      this.showStatus(I18N.t("notify.needWorkbench"));
+      return;
+    }
     this.openState = open;
     this.overlay.classList.toggle("open", open);
     this.overlay.setAttribute("aria-hidden", String(!open));
@@ -221,9 +247,14 @@ export class CraftingPanel {
     const h2 = this.overlay.querySelector("#crafting-title");
     if (h2) h2.textContent = t("craft.title").toUpperCase();
     const sub = this.overlay.querySelector("[data-role=craft-subtitle]");
-    if (sub) sub.textContent = t("craft.subtitle").toUpperCase();
+    if (sub) {
+      sub.textContent = craftTierLabel(this.crafting.currentBenchTier).toUpperCase();
+    }
     this.searchInput.placeholder = t("craft.search");
     this.emptyFilter.textContent = t("craft.empty");
+    const readyLabel = this.overlay.querySelector("[data-role=craft-ready-label]");
+    if (readyLabel) readyLabel.textContent = t("craft.readyOnly");
+    this.readyOnlyToggle.setAttribute("aria-label", t("craft.readyOnly"));
     const craftBtn = this.detailEl.querySelector(".craft-button");
     if (craftBtn && !this.selectedId) craftBtn.textContent = t("craft.craft");
     this.closeButton.setAttribute("aria-label", t("craft.close"));
@@ -311,7 +342,8 @@ export class CraftingPanel {
       const catOk = this.category === "all" || cat === this.category;
       const hay = cell.dataset.search ?? "";
       const searchOk = tokens.length === 0 || tokens.every((token) => hay.includes(token));
-      const visible = catOk && searchOk;
+      const readyOk = !this.readyOnly || state.craftable;
+      const visible = catOk && searchOk && readyOk;
       cell.hidden = !visible;
       if (visible) {
         visibleCount += 1;
@@ -319,6 +351,8 @@ export class CraftingPanel {
       }
       cell.classList.toggle("craftable", state.craftable);
       cell.classList.toggle("blocked", !state.craftable);
+      cell.classList.toggle("need-bench", state.blockedBy === "need-bench");
+      cell.classList.toggle("need-blueprint", state.blockedBy === "need-blueprint");
       const selected = this.selectedId === recipe.id && visible;
       cell.classList.toggle("selected", selected);
       cell.setAttribute("aria-selected", String(selected));
@@ -392,7 +426,15 @@ export class CraftingPanel {
       ? I18N.t("craft.craft")
       : state.blockedBy === "inventory-full"
         ? I18N.t("inv.full")
-        : I18N.t("craft.needMaterials");
+        : state.blockedBy === "need-bench"
+          ? I18N.t("craft.needBench", { bench: craftTierLabel(state.requiredTier) })
+          : state.blockedBy === "need-blueprint"
+            ? I18N.t("craft.needBlueprint", {
+              name: state.requiredBlueprint && isBlueprintItemId(state.requiredBlueprint)
+                ? itemName(ITEM_REGISTRY.get(state.requiredBlueprint))
+                : I18N.t("craft.blueprint"),
+            })
+            : I18N.t("craft.needMaterials");
   }
 
   private craft(recipeId: CraftingRecipeId): void {
@@ -404,7 +446,20 @@ export class CraftingPanel {
         this.showStatus(I18N.t("craft.crafted", { name: itemName(ITEM_REGISTRY.get(result.output.itemId)) }));
         this.onCrafted?.(recipeId, result.output.itemId);
       } else if (result.status === "inventory-full") this.showStatus(I18N.t("notify.inventoryFull"));
-      else if (result.status === "not-enough-resources") this.showStatus(I18N.t("craft.needMaterials"));
+      else if (result.status === "need-bench") {
+        const state = this.crafting.getRecipeState(recipeId);
+        this.showStatus(I18N.t("craft.needBench", {
+          bench: craftTierLabel(state?.requiredTier ?? 1),
+        }));
+      } else if (result.status === "need-blueprint") {
+        const state = this.crafting.getRecipeState(recipeId);
+        const bp = state?.requiredBlueprint;
+        this.showStatus(I18N.t("craft.needBlueprint", {
+          name: bp && isBlueprintItemId(bp)
+            ? itemName(ITEM_REGISTRY.get(bp))
+            : I18N.t("craft.blueprint"),
+        }));
+      } else if (result.status === "not-enough-resources") this.showStatus(I18N.t("craft.needMaterials"));
       this.render();
     }, 160);
   }

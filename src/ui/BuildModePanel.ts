@@ -48,6 +48,12 @@ export class BuildModePanel {
         this.render();
         return;
       }
+      if (t.closest("[data-role=repair]")) {
+        this.building.setRepairMode(!this.building.isRepairMode);
+        this.onChanged();
+        this.render();
+        return;
+      }
       const tab = t.closest<HTMLElement>("[data-tab]");
       if (tab?.dataset.tab) {
         this.building.setTab(tab.dataset.tab as BuildTab);
@@ -97,6 +103,7 @@ export class BuildModePanel {
     const costs = this.building.costOwnedSummary(inv);
     const afford = selected ? this.building.canAfford(inv) : false;
     const demolish = this.building.isDemolishMode;
+    const repair = this.building.isRepairMode;
 
     this.overlay.innerHTML = `
       <div class="build-mode-panel" role="dialog" aria-label="${I18N.t("build.title")}">
@@ -120,8 +127,12 @@ export class BuildModePanel {
         <div class="build-mode-detail">
           ${demolish ? `
             <div class="build-mode-selected">
-              <b>DEMOLISH</b>
-              <span>Approach a structure and press Place / F to remove furniture → wall → floor.</span>
+              <b>${I18N.t("build.remove").toUpperCase()}</b>
+              <span>${I18N.t("build.hintRemove")}</span>
+            </div>` : repair ? `
+            <div class="build-mode-selected">
+              <b>${I18N.t("build.repair").toUpperCase()}</b>
+              <span>${I18N.t("build.hintRepair")}</span>
             </div>` : selected ? `
             <div class="build-mode-selected">
               <b>${escapeHtml(buildingTitle(selected.id, selected.title))}</b>
@@ -138,9 +149,10 @@ export class BuildModePanel {
             </div>` : `<div class="build-mode-selected"><b>Select a blueprint</b></div>`}
           <div class="build-mode-actions">
             <button type="button" class="menu-btn ghost ${demolish ? "active" : ""}" data-role="demolish">${I18N.t("build.remove")}</button>
+            <button type="button" class="menu-btn ghost ${repair ? "active" : ""}" data-role="repair">${I18N.t("build.repair")}</button>
             <button type="button" class="menu-btn secondary" data-role="rotate">ROTATE R</button>
-            <button type="button" class="menu-btn primary" data-role="place" ${!demolish && (!selected || !afford) ? "disabled" : ""}>
-              ${demolish ? I18N.t("build.remove") : I18N.t("build.place")}
+            <button type="button" class="menu-btn primary" data-role="place" ${!demolish && !repair && (!selected || !afford) ? "disabled" : ""}>
+              ${demolish ? I18N.t("build.remove") : repair ? I18N.t("build.repair") : I18N.t("build.place")}
             </button>
           </div>
         </div>
@@ -149,7 +161,7 @@ export class BuildModePanel {
   }
 
   private cellHtml(p: BuildPieceDef, inv: PlayerInventory): string {
-    const selected = this.building.selected === p.id && !this.building.isDemolishMode;
+    const selected = this.building.selected === p.id && !this.building.isDemolishMode && !this.building.isRepairMode;
     const afford = this.building.canAfford(inv, p.id);
     const iconItem = p.cost[0] ? ITEM_REGISTRY.get(p.cost[0].itemId) : null;
     const icon = iconItem ? ITEM_ICONS[iconItem.iconId] : "";

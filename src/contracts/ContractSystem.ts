@@ -110,6 +110,13 @@ export class ContractSystem {
     return c ? this.complete(c.id) : null;
   }
 
+  /** Force board fill if empty (after load / first open). */
+  ensureBoard(worldDay: number): void {
+    if (this.board.length > 0) return;
+    this.lastRefreshDay = -1;
+    this.tick(worldDay);
+  }
+
   serialize(): { active: ContractDef[]; nextId: number; lastRefreshDay: number } {
     return {
       active: this.active.map((c) => ({ ...c })),

@@ -11,12 +11,20 @@ export interface FarmPlot {
   growth: number;
   growthNeeded: number;
   hydrated: boolean;
+  /** Fertilizer speeds growth and bumps harvest yield once per plant cycle. */
+  fertilized: boolean;
 }
 
-const SEED_CROPS: ReadonlyMap<ItemId, { crop: ItemId; growTime: number }> = new Map([
-  ["berry-seeds", { crop: "berries", growTime: 90 }],
-  ["root-seeds", { crop: "root-vegetable", growTime: 120 }],
+const WATER_ITEM_IDS: readonly ItemId[] = Object.freeze(["clean-water", "water-bottle", "rain-water"]);
+
+const SEED_CROPS: ReadonlyMap<ItemId, { crop: ItemId; growTime: number; yield: number }> = new Map([
+  ["berry-seeds", { crop: "berries", growTime: 90, yield: 4 }],
+  ["root-seeds", { crop: "root-vegetable", growTime: 120, yield: 2 }],
+  ["herb-seeds", { crop: "medicinal-herb", growTime: 100, yield: 3 }],
 ]);
+
+const FERTILIZER_GROWTH_MULT = 1.45;
+const FERTILIZER_YIELD_BONUS = 2;
 
 /** Home agriculture foundation with hydration + wall-clock offline progress. */
 export class FarmingSystem {
@@ -24,10 +32,22 @@ export class FarmingSystem {
 
   get all(): readonly FarmPlot[] { return Object.freeze([...this.plots.values()]); }
 
+  getPlot(id: string): FarmPlot | null {
+    return this.plots.get(id) ?? null;
+  }
+
   ensurePlot(id: string): FarmPlot {
     let plot = this.plots.get(id);
     if (!plot) {
-      plot = { id, state: "empty", seedId: null, growth: 0, growthNeeded: 1, hydrated: false };
+      plot = {
+        id,
+        state: "empty",
+        seedId: null,
+        growth: 0,
+        growthNeeded: 1,
+        hydrated: false,
+        fertilized: false,
+      };
       this.plots.set(id, plot);
     }
     return plot;
@@ -38,30 +58,37 @@ export class FarmingSystem {
     if (!crop) return false;
     const plot = this.ensurePlot(plotId);
     if (plot.state !== "empty") return false;
-    const slot = inventory.findFirstSlotByItemId(seedId);
-    if (slot === null) return false;
-    const stack = inventory.getSlot(slot).stack;
-    if (!stack) return false;
-    if (stack.quantity === 1) inventory.exchangeWholeStack(slot, stack, null);
-    else inventory.exchangeWholeStack(slot, stack, createItemStack(seedId, stack.quantity - 1));
+    if (!consumeOne(inventory, seedId)) return false;
     plot.state = "planted";
     plot.seedId = seedId;
     plot.growth = 0;
     plot.growthNeeded = crop.growTime;
     plot.hydrated = false;
+    plot.fertilized = false;
     return true;
   }
 
-  water(plotId: string, inventory: PlayerInventory): boolean {
+  water(plotId: string, inventory: PlayerInventory, options?: {
+    /** When true (and base tank paid separately), mark hydrated without inv water. */
+    fromBaseTank?: boolean;
+  }): boolean {
     const plot = this.plots.get(plotId);
     if (!plot || plot.state === "empty" || plot.state === "ready") return false;
-    const slot = inventory.findFirstSlotByItemId("water-bottle");
-    if (slot === null) return false;
-    const stack = inventory.getSlot(slot).stack;
-    if (!stack) return false;
-    if (stack.quantity === 1) inventory.exchangeWholeStack(slot, stack, null);
-    else inventory.exchangeWholeStack(slot, stack, createItemStack("water-bottle", stack.quantity - 1));
+    if (options?.fromBaseTank !== true) {
+      if (!consumeFirstAvailable(inventory, WATER_ITEM_IDS)) return false;
+    }
     plot.hydrated = true;
+    if (plot.state === "planted") plot.state = "growing";
+    return true;
+  }
+
+  /** Apply fertilizer bag to a growing or planted plot (consumes 1). */
+  fertilize(plotId: string, inventory: PlayerInventory): boolean {
+    const plot = this.plots.get(plotId);
+    if (!plot || plot.state === "empty" || plot.state === "ready") return false;
+    if (plot.fertilized) return false;
+    if (!consumeOne(inventory, "fertilizer")) return false;
+    plot.fertilized = true;
     if (plot.state === "planted") plot.state = "growing";
     return true;
   }
@@ -79,7 +106,8 @@ export class FarmingSystem {
     if (delta <= 0) return;
     for (const plot of this.plots.values()) {
       if (plot.state !== "growing" && plot.state !== "planted") continue;
-      const rate = plot.hydrated ? 1 : 0.35;
+      let rate = plot.hydrated ? 1 : 0.35;
+      if (plot.fertilized) rate *= FERTILIZER_GROWTH_MULT;
       plot.growth += delta * rate;
       if (plot.state === "planted" && plot.growth > 0) plot.state = "growing";
       if (plot.growth >= plot.growthNeeded) {
@@ -100,21 +128,58 @@ export class FarmingSystem {
     if (!plot || plot.state !== "ready" || !plot.seedId) return false;
     const crop = SEED_CROPS.get(plot.seedId);
     if (!crop) return false;
-    const stack = createItemStack(crop.crop, crop.crop === "berries" ? 4 : 2);
+    const amount = crop.yield + (plot.fertilized ? FERTILIZER_YIELD_BONUS : 0);
+    const stack = createItemStack(crop.crop, amount);
     if (!inventory.tryInsert(stack).accepted) return false;
     plot.state = "empty";
     plot.seedId = null;
     plot.growth = 0;
     plot.hydrated = false;
+    plot.fertilized = false;
     return true;
   }
 
   serialize(): readonly FarmPlot[] {
-    return this.all.map((p) => Object.freeze({ ...p }));
+    return this.all.map((p) => Object.freeze({
+      id: p.id,
+      state: p.state,
+      seedId: p.seedId,
+      growth: p.growth,
+      growthNeeded: p.growthNeeded,
+      hydrated: p.hydrated,
+      fertilized: p.fertilized === true,
+    }));
   }
 
   load(plots: readonly FarmPlot[]): void {
     this.plots.clear();
-    for (const p of plots) this.plots.set(p.id, { ...p });
+    for (const p of plots) {
+      this.plots.set(p.id, {
+        id: p.id,
+        state: p.state,
+        seedId: p.seedId,
+        growth: p.growth,
+        growthNeeded: p.growthNeeded,
+        hydrated: p.hydrated,
+        fertilized: p.fertilized === true,
+      });
+    }
   }
+}
+
+function consumeOne(inventory: PlayerInventory, itemId: ItemId): boolean {
+  const slot = inventory.findFirstSlotByItemId(itemId);
+  if (slot === null) return false;
+  const stack = inventory.getSlot(slot).stack;
+  if (!stack) return false;
+  if (stack.quantity === 1) inventory.exchangeWholeStack(slot, stack, null);
+  else inventory.exchangeWholeStack(slot, stack, createItemStack(itemId, stack.quantity - 1));
+  return true;
+}
+
+function consumeFirstAvailable(inventory: PlayerInventory, itemIds: readonly ItemId[]): boolean {
+  for (const id of itemIds) {
+    if (consumeOne(inventory, id)) return true;
+  }
+  return false;
 }

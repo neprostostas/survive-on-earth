@@ -22,6 +22,8 @@ export interface SerializedContainer {
   readonly capacity: number;
   readonly active: boolean;
   readonly slots: readonly (SerializedStack | null)[];
+  /** Built storage vs loot crate. Missing → take-all (legacy). */
+  readonly accessMode?: "take-all" | "storage";
 }
 
 export interface SaveBlob {
@@ -57,10 +59,13 @@ export interface SaveBlob {
   readonly locations?: Record<string, unknown>;
   readonly quests?: Record<string, unknown>;
   readonly achievements?: readonly string[];
+  readonly learnedBlueprints?: readonly string[];
   readonly farming?: readonly unknown[];
   readonly building?: readonly unknown[];
   readonly power?: { storage?: number; devices?: unknown[] };
   readonly water?: Record<string, unknown>;
+  /** Food spoil ages by slot key (optional). */
+  readonly spoilage?: Record<string, number>;
   readonly mailbox?: readonly SerializedStack[];
   readonly worldClock?: number;
   readonly worldDayAccum?: number;
@@ -96,6 +101,8 @@ export interface SaveBlob {
   readonly worldEvents?: readonly unknown[];
   readonly deathBags?: readonly {
     id: string;
+    /** Location where the corpse lies (missing → treated as home on load). */
+    locationId?: string;
     x: number;
     z: number;
     createdAt?: number;
@@ -108,7 +115,44 @@ export interface SaveBlob {
     nextId?: number;
     entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
   };
+  /** Timed station queues (cook / chop / smelt / metal / chemistry). Prefer over campfireQueue alone. */
+  readonly stations?: {
+    campfire?: {
+      nextId?: number;
+      entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
+    };
+    woodworking?: {
+      nextId?: number;
+      entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
+    };
+    furnace?: {
+      nextId?: number;
+      entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
+    };
+    metalwork?: {
+      nextId?: number;
+      entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
+    };
+    chemistry?: {
+      nextId?: number;
+      entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
+    };
+    water?: {
+      nextId?: number;
+      entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
+    };
+    composter?: {
+      nextId?: number;
+      entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
+    };
+    recycler?: {
+      nextId?: number;
+      entries?: readonly { id: string; recipeKey: string; totalTime: number; progress: number }[];
+    };
+  };
   readonly sneakActive?: boolean;
+  /** Seconds left on current zone visit (null = unlimited / home). */
+  readonly zoneVisitRemaining?: number | null;
   /** Tree/rock/plant harvest progress (hits remaining / depleted). */
   readonly harvestResources?: readonly {
     id: string;

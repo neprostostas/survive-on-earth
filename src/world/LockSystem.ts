@@ -38,7 +38,11 @@ export class LockSystem {
     const lock = this.locks.get(id);
     if (!lock) return { ok: false, reason: "missing" };
     if (!lock.locked) return { ok: true, reason: null };
-    if (lock.kind === "power" && !lock.powered) return { ok: false, reason: "no-power" };
+    if (lock.kind === "power") {
+      if (!lock.powered) return { ok: false, reason: "no-power" };
+      lock.locked = false;
+      return { ok: true, reason: null };
+    }
     if (lock.kind === "code") {
       if (!code || code !== lock.code) return { ok: false, reason: "bad-code" };
       lock.locked = false;
@@ -61,6 +65,15 @@ export class LockSystem {
     const lock = this.locks.get(id);
     if (!lock) return;
     lock.powered = powered;
+  }
+
+  /** Re-seal after a dungeon cycle (also cuts power on breaker locks). */
+  relock(id: string): boolean {
+    const lock = this.locks.get(id);
+    if (!lock) return false;
+    lock.locked = true;
+    if (lock.kind === "power") lock.powered = false;
+    return true;
   }
 
   serialize(): readonly { id: string; locked: boolean; powered?: boolean }[] {

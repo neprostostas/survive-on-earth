@@ -1,4 +1,11 @@
-export type InteractionType = "resource" | "container" | "station" | "ground-loot";
+export type InteractionType =
+  | "resource"
+  | "container"
+  | "station"
+  | "ground-loot"
+  | "farm-plot"
+  | "door"
+  | "npc";
 
 export interface InteractionPoint {
   readonly x: number;

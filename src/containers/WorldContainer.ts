@@ -4,6 +4,8 @@ import type { InteractionPoint } from "../interaction/InteractionTypes.ts";
 import type { Interactable } from "../interaction/Interactable.ts";
 
 /** Session world container — chests, crates, corpses. */
+export type ContainerAccessMode = "take-all" | "storage";
+
 export class WorldContainerInventory {
   readonly id: string;
   readonly title: string;
@@ -95,12 +97,21 @@ export class WorldContainerInventory {
 export class WorldContainerEntity implements Interactable {
   readonly interactionId: string;
   readonly interactionType = "container";
+  readonly accessMode: ContainerAccessMode;
   private readonly position: InteractionPoint;
   readonly inventory: WorldContainerInventory;
   private active = true;
 
-  constructor(id: string, title: string, position: InteractionPoint, capacity: number, initial?: readonly ItemStack[]) {
+  constructor(
+    id: string,
+    title: string,
+    position: InteractionPoint,
+    capacity: number,
+    initial?: readonly ItemStack[],
+    accessMode: ContainerAccessMode = "take-all",
+  ) {
     this.interactionId = id;
+    this.accessMode = accessMode;
     this.position = Object.freeze({ ...position });
     this.inventory = new WorldContainerInventory(id, title, capacity, initial ?? []);
   }

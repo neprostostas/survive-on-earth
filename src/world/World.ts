@@ -17,6 +17,9 @@ export class World {
   get harvestables(): readonly HarvestableResource[] { return this.location.harvestables; }
   get clutterCount(): number { return this.location.clutterCount; }
   collectMinimapMarkers(): readonly MinimapMarker[] { return this.location.collectMinimapMarkers(); }
+  syncFarmBeds(plots: readonly import("../farming/FarmingSystem").FarmPlot[]): void {
+    this.location.syncFarmBeds(plots);
+  }
   addInteractable(interactable: Interactable): void { this.location.interactables.push(interactable); }
   removeInteractable(interactable: Interactable): void {
     const index = this.location.interactables.indexOf(interactable);

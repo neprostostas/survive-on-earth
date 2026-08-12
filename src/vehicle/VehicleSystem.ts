@@ -9,10 +9,10 @@ import type { PlayerInventory } from "../inventory/PlayerInventory.ts";
 export type VehicleId = "salvaged-bike" | "trailrunner-atv";
 export type VehiclePart = "frame" | "wheels" | "engine" | "fuel-tank" | "mechanics" | "electronics" | "suspension";
 
-const BIKE_PARTS: readonly VehiclePart[] = Object.freeze(["frame", "wheels", "engine", "fuel-tank", "mechanics"]);
-const ATV_PARTS: readonly VehiclePart[] = Object.freeze(["frame", "wheels", "engine", "fuel-tank", "mechanics", "electronics", "suspension"]);
+export const BIKE_PARTS: readonly VehiclePart[] = Object.freeze(["frame", "wheels", "engine", "fuel-tank", "mechanics"]);
+export const ATV_PARTS: readonly VehiclePart[] = Object.freeze(["frame", "wheels", "engine", "fuel-tank", "mechanics", "electronics", "suspension"]);
 
-const PART_ITEMS: Readonly<Record<VehiclePart, ItemId>> = Object.freeze({
+export const PART_ITEMS: Readonly<Record<VehiclePart, ItemId>> = Object.freeze({
   frame: "metal-plate",
   wheels: "rubber",
   engine: "engine-part",
@@ -21,6 +21,14 @@ const PART_ITEMS: Readonly<Record<VehiclePart, ItemId>> = Object.freeze({
   electronics: "wiring",
   suspension: "spring",
 });
+
+export function partsForVehicle(id: VehicleId): readonly VehiclePart[] {
+  return id === "trailrunner-atv" ? ATV_PARTS : BIKE_PARTS;
+}
+
+export function partItemId(part: VehiclePart): ItemId {
+  return PART_ITEMS[part];
+}
 
 interface VehicleState {
   installed: Set<VehiclePart>;
@@ -40,6 +48,25 @@ function emptyVehicle(capacity: number, cargo: number): VehicleState {
     fuelCapacity: capacity,
     cargoSlots: cargo,
   };
+}
+
+export interface VehiclePartRow {
+  readonly part: VehiclePart;
+  readonly itemId: ItemId;
+  readonly installed: boolean;
+  readonly canInstall: boolean;
+}
+
+export interface VehicleView {
+  readonly id: VehicleId;
+  readonly assembled: boolean;
+  readonly progress: number;
+  readonly fuel: number;
+  readonly fuelCapacity: number;
+  readonly condition: number;
+  readonly cargoSlots: number;
+  readonly isActive: boolean;
+  readonly parts: readonly VehiclePartRow[];
 }
 
 export class VehicleSystem {
@@ -69,8 +96,38 @@ export class VehicleSystem {
     return this.vehicles["salvaged-bike"].assembled || this.vehicles["trailrunner-atv"].assembled;
   }
 
+  isVehicleAssembled(id: VehicleId): boolean {
+    return this.vehicles[id].assembled;
+  }
+
+  view(id: VehicleId, inventory: PlayerInventory | null = null): VehicleView {
+    const v = this.vehicles[id];
+    const list = partsForVehicle(id);
+    const need = list.length;
+    const parts: VehiclePartRow[] = list.map((part) => {
+      const installed = v.installed.has(part);
+      const itemId = PART_ITEMS[part];
+      let can = false;
+      if (!v.assembled && !installed && inventory) {
+        can = this.canInstall(part, id) && inventory.findFirstSlotByItemId(itemId) !== null;
+      }
+      return Object.freeze({ part, itemId, installed, canInstall: can });
+    });
+    return Object.freeze({
+      id,
+      assembled: v.assembled,
+      progress: need > 0 ? v.installed.size / need : 0,
+      fuel: v.fuel,
+      fuelCapacity: v.fuelCapacity,
+      condition: v.condition,
+      cargoSlots: v.cargoSlots,
+      isActive: this.active === id,
+      parts: Object.freeze(parts),
+    });
+  }
+
   canInstall(part: VehiclePart, vehicle: VehicleId = "salvaged-bike"): boolean {
-    const list = vehicle === "trailrunner-atv" ? ATV_PARTS : BIKE_PARTS;
+    const list = partsForVehicle(vehicle);
     if (!(list as readonly string[]).includes(part)) return false;
     const v = this.vehicles[vehicle];
     return !v.assembled && !v.installed.has(part);
@@ -87,7 +144,7 @@ export class VehicleSystem {
     else inventory.exchangeWholeStack(slot, stack, createItemStack(itemId, stack.quantity - 1));
     const v = this.vehicles[vehicle];
     v.installed.add(part);
-    const need = vehicle === "trailrunner-atv" ? ATV_PARTS.length : BIKE_PARTS.length;
+    const need = partsForVehicle(vehicle).length;
     if (v.installed.size >= need) {
       v.assembled = true;
       if (!this.active) this.active = vehicle;
@@ -114,6 +171,17 @@ export class VehicleSystem {
     else inventory.exchangeWholeStack(slot, stack, createItemStack("fuel-can", stack.quantity - 1));
     v.fuel = Math.min(v.fuelCapacity, v.fuel + (id === "trailrunner-atv" ? 22 : 15));
     return true;
+  }
+
+  /** Refuel a specific assembled vehicle (UI selection). */
+  refuelVehicle(inventory: PlayerInventory, id: VehicleId): boolean {
+    if (!this.vehicles[id].assembled) return false;
+    const prev = this.active;
+    this.active = id;
+    const ok = this.refuel(inventory);
+    if (!ok && prev) this.active = prev;
+    else if (!ok) this.active = prev;
+    return ok;
   }
 
   tryTravelConsume(distanceUnits = 1): boolean {
@@ -188,7 +256,7 @@ export class VehicleSystem {
     const v = this.vehicles[id];
     v.installed.clear();
     for (const p of data.parts ?? []) v.installed.add(p);
-    const need = id === "trailrunner-atv" ? ATV_PARTS.length : BIKE_PARTS.length;
+    const need = partsForVehicle(id).length;
     v.assembled = !!data.assembled || v.installed.size >= need;
     v.fuel = data.fuel ?? 0;
     v.condition = data.condition ?? 100;

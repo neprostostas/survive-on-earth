@@ -18,7 +18,13 @@ export interface CraftingRecipeDefinition {
   readonly category?: CraftingCategory;
 }
 
-export type CraftStatus = "crafted" | "not-enough-resources" | "inventory-full" | "invalid-recipe";
+export type CraftStatus =
+  | "crafted"
+  | "not-enough-resources"
+  | "inventory-full"
+  | "invalid-recipe"
+  | "need-bench"
+  | "need-blueprint";
 
 export interface CraftResult {
   readonly accepted: boolean;
@@ -36,5 +42,9 @@ export interface CraftingRecipeState {
   readonly recipe: CraftingRecipeDefinition;
   readonly ingredients: readonly CraftingIngredientState[];
   readonly craftable: boolean;
-  readonly blockedBy: "not-enough-resources" | "inventory-full" | null;
+  readonly blockedBy: "not-enough-resources" | "inventory-full" | "need-bench" | "need-blueprint" | null;
+  /** 0 field / 1 assembly / 2 metalwork. */
+  readonly requiredTier: number;
+  /** Blueprint item id required when blocked by need-blueprint. */
+  readonly requiredBlueprint?: string | null;
 }

@@ -15,7 +15,11 @@ export interface DialogueChoice {
   readonly next?: string;
   readonly end?: boolean;
   readonly startQuest?: string;
+  readonly completeQuest?: string;
   readonly grantReputation?: number;
+  readonly grantItem?: ItemId;
+  readonly consumeItem?: ItemId;
+  readonly grantTokens?: number;
 }
 
 export interface DialogueNode {
@@ -69,12 +73,26 @@ export class NpcSystem {
 
   get tradeTokens(): number { return this.tokens; }
   get dialogueOpen(): boolean { return this.activeDialogue !== null; }
+  get activeNpcId(): string | null { return this.activeDialogue?.npcId ?? null; }
   get activeNode(): DialogueNode | null {
     if (!this.activeDialogue) return null;
     return this.dialogue.get(this.activeDialogue.nodeId) ?? null;
   }
 
+  listNpcs(): readonly NpcDefinition[] {
+    return Object.freeze([...this.npcs.values()]);
+  }
+
+  getNpc(id: string): NpcDefinition | null {
+    return this.npcs.get(id) ?? null;
+  }
+
   registerNpc(def: NpcDefinition): void { this.npcs.set(def.id, def); }
+  unregisterNpc(id: string): void {
+    this.npcs.delete(id);
+    this.offers.delete(id);
+    if (this.activeDialogue?.npcId === id) this.activeDialogue = null;
+  }
   registerDialogue(node: DialogueNode): void { this.dialogue.set(node.id, node); }
   setOffers(npcId: string, offers: readonly BarterOffer[]): void { this.offers.set(npcId, offers); }
 
@@ -84,17 +102,48 @@ export class NpcSystem {
     return true;
   }
 
-  choose(choiceId: string): { ended: boolean; startQuest: string | null; reputation: number } {
+  choose(choiceId: string): {
+    ended: boolean;
+    startQuest: string | null;
+    completeQuest: string | null;
+    reputation: number;
+    grantItem: ItemId | null;
+    consumeItem: ItemId | null;
+    grantTokens: number;
+  } {
+    const empty = {
+      ended: true,
+      startQuest: null as string | null,
+      completeQuest: null as string | null,
+      reputation: 0,
+      grantItem: null as ItemId | null,
+      consumeItem: null as ItemId | null,
+      grantTokens: 0,
+    };
     const node = this.activeNode;
-    if (!node) return { ended: true, startQuest: null, reputation: 0 };
+    if (!node) return empty;
     const choice = node.choices.find((c) => c.id === choiceId);
-    if (!choice) return { ended: false, startQuest: null, reputation: 0 };
+    if (!choice) return { ...empty, ended: false };
+    const payload = {
+      ended: false,
+      startQuest: choice.startQuest ?? null,
+      completeQuest: choice.completeQuest ?? null,
+      reputation: choice.grantReputation ?? 0,
+      grantItem: choice.grantItem ?? null,
+      consumeItem: choice.consumeItem ?? null,
+      grantTokens: choice.grantTokens ?? 0,
+    };
     if (choice.end || !choice.next) {
       this.activeDialogue = null;
-      return { ended: true, startQuest: choice.startQuest ?? null, reputation: choice.grantReputation ?? 0 };
+      return { ...payload, ended: true };
     }
     this.activeDialogue = { npcId: this.activeDialogue!.npcId, nodeId: choice.next };
-    return { ended: false, startQuest: choice.startQuest ?? null, reputation: choice.grantReputation ?? 0 };
+    return payload;
+  }
+
+  /** Read a choice on the active node without advancing. */
+  peekChoice(choiceId: string): DialogueChoice | null {
+    return this.activeNode?.choices.find((c) => c.id === choiceId) ?? null;
   }
 
   closeDialogue(): void { this.activeDialogue = null; }

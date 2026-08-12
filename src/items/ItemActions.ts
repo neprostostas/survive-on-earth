@@ -1,3 +1,4 @@
+import { isBlueprintItemId } from "../crafting/BlueprintUnlocks";
 import type { ItemDefinition } from "./ItemDefinition";
 import type { ItemStack } from "./ItemSystem";
 import { ITEM_REGISTRY } from "./ItemSystem";
@@ -21,7 +22,7 @@ export function resolveItemActions(ctx: ItemActionContext): readonly ItemActionI
     if (def.equipment) actions.push("equip");
     if (isWeaponCapableItemId(ctx.stack.itemId) && def.meleeCombat) actions.push("equip");
     if (isBackpackCapableItemId(ctx.stack.itemId)) actions.push("equip");
-    if (def.consumable) actions.push("use");
+    if (def.consumable || isBlueprintItemId(ctx.stack.itemId)) actions.push("use");
     if (PlayerQuickSlot.isCompatible(ctx.stack.itemId)) actions.push("quick-assign");
     if (PlayerUtilitySlot.isCompatible(ctx.stack.itemId)) actions.push("utility-equip");
     if (ctx.stack.quantity > 1 && ctx.stack.currentDurability === undefined) actions.push("split");

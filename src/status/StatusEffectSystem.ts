@@ -1,4 +1,4 @@
-export type StatusEffectId = "regeneration" | "bleeding" | "slow";
+export type StatusEffectId = "regeneration" | "bleeding" | "slow" | "infection";
 
 export interface StatusEffectDef {
   readonly id: StatusEffectId;
@@ -34,6 +34,15 @@ export const STATUS_EFFECT_DEFS: Readonly<Record<StatusEffectId, StatusEffectDef
     stackPolicy: "refresh" as const,
     tickInterval: 0.5,
     moveSpeedMul: 0.7,
+  }),
+  infection: Object.freeze({
+    id: "infection",
+    title: "Infection",
+    duration: 18,
+    stackPolicy: "refresh" as const,
+    tickInterval: 1,
+    healthPerTick: -2,
+    moveSpeedMul: 0.85,
   }),
 });
 

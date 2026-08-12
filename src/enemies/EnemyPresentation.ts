@@ -15,6 +15,8 @@ interface EnemyVisual {
   readonly rightArm: TransformNode;
   readonly leftLeg: TransformNode;
   readonly rightLeg: TransformNode;
+  readonly alertRoot: TransformNode;
+  readonly alertBars: readonly Mesh[];
   readonly meshes: readonly Mesh[];
   readonly scale: number;
   time: number;
@@ -252,6 +254,28 @@ export class EnemyPresentation {
     rightArm.rotation.z = -0.08;
     leftArm.rotation.z = 0.16;
     root.scaling.setAll(style.scale);
+
+    // LDOE-style awareness pips above the head (hidden at zero).
+    const alertRoot = new TransformNode(`EnemyAlert:${enemy.combatId}`, this.scene);
+    alertRoot.parent = root;
+    alertRoot.position.set(0, 2.05, 0);
+    const alertMatYellow = this.material(`AlertY:${enemy.combatId}:${this.matSeq}`, new Color3(0.95, 0.78, 0.18));
+    const alertMatRed = this.material(`AlertR:${enemy.combatId}:${this.matSeq}`, new Color3(0.9, 0.22, 0.16));
+    const alertBars: Mesh[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const bar = MeshBuilder.CreateBox(
+        `EnemyAlertBar${i}:${enemy.combatId}`,
+        { width: 0.08, height: 0.16 + i * 0.06, depth: 0.04 },
+        this.scene,
+      );
+      bar.parent = alertRoot;
+      bar.position.set((i - 1) * 0.12, (0.08 + i * 0.03), 0);
+      bar.material = i < 2 ? alertMatYellow : alertMatRed;
+      bar.isPickable = false;
+      bar.isVisible = false;
+      alertBars.push(bar);
+    }
+
     this.visuals.set(enemy.combatId, {
       root,
       body,
@@ -260,6 +284,8 @@ export class EnemyPresentation {
       rightArm,
       leftLeg,
       rightLeg,
+      alertRoot,
+      alertBars: Object.freeze(alertBars),
       meshes: Object.freeze(meshes),
       scale: style.scale,
       time: 0,
@@ -298,14 +324,30 @@ export class EnemyPresentation {
         visual.recoil = Math.max(0, visual.recoil - delta);
       }
       this.pose(visual, enemy);
+      this.syncAlertBars(visual, enemy.alertLevel);
+    }
+  }
+
+  private syncAlertBars(visual: EnemyVisual, level: number): void {
+    const lit = level <= 0.05 ? 0 : level < 0.45 ? 1 : level < 0.85 ? 2 : 3;
+    visual.alertRoot.setEnabled(lit > 0);
+    for (let i = 0; i < visual.alertBars.length; i += 1) {
+      visual.alertBars[i]!.isVisible = i < lit;
+    }
+    if (lit > 0) {
+      const pulse = 1 + Math.sin(visual.time * 8) * 0.04;
+      visual.alertRoot.scaling.setAll(pulse);
     }
   }
 
   private pose(visual: EnemyVisual, enemy: RoamingZombie): void {
     const state = enemy.state;
     const idle = Math.sin(visual.time * 2.1);
-    const walking = state === "chase";
-    const stride = walking ? Math.sin(visual.time * (5.5 + enemy.archetype.moveSpeed)) * 0.43 : 0;
+    const walking = state === "chase" || state === "investigate" || state === "alert";
+    const stride = walking
+      ? Math.sin(visual.time * (state === "investigate" ? 4.2 : 5.5 + enemy.archetype.moveSpeed))
+        * (state === "investigate" ? 0.32 : 0.43)
+      : 0;
     visual.leftLeg.rotation.set(stride, 0, 0.02);
     visual.rightLeg.rotation.set(-stride, 0, -0.02);
     visual.leftArm.rotation.set(-0.34 - stride * 0.22, 0, 0.16);

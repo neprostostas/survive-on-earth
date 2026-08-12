@@ -1,3 +1,5 @@
+import { isBarterEventKind } from "../npc/EventCaravan.ts";
+
 export type WorldEventKind =
   | "supply-drop"
   | "trader"
@@ -98,7 +100,12 @@ export class WorldEventDirector {
 
   /** Call with absolute world day float (e.g. clock day). */
   tick(worldDay: number): void {
-    this.active.splice(0, this.active.length, ...this.active.filter((e) => e.expiresAtWorldDay > worldDay && !e.claimed));
+    this.active.splice(0, this.active.length, ...this.active.filter((e) => {
+      if (e.expiresAtWorldDay <= worldDay) return false;
+      // Loot pins clear on claim; barter caravans linger until the window ends.
+      if (e.claimed && !isBarterEventKind(e.kind)) return false;
+      return true;
+    }));
     if (this.active.length >= MAX_ACTIVE) return;
     if (worldDay < this.cooldownDay) return;
     if (Math.random() > 0.35) return;

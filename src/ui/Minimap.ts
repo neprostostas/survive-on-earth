@@ -448,6 +448,43 @@ export class Minimap {
         c.fill();
         break;
       }
+      case "workbench": {
+        c.fillStyle = "#7a5a36";
+        c.strokeStyle = "#2f2212";
+        c.lineWidth = 1.1;
+        c.fillRect(-5, -3.2, 10, 6.4);
+        c.strokeRect(-5, -3.2, 10, 6.4);
+        c.fillStyle = "#a0a8b0";
+        c.fillRect(1.6, -1.4, 2.4, 2.8);
+        break;
+      }
+      case "stump": {
+        c.fillStyle = "#6b4a2a";
+        c.strokeStyle = "#2a1c10";
+        c.lineWidth = 1.1;
+        c.beginPath();
+        c.ellipse(0, 0.6, 5.2, 3.6, 0, 0, Math.PI * 2);
+        c.fill();
+        c.stroke();
+        c.fillStyle = "#9a7a4a";
+        c.beginPath();
+        c.ellipse(0, -0.4, 4.4, 2.8, 0, 0, Math.PI * 2);
+        c.fill();
+        c.strokeStyle = "rgba(50, 34, 18, 0.55)";
+        c.stroke();
+        break;
+      }
+      case "farm": {
+        c.fillStyle = "#4a6a32";
+        c.strokeStyle = "#243818";
+        c.lineWidth = 1.1;
+        c.fillRect(-4.5, -3.2, 9, 6.4);
+        c.strokeRect(-4.5, -3.2, 9, 6.4);
+        c.fillStyle = "#6f9a48";
+        c.fillRect(-3, -1.8, 2.2, 3.6);
+        c.fillRect(0.8, -1.8, 2.2, 3.6);
+        break;
+      }
       case "crate": {
         c.fillStyle = "#8b6a3e";
         c.strokeStyle = "#3d2c18";
@@ -499,6 +536,24 @@ export class Minimap {
         c.lineTo(-2.4, 2.4);
         c.strokeStyle = "rgba(60, 45, 25, 0.75)";
         c.stroke();
+        break;
+      }
+      case "death-bag": {
+        c.fillStyle = "#d4a017";
+        c.strokeStyle = "#3a2a0c";
+        c.lineWidth = 1.3;
+        c.beginPath();
+        c.moveTo(-5, 3);
+        c.lineTo(-4, -3);
+        c.lineTo(4, -3);
+        c.lineTo(5, 3);
+        c.closePath();
+        c.fill();
+        c.stroke();
+        c.fillStyle = "rgba(255, 220, 120, 0.85)";
+        c.beginPath();
+        c.arc(0, -4.5, 1.6, 0, Math.PI * 2);
+        c.fill();
         break;
       }
       default:

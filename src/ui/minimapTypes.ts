@@ -4,9 +4,13 @@ export type MinimapMarkerKind =
   | "tree"
   | "rock"
   | "campfire"
+  | "workbench"
+  | "stump"
+  | "farm"
   | "crate"
   | "enemy"
   | "dummy"
+  | "death-bag"
   | "house-floor"
   | "wall";
 

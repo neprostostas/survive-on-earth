@@ -1,5 +1,12 @@
 export const PLAYER_HEALTH_CONFIG = Object.freeze({ maxHealth: 100 });
 
+/**
+ * When one agent is already fighting, nearby idle packmates within this radius join
+ * (LDOE-ish shared agro). Peers beyond their own lose range of the player are skipped
+ * so they do not flicker chase→idle.
+ */
+export const ENEMY_GROUP_AGGRO_RADIUS = 5.5;
+
 export const ROAMING_ZOMBIE_PROFILE = Object.freeze({
   id: "roaming-zombie",
   displayName: "Roaming Zombie",

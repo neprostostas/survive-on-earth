@@ -13,6 +13,7 @@ import type { QuickSlotSystem } from "../equipment/QuickSlotSystem";
 import type { PickupRejectionSink } from "../ground-loot/PickupResult";
 import { INVENTORY_CONFIG } from "../inventory/inventoryConfig";
 import type { PlayerInventory } from "../inventory/PlayerInventory";
+import { isBlueprintItemId } from "../crafting/BlueprintUnlocks";
 import { resolveItemActions } from "../items/ItemActions";
 import { ITEM_REGISTRY, stackDurability, type ItemStack } from "../items/ItemSystem";
 import { InventoryCharacterPreview } from "./InventoryCharacterPreview";
@@ -199,7 +200,7 @@ export class InventoryPanel implements PickupRejectionSink {
               <div class="inv-selection-actions">
                 <button class="inventory-action" type="button" hidden></button>
                 <button class="inventory-split" type="button" hidden></button>
-              </div>
+            </div>
             </div>
             <div class="inv-action-strip" aria-label="Item actions">
               <button type="button" class="inv-shell-btn" data-role="strip-use" disabled title="Not available">USE</button>
@@ -1443,8 +1444,8 @@ export class InventoryPanel implements PickupRejectionSink {
     }
     if (selection.source === "weapon") {
       const result = this.weaponEquipSystem.unequipToInventory(selection.stack);
-      if (result.accepted || result.reason === "stale-source" || result.reason === "empty-source") this.clearSelection();
-      else if (result.reason === "inventory-full") this.handleInventoryFull();
+    if (result.accepted || result.reason === "stale-source" || result.reason === "empty-source") this.clearSelection();
+    else if (result.reason === "inventory-full") this.handleInventoryFull();
       return;
     }
     if (selection.source === "quick") {
@@ -1467,7 +1468,10 @@ export class InventoryPanel implements PickupRejectionSink {
       }
       return;
     }
-    if (ITEM_REGISTRY.get(selection.stack.itemId).consumable && this.onUseItem) {
+    if (
+      (ITEM_REGISTRY.get(selection.stack.itemId).consumable || isBlueprintItemId(selection.stack.itemId))
+      && this.onUseItem
+    ) {
       if (this.onUseItem(selection.index, selection.stack)) this.clearSelection();
       else this.showStatus("Can't use");
       return;
@@ -1492,7 +1496,8 @@ export class InventoryPanel implements PickupRejectionSink {
   private readonly performStripUse = (): void => {
     const selection = this.selected;
     if (!selection || selection.source !== "inventory") return;
-    if (!ITEM_REGISTRY.get(selection.stack.itemId).consumable || !this.onUseItem) return;
+    const id = selection.stack.itemId;
+    if ((!ITEM_REGISTRY.get(id).consumable && !isBlueprintItemId(id)) || !this.onUseItem) return;
     if (this.onUseItem(selection.index, selection.stack)) this.clearSelection();
     else this.showStatus("Can't use");
   };

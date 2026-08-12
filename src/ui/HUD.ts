@@ -18,6 +18,7 @@ const STATUS_CHIP_KEYS: Record<StatusEffectId, Parameters<typeof I18N.t>[0]> = {
   bleeding: "status.bleeding",
   slow: "status.slow",
   regeneration: "status.regeneration",
+  infection: "status.infection",
 };
 
 const PRIMARY_ICONS: Record<Exclude<PrimaryActionContext, "none">, string> = {
@@ -70,6 +71,29 @@ export class HUD {
   private readonly levelFill: HTMLElement;
   private readonly defeatedFeedback: HTMLElement;
   private readonly statusChipsEl: HTMLElement;
+  private readonly questTrackerEl: HTMLElement;
+  private readonly questTrackerLabelEl: HTMLElement;
+  private readonly questTrackerTitleEl: HTMLElement;
+  private readonly questTrackerProgressEl: HTMLElement;
+  private readonly worldClockEl: HTMLElement;
+  private readonly worldClockLabelEl: HTMLElement;
+  private readonly worldClockValueEl: HTMLElement;
+  private readonly coldMeterEl: HTMLElement;
+  private readonly coldMeterLabelEl: HTMLElement;
+  private readonly coldMeterFillEl: HTMLElement;
+  private readonly coldMeterTrackEl: HTMLElement;
+  private readonly zoneTimerEl: HTMLElement;
+  private readonly zoneTimerValueEl: HTMLElement;
+  private readonly zoneTimerLabelEl: HTMLElement;
+  private readonly threatMeterEl: HTMLElement;
+  private readonly threatMeterFillEl: HTMLElement;
+  private readonly threatMeterTrackEl: HTMLElement;
+  private readonly baseUtilityEl: HTMLElement;
+  private readonly basePowerLabelEl: HTMLElement;
+  private readonly basePowerNetEl: HTMLElement;
+  private readonly basePowerBatEl: HTMLElement;
+  private readonly baseWaterLabelEl: HTMLElement;
+  private readonly baseWaterValueEl: HTMLElement;
   private primaryContext: PrimaryActionContext = "none";
   private pickupContextKey = "";
   private attackWeaponKey = "fists";
@@ -102,6 +126,43 @@ export class HUD {
               </div>
             </div>
             <div class="status-chips" data-role="status-chips" aria-live="polite"></div>
+            <div class="world-clock" data-role="world-clock" aria-live="polite">
+              <span class="world-clock-label" data-role="world-clock-label">TIME</span>
+              <b class="world-clock-value" data-role="world-clock-value">00:00</b>
+            </div>
+            <div class="cold-meter" data-role="cold-meter" hidden aria-label="Cold exposure">
+              <span class="cold-meter-label" data-role="cold-meter-label">COLD</span>
+              <div class="cold-meter-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <i class="cold-meter-fill" data-role="cold-meter-fill"></i>
+              </div>
+            </div>
+            <div class="quest-tracker" data-role="quest-tracker" hidden aria-live="polite">
+              <span class="quest-tracker-label" data-role="quest-tracker-label">QUEST</span>
+              <b class="quest-tracker-title" data-role="quest-tracker-title"></b>
+              <span class="quest-tracker-progress" data-role="quest-tracker-progress"></span>
+            </div>
+            <div class="zone-timer" data-role="zone-timer" hidden>
+              <span class="zone-timer-label">ZONE</span>
+              <b class="zone-timer-value" data-role="zone-timer-value">0:00</b>
+            </div>
+            <div class="threat-meter" data-role="threat-meter" hidden aria-label="Threat level">
+              <span class="threat-meter-label">THREAT</span>
+              <div class="threat-meter-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <i class="threat-meter-fill" data-role="threat-meter-fill"></i>
+              </div>
+            </div>
+            <div class="base-utility" data-role="base-utility" hidden aria-label="Base utilities">
+              <div class="base-utility-line" data-role="base-power-line">
+                <span class="base-utility-label" data-role="base-power-label">PWR</span>
+                <b class="base-utility-net" data-role="base-power-net">+0</b>
+                <span class="base-utility-sep">·</span>
+                <span class="base-utility-value" data-role="base-power-bat">0/100</span>
+              </div>
+              <div class="base-utility-line" data-role="base-water-line">
+                <span class="base-utility-label" data-role="base-water-label">H2O</span>
+                <b class="base-utility-value" data-role="base-water-value">0/120</b>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -222,16 +283,57 @@ export class HUD {
     const levelFill = root.querySelector<HTMLElement>(".level-fill");
     const defeatedFeedback = root.querySelector<HTMLElement>(".player-defeated-feedback");
     const statusChipsEl = root.querySelector<HTMLElement>("[data-role=status-chips]");
+    const worldClockEl = root.querySelector<HTMLElement>("[data-role=world-clock]");
+    const worldClockLabelEl = root.querySelector<HTMLElement>("[data-role=world-clock-label]");
+    const worldClockValueEl = root.querySelector<HTMLElement>("[data-role=world-clock-value]");
+    const coldMeterEl = root.querySelector<HTMLElement>("[data-role=cold-meter]");
+    const coldMeterLabelEl = root.querySelector<HTMLElement>("[data-role=cold-meter-label]");
+    const coldMeterFillEl = root.querySelector<HTMLElement>("[data-role=cold-meter-fill]");
+    const coldMeterTrackEl = root.querySelector<HTMLElement>(".cold-meter-track");
+    const questTrackerEl = root.querySelector<HTMLElement>("[data-role=quest-tracker]");
+    const questTrackerLabelEl = root.querySelector<HTMLElement>("[data-role=quest-tracker-label]");
+    const questTrackerTitleEl = root.querySelector<HTMLElement>("[data-role=quest-tracker-title]");
+    const questTrackerProgressEl = root.querySelector<HTMLElement>("[data-role=quest-tracker-progress]");
+    const zoneTimerEl = root.querySelector<HTMLElement>("[data-role=zone-timer]");
+    const zoneTimerValueEl = root.querySelector<HTMLElement>("[data-role=zone-timer-value]");
+    const zoneTimerLabelEl = root.querySelector<HTMLElement>(".zone-timer-label");
+    const threatMeterEl = root.querySelector<HTMLElement>("[data-role=threat-meter]");
+    const threatMeterFillEl = root.querySelector<HTMLElement>("[data-role=threat-meter-fill]");
+    const threatMeterTrackEl = root.querySelector<HTMLElement>(".threat-meter-track");
+    const baseUtilityEl = root.querySelector<HTMLElement>("[data-role=base-utility]");
+    const basePowerLabelEl = root.querySelector<HTMLElement>("[data-role=base-power-label]");
+    const basePowerNetEl = root.querySelector<HTMLElement>("[data-role=base-power-net]");
+    const basePowerBatEl = root.querySelector<HTMLElement>("[data-role=base-power-bat]");
+    const baseWaterLabelEl = root.querySelector<HTMLElement>("[data-role=base-water-label]");
+    const baseWaterValueEl = root.querySelector<HTMLElement>("[data-role=base-water-value]");
     const quickSlotButton = root.querySelector<HTMLButtonElement>(".quick-action-1");
     const quickSlot2Button = root.querySelector<HTMLButtonElement>(".quick-action-2");
     const sneakButton = root.querySelector<HTMLButtonElement>(".sneak-action");
     const buildButton = root.querySelector<HTMLButtonElement>(".build-action");
     const mapButton = root.querySelector<HTMLButtonElement>(".map-action");
     if (!playerNameEl || !healthFill || !healthTrack || !healthValue || !hungerFill || !thirstFill || !energyFill
-      || !levelLabel || !levelFill || !defeatedFeedback || !statusChipsEl || !quickSlotButton || !quickSlot2Button
+      || !levelLabel || !levelFill || !defeatedFeedback || !statusChipsEl
+      || !worldClockEl || !worldClockLabelEl || !worldClockValueEl
+      || !coldMeterEl || !coldMeterLabelEl || !coldMeterFillEl || !coldMeterTrackEl
+      || !questTrackerEl || !questTrackerLabelEl || !questTrackerTitleEl || !questTrackerProgressEl
+      || !zoneTimerEl || !zoneTimerValueEl || !zoneTimerLabelEl
+      || !threatMeterEl || !threatMeterFillEl || !threatMeterTrackEl
+      || !baseUtilityEl || !basePowerLabelEl || !basePowerNetEl || !basePowerBatEl || !baseWaterLabelEl || !baseWaterValueEl
+      || !quickSlotButton || !quickSlot2Button
       || !sneakButton || !buildButton || !mapButton) {
       throw new Error("HUD elements failed to mount");
     }
+    this.worldClockEl = worldClockEl;
+    this.worldClockLabelEl = worldClockLabelEl;
+    this.worldClockValueEl = worldClockValueEl;
+    this.coldMeterEl = coldMeterEl;
+    this.coldMeterLabelEl = coldMeterLabelEl;
+    this.coldMeterFillEl = coldMeterFillEl;
+    this.coldMeterTrackEl = coldMeterTrackEl;
+    this.questTrackerEl = questTrackerEl;
+    this.questTrackerLabelEl = questTrackerLabelEl;
+    this.questTrackerTitleEl = questTrackerTitleEl;
+    this.questTrackerProgressEl = questTrackerProgressEl;
     this.playerNameEl = playerNameEl;
     this.healthFill = healthFill;
     this.healthTrack = healthTrack;
@@ -243,6 +345,18 @@ export class HUD {
     this.levelFill = levelFill;
     this.defeatedFeedback = defeatedFeedback;
     this.statusChipsEl = statusChipsEl;
+    this.zoneTimerEl = zoneTimerEl;
+    this.zoneTimerValueEl = zoneTimerValueEl;
+    this.zoneTimerLabelEl = zoneTimerLabelEl;
+    this.threatMeterEl = threatMeterEl;
+    this.threatMeterFillEl = threatMeterFillEl;
+    this.baseUtilityEl = baseUtilityEl;
+    this.basePowerLabelEl = basePowerLabelEl;
+    this.basePowerNetEl = basePowerNetEl;
+    this.basePowerBatEl = basePowerBatEl;
+    this.baseWaterLabelEl = baseWaterLabelEl;
+    this.baseWaterValueEl = baseWaterValueEl;
+    this.threatMeterTrackEl = threatMeterTrackEl;
     this.quickSlotButton = quickSlotButton;
     this.quickSlot2Button = quickSlot2Button;
     this.sneakButton = sneakButton;
@@ -260,6 +374,10 @@ export class HUD {
     const t = (k: Parameters<typeof I18N.t>[0]) => I18N.t(k);
     this.root.setAttribute("aria-label", t("hud.aria"));
     this.healthTrack.setAttribute("aria-label", t("hud.health"));
+    this.zoneTimerLabelEl.textContent = t("hud.zoneTimer");
+    this.basePowerLabelEl.textContent = t("hud.basePower");
+    this.baseWaterLabelEl.textContent = t("hud.baseWater");
+    this.baseUtilityEl.setAttribute("aria-label", t("hud.baseUtility"));
     this.root.querySelector(".need-row")?.setAttribute("aria-label", t("hud.needs"));
     for (const el of this.root.querySelectorAll<HTMLElement>("[title=Hunger], .hunger-track, .need-line:nth-child(1) .need-icon")) {
       el.title = t("hud.hunger");
@@ -365,6 +483,116 @@ export class HUD {
     statusRoot?.classList.toggle("is-bleeding", ids.includes("bleeding"));
     statusRoot?.classList.toggle("is-slowed", ids.includes("slow"));
     statusRoot?.classList.toggle("is-regen", ids.includes("regeneration"));
+    statusRoot?.classList.toggle("is-infected", ids.includes("infection"));
+  }
+
+  /** World time chip. Night state tints the strip. */
+  setWorldClock(hourLabel: string, isNight: boolean): void {
+    this.worldClockLabelEl.textContent = isNight ? I18N.t("hud.night") : I18N.t("hud.day");
+    this.worldClockValueEl.textContent = hourLabel;
+    this.worldClockEl.classList.toggle("is-night", isNight);
+    this.worldClockEl.title = `${isNight ? I18N.t("hud.night") : I18N.t("hud.day")} ${hourLabel}`;
+  }
+
+  /** Cold exposure 0..1. Hidden when negligible. */
+  setColdExposure(ratio: number): void {
+    const r = Math.max(0, Math.min(1, ratio));
+    if (r < 0.04) {
+      this.coldMeterEl.hidden = true;
+      this.coldMeterEl.classList.remove("is-warn", "is-critical");
+      return;
+    }
+    this.coldMeterEl.hidden = false;
+    this.coldMeterLabelEl.textContent = I18N.t("hud.cold");
+    this.coldMeterFillEl.style.width = `${r * 100}%`;
+    this.coldMeterTrackEl.setAttribute("aria-valuenow", String(Math.round(r * 100)));
+    this.coldMeterEl.classList.toggle("is-warn", r >= 0.45 && r < 0.9);
+    this.coldMeterEl.classList.toggle("is-critical", r >= 0.9);
+  }
+
+  /** Tracked quest strip under needs. Pass `null` to hide. */
+  setQuestTracker(view: {
+    title: string;
+    progress: number;
+    target: number;
+    completed?: boolean;
+  } | null): void {
+    if (!view) {
+      this.questTrackerEl.hidden = true;
+      this.questTrackerEl.classList.remove("is-done");
+      return;
+    }
+    this.questTrackerEl.hidden = false;
+    this.questTrackerLabelEl.textContent = I18N.t("hud.quest");
+    this.questTrackerTitleEl.textContent = view.title;
+    this.questTrackerProgressEl.textContent = view.completed
+      ? I18N.t("hud.questDone")
+      : `${view.progress}/${view.target}`;
+    this.questTrackerEl.classList.toggle("is-done", !!view.completed);
+    this.questTrackerEl.title = `${view.title} (${view.progress}/${view.target})`;
+  }
+
+  /** `seconds === null` hides the zone visit countdown. */
+  setZoneTimer(seconds: number | null): void {
+    if (seconds === null) {
+      this.zoneTimerEl.hidden = true;
+      this.zoneTimerEl.classList.remove("is-urgent", "is-critical");
+      return;
+    }
+    this.zoneTimerEl.hidden = false;
+    const s = Math.max(0, Math.ceil(seconds));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    this.zoneTimerValueEl.textContent = `${m}:${r.toString().padStart(2, "0")}`;
+    this.zoneTimerEl.classList.toggle("is-urgent", s <= 120 && s > 60);
+    this.zoneTimerEl.classList.toggle("is-critical", s <= 60);
+  }
+
+  /**
+   * Peak enemy awareness 0..1 + aggro count. Hidden when calm.
+   * Mirrors LDOE “threat / noise” feedback without a full radar.
+   */
+  setThreatLevel(level: number, aggressiveCount = 0): void {
+    const ratio = Math.max(0, Math.min(1, level));
+    if (ratio < 0.08 && aggressiveCount <= 0) {
+      this.threatMeterEl.hidden = true;
+      this.threatMeterEl.classList.remove("is-alert", "is-hostile");
+      return;
+    }
+    this.threatMeterEl.hidden = false;
+    this.threatMeterFillEl.style.width = `${ratio * 100}%`;
+    this.threatMeterTrackEl.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+    this.threatMeterEl.classList.toggle("is-alert", ratio >= 0.35 && aggressiveCount <= 0);
+    this.threatMeterEl.classList.toggle("is-hostile", aggressiveCount > 0 || ratio >= 0.9);
+  }
+
+  /**
+   * Home-only base strip: net power + battery + clean/dirty water.
+   * Pass `null` / not visible off home.
+   */
+  setBaseUtility(view: {
+    powerNetLabel: string;
+    batteryLabel: string;
+    cleanLabel: string;
+    waterLabel?: string;
+    deficit: boolean;
+    waterLow: boolean;
+    catchingRain?: boolean;
+  } | null): void {
+    if (!view) {
+      this.baseUtilityEl.hidden = true;
+      this.baseUtilityEl.classList.remove("is-deficit", "is-water-low", "is-catching-rain");
+      return;
+    }
+    this.baseUtilityEl.hidden = false;
+    this.basePowerNetEl.textContent = view.powerNetLabel;
+    this.basePowerBatEl.textContent = view.batteryLabel;
+    const waterText = view.waterLabel ?? view.cleanLabel;
+    this.baseWaterValueEl.textContent = waterText;
+    this.baseUtilityEl.classList.toggle("is-deficit", view.deficit);
+    this.baseUtilityEl.classList.toggle("is-water-low", view.waterLow);
+    this.baseUtilityEl.classList.toggle("is-catching-rain", !!view.catchingRain);
+    this.baseUtilityEl.title = `${I18N.t("hud.basePower")} ${view.powerNetLabel} · ${view.batteryLabel} · ${I18N.t("hud.baseWater")} ${waterText}`;
   }
 
   setLevel(level: number, xpRatio: number): void {
@@ -478,6 +706,27 @@ export class HUD {
     this.primaryAction.classList.remove("missing-tool", "unavailable-flash");
     this.primaryAction.dataset.hint = "";
     this.primaryAction.setAttribute("aria-label", I18N.t("hud.pickup", { name: itemName(definition), qty: quantity }));
+  }
+
+  /** Garden plot: action label + live growth % on primary E. */
+  setFarmPlotActionContext(label: string, growthPct: number | null): void {
+    this.setPrimaryActionAvailable(true);
+    const pct = growthPct !== null ? Math.max(0, Math.min(100, Math.floor(growthPct))) : null;
+    const contextKey = `farm:${label}:${pct ?? "-"}`;
+    if (this.primaryContext !== "generic" || this.pickupContextKey !== contextKey) {
+      this.primaryContext = "generic";
+      this.pickupContextKey = contextKey;
+      const growth = pct !== null
+        ? `<small class="farm-action-pct">${pct}%</small>`
+        : "";
+      this.primaryAction.innerHTML = withKeys(
+        `<span class="farm-action-copy"><b>${label}</b>${growth}</span>`,
+        ["E", "SPC"],
+      );
+    }
+    this.primaryAction.classList.remove("missing-tool", "unavailable-flash");
+    this.primaryAction.dataset.hint = label;
+    this.primaryAction.setAttribute("aria-label", label);
   }
 }
 
